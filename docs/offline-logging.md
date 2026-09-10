@@ -93,8 +93,13 @@ once.** Which matches the use — open it at home or on the way, and it keeps
 working in the basement. A freshly installed app with no network will not open,
 and no worker can change that.
 
-- **Cache-first** for same-origin GETs (the shell, its chunks, icons), populated
-  at runtime, versioned by a constant bumped each deploy.
+- **Network-first for navigations**, falling back to the cached copy and then to
+  the offline page. Their HTML is generated per request, and navigations are how
+  a deploy is picked up: serving them cache-first would hand out the previous
+  build until a version constant was bumped by hand.
+- **Cache-first for everything else** — content-hashed chunks, icons. A new build
+  produces new chunk URLs, so caching these cannot serve stale code, and it is
+  what lets the app open with no signal.
 - **Never intercept** `/api/*` or POSTs. Writes are the reconciliation action's
   job; a worker that queued requests would be a second, conflicting outbox.
 - **Offline fallback**: for a same-origin navigation with nothing cached, a page

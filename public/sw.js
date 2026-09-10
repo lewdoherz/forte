@@ -6,10 +6,10 @@
  * consequence: offline works once the app has been opened online at least once.
  */
 
-// Bump on every deploy. The worker only checks this by name, so a new value
-// renames the cache and activate() drops the old one instead of serving stale
-// code forever.
-const CACHE_VERSION = "v1";
+// Cache name. Navigations are network-first, so picking up a deploy does not
+// depend on this — the constant exists to retire a cache whose contents are
+// wrong, and activate() drops any older one.
+const CACHE_VERSION = "v2";
 const CACHE_NAME = `forte-${CACHE_VERSION}`;
 
 // Prefix shared by every cache this worker owns, so activate() never deletes a
@@ -76,8 +76,28 @@ self.addEventListener("activate", (event) => {
 async function respond(event, request) {
   const cache = await caches.open(CACHE_NAME);
 
-  // Cache-first: a successful earlier visit wrote the shell and its chunks
-  // here, which is exactly what lets the app open with no signal.
+  // Navigations go to the network first. Their HTML is generated per request,
+  // and the pages a user opens are how a deploy is picked up — serving them
+  // cache-first would keep handing out the previous build until someone
+  // remembered to bump a version constant by hand. Only a failure falls back.
+  if (request.mode === "navigate") {
+    try {
+      const response = await fetch(request);
+      if (response.ok) event.waitUntil(cache.put(request, response.clone()));
+      return response;
+    } catch {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+      return new Response(OFFLINE_HTML, {
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+  }
+
+  // Cache-first for everything else. Content-hashed chunks are immutable — a new
+  // build produces new URLs — so caching them cannot serve stale code, and it is
+  // what lets the app open with no signal.
   const cached = await cache.match(request);
   if (cached) return cached;
 
@@ -93,13 +113,6 @@ async function respond(event, request) {
     }
     return response;
   } catch {
-    // No cache and no network.
-    if (request.mode === "navigate") {
-      return new Response(OFFLINE_HTML, {
-        status: 200,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    }
     // A non-navigation asset for a page that was never cached has no useful
     // substitute, so let the failure propagate instead of fabricating a body.
     return Response.error();
