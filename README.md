@@ -51,12 +51,15 @@ analytics with personal records.
   limits in production; its store is moved to the database (`rate_limit`, migration
   0009) so limits survive a deploy and are shared between instances, and the password
   endpoints carry their own rules instead of the global traffic allowance. The client
-  IP is read from forwarded headers, so trusting them is **opt-in** via
-  `TRUSTED_PROXY_CIDRS`: without trusted proxy addresses a single-value
-  `X-Forwarded-For` is accepted from any caller (a fresh value per request is a fresh
-  bucket, so the limit is bypassed), while a multi-hop chain is refused outright (every
-  caller then shares one bucket, so one abusive client can lock everyone out). The
-  server warns at startup when the variable is unset.
+  IP is read from forwarded headers, so the topology has to be **declared** with
+  exactly one of: `TRUSTED_PROXY_CIDRS` (a proxy that appends `X-Forwarded-For` — the
+  chain is stripped to the first untrusted hop) or `TRUST_FORWARDED_HEADER=true` (a
+  platform that sets the header itself and does not forward client-supplied values,
+  which is what Vercel documents). Getting it wrong is silent either way: without
+  trusted proxy addresses a single-value header is accepted from any caller, so a
+  client can rotate the value and never be limited; and a multi-hop chain is refused
+  outright, so every caller shares one bucket and one abusive client can lock everyone
+  out. The server warns at startup only when neither is declared.
 - **Sessions are visible and revocable.** `/account` lists the devices that can reach
   the account and can end any of them, through Better Auth's own session APIs rather
   than direct SQL.

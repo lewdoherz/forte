@@ -36,14 +36,31 @@ const envSchema = z.object({
             .filter((entry) => entry.length > 0)
         : undefined,
     ),
+  /**
+   * Declares that the hosting platform sets `x-forwarded-for` itself and does not
+   * forward client-supplied values — Vercel, for one, documents that it overwrites
+   * the header "to prevent IP spoofing". A single-value header is then
+   * authoritative and no proxy addresses are needed.
+   *
+   * This is a declaration of topology, not a switch: the behaviour it describes is
+   * already the default. It exists so a correctly configured deployment is not
+   * warned at startup.
+   */
+  TRUST_FORWARDED_HEADER: z
+    .enum(["true", "false"], {
+      message: "must be exactly 'true' or 'false'",
+    })
+    .optional()
+    .transform((value) => value === "true"),
 });
 
-const parsed = envSchema.safeParse({
-  NODE_ENV: process.env.NODE_ENV,
-  DATABASE_URL: process.env.DATABASE_URL,
-  BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
-  BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
-});
+// Parsed from the whole environment, not from a hand-listed subset of it.
+//
+// A field declared in the schema but omitted from a manual mapping is silently
+// inert — zod strips what it did not see and reports nothing — which is exactly
+// how the proxy-trust settings failed to take effect when first added. Passing
+// process.env directly makes the schema the only place a variable is declared.
+const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
   const details = parsed.error.issues

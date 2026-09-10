@@ -78,6 +78,23 @@ authority; no ORM owns or generates the schema.
 **No repository secrets are required.** The suites read `TEST_DATABASE_URL` and never
 `DATABASE_URL`, so CI cannot be pointed at a real database.
 
+## Client IP and rate limiting
+
+Rate limiting keys on the client IP, which is read from forwarded headers, so the
+deployment's topology must be declared with **exactly one** of:
+
+| Topology | Variable | Why |
+|---|---|---|
+| A proxy you run appends `X-Forwarded-For` | `TRUSTED_PROXY_CIDRS` | The chain is stripped from the right to the first untrusted hop, so a client cannot prepend a fake address. |
+| The platform sets the header itself | `TRUST_FORWARDED_HEADER=true` | The single value is authoritative; no proxy addresses are needed. Vercel documents that it **overwrites** `X-Forwarded-For` and does not forward external IPs "to prevent IP spoofing". |
+
+Getting this wrong is silent in both directions. Without trusted proxy addresses a
+single-value `X-Forwarded-For` is accepted from any caller — a fresh value per request
+is a fresh bucket, so the limit never binds. And a multi-hop chain is refused
+outright — every caller then shares one bucket, so a single abusive client can lock
+everyone out of signing in. The server warns at startup when neither is declared, and
+when both are; declaring neither is only correct locally, where rate limiting is off.
+
 ## Verifying a deployment
 
 ```bash
