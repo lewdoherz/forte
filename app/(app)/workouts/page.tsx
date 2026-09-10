@@ -1,12 +1,34 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { listWorkouts } from "@/lib/workouts";
+import { listLoggedExercises, listWorkouts } from "@/lib/workouts";
+import { getUserProfile } from "@/lib/users";
 import { requireSessionUserId } from "@/lib/auth-session";
-import { formatDateTime, formatDuration } from "@/lib/format";
+import { DEFAULT_TIME_ZONE, formatDateTimeInTimeZone } from "@/lib/timezone";
+import { WorkoutHistory } from "@/components/workout-history";
 
-export default async function WorkoutsPage() {
+export default async function WorkoutsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ exercise?: string }>;
+}) {
   const userId = await requireSessionUserId();
-  const { active, completed } = await listWorkouts(db, userId);
+  const { exercise } = await searchParams;
+
+  const [profile, exercises] = await Promise.all([
+    getUserProfile(db, userId),
+    listLoggedExercises(db, userId),
+  ]);
+
+  // Only a filter naming an exercise the user has actually logged is applied, so
+  // an unknown or malformed value degrades to "no filter" instead of reaching the
+  // query as a uuid that cannot be cast.
+  const selected = exercises.find((e) => e.id === exercise) ?? null;
+
+  const { active, completed, nextCursor } = await listWorkouts(db, userId, {
+    exerciseId: selected?.id ?? null,
+  });
+
+  const timeZone = profile?.timezone ?? DEFAULT_TIME_ZONE;
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
@@ -26,7 +48,7 @@ export default async function WorkoutsPage() {
                     {w.title}
                   </Link>
                   <div className="text-sm text-zinc-600">
-                    In progress · started {formatDateTime(w.started_at)}
+                    In progress · started {formatDateTimeInTimeZone(w.started_at, timeZone)}
                   </div>
                 </div>
                 <Link
@@ -42,10 +64,42 @@ export default async function WorkoutsPage() {
       ) : null}
 
       <section className="mt-8">
-        <h2 className="text-sm font-medium text-zinc-500">History</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-medium text-zinc-500">History</h2>
+
+          {exercises.length > 0 ? (
+            <form method="get" className="flex items-center gap-2">
+              <label htmlFor="exercise" className="sr-only">
+                Filter by exercise
+              </label>
+              <select
+                id="exercise"
+                name="exercise"
+                defaultValue={selected?.id ?? ""}
+                className="h-9 max-w-48 rounded-md border border-zinc-300 bg-white px-2 text-sm"
+              >
+                <option value="">All exercises</option>
+                {exercises.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.title}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                className="h-9 rounded-md border border-zinc-300 px-3 text-sm font-medium hover:bg-zinc-100"
+              >
+                Filter
+              </button>
+            </form>
+          ) : null}
+        </div>
+
         {completed.length === 0 ? (
           <p className="mt-2 text-zinc-500">
-            {active.length > 0 ? (
+            {selected ? (
+              `No workouts include ${selected.title}.`
+            ) : active.length > 0 ? (
               "No completed workouts yet."
             ) : (
               <>
@@ -58,28 +112,15 @@ export default async function WorkoutsPage() {
             )}
           </p>
         ) : (
-          <ul className="mt-2 space-y-2">
-            {completed.map((w) => {
-              const seconds = w.ended_at
-                ? Math.floor((w.ended_at.getTime() - w.started_at.getTime()) / 1000)
-                : 0;
-              return (
-                <li key={w.id}>
-                  <Link
-                    href={`/workouts/${w.id}`}
-                    className="block rounded-xl border border-zinc-200 bg-white p-4 shadow-sm hover:border-zinc-400"
-                  >
-                    <div className="break-words font-medium">{w.title}</div>
-                    <div className="mt-1 text-sm text-zinc-500">
-                      {formatDateTime(w.started_at)} · {formatDuration(seconds)} ·{" "}
-                      {w.exercise_count} {w.exercise_count === 1 ? "exercise" : "exercises"} ·{" "}
-                      {w.completed_set_count}/{w.set_count} sets
-                    </div>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          // Keyed on the filter: changing it must start a fresh list rather than
+          // append a different query's page to the one already on screen.
+          <WorkoutHistory
+            key={selected?.id ?? "all"}
+            initial={completed}
+            initialCursor={nextCursor}
+            exerciseId={selected?.id ?? null}
+            timeZone={timeZone}
+          />
         )}
       </section>
     </main>

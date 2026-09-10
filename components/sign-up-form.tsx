@@ -36,6 +36,11 @@ export function SignUpForm() {
       email,
       password,
       name: email.split("@")[0] ?? email,
+      // Where the emailed verification link lands. Left unset it resolves to "/",
+      // so a just-verified account arrives at the dashboard with no word about
+      // what happened. This changes only the link's destination — the form still
+      // navigates itself below.
+      callbackURL: "/verify-email",
     });
 
     if (error) {

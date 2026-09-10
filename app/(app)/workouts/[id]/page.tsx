@@ -14,7 +14,9 @@ import {
 import { ElapsedTimer } from "@/components/elapsed-timer";
 import { RestTimer } from "@/components/rest-timer";
 import { SetForm } from "@/components/set-form";
-import { formatDateTime, formatDuration } from "@/lib/format";
+import { formatDuration } from "@/lib/format";
+import { DEFAULT_TIME_ZONE, formatDateTimeInTimeZone } from "@/lib/timezone";
+import { getUserProfile } from "@/lib/users";
 
 const SET_TYPE_LABELS: Record<SetType, string> = {
   warmup: "Warm-up",
@@ -45,7 +47,9 @@ export default async function WorkoutPage({
   const workout = await getWorkoutTree(db, id, userId);
   if (!workout) notFound();
 
-  const { muscles } = await getVocabularies(db);
+  const [{ muscles }, profile] = await Promise.all([getVocabularies(db), getUserProfile(db, userId)]);
+  // The owner's zone, so times read the same here as on the history list.
+  const timeZone = profile?.timezone ?? DEFAULT_TIME_ZONE;
   const muscleNames = new Map(muscles.map((m) => [m.code, m.display_name]));
   const active = workout.ended_at == null;
   const stats = summarizeWorkout(workout);
@@ -219,8 +223,10 @@ export default async function WorkoutPage({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-zinc-500">
-        <span>{formatDateTime(workout.started_at)}</span>
-        {workout.ended_at ? <span>→ {formatDateTime(workout.ended_at)}</span> : null}
+        <span>{formatDateTimeInTimeZone(workout.started_at, timeZone)}</span>
+        {workout.ended_at ? (
+          <span>→ {formatDateTimeInTimeZone(workout.ended_at, timeZone)}</span>
+        ) : null}
         {!active ? (
           <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
             Completed · {formatDuration(stats.durationSeconds)}

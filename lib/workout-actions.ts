@@ -10,12 +10,14 @@ import {
   addSetInputSchema,
   finishWorkout,
   finishWorkoutInputSchema,
+  listWorkouts,
   logSet,
   logSetInputSchema,
   removeSet,
   setIdSchema,
   startWorkout,
   uncompleteSet,
+  type WorkoutPage,
 } from "./workouts";
 
 export type LogSetState = { error?: string };
@@ -165,4 +167,21 @@ export async function finishWorkoutFormAction(formData: FormData): Promise<void>
   }
   revalidatePath("/workouts");
   revalidatePath(`/workouts/${parsed.data.workoutId}`);
+}
+
+/**
+ * The next page of history, for the list's "load older" control.
+ *
+ * A data-returning action rather than a form action: the reader is being appended
+ * to, not navigated away from. The user id still comes from the session; the
+ * cursor is unparseable input that `listWorkouts` treats as "start from the
+ * newest page", and the exercise id is validated there too, next to the query
+ * that casts it.
+ */
+export async function loadWorkoutPageAction(
+  cursor: string | null,
+  exerciseId: string | null,
+): Promise<WorkoutPage> {
+  const userId = await requireSessionUserId();
+  return listWorkouts(db, userId, { cursor, exerciseId });
 }

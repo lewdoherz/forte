@@ -12,6 +12,9 @@ const rpeString = z
   .trim()
   .refine((s) => /^\d{1,2}(\.\d)?$/.test(s) && Number(s) >= 1 && Number(s) <= 10, "RPE must be between 1 and 10");
 
+/** Shared guard for ids that reach SQL as a `::uuid` cast. */
+const uuidSchema = z.string().uuid();
+
 export const workoutSetInputSchema = z.object({
   reps: z.number().int().min(0).nullish(),
   weight_kg: weightString.nullish(),
@@ -333,8 +336,8 @@ export function getActiveWorkout(db: Kysely<Database>, userId: string) {
     .executeTakeFirst();
 }
 
-/** Maximum completed workouts returned by the v1 history list. */
-export const HISTORY_LIMIT = 50;
+/** Completed workouts per page in the history list. */
+export const HISTORY_PAGE_SIZE = 30;
 
 export interface WorkoutSummary {
   id: string;
@@ -347,12 +350,26 @@ export interface WorkoutSummary {
   completed_set_count: number;
 }
 
+export interface WorkoutPage {
+  active: WorkoutSummary[];
+  completed: WorkoutSummary[];
+  /** Feed back as `cursor` to fetch the next page; null when there is no older workout. */
+  nextCursor: string | null;
+}
+
+export interface WorkoutQuery {
+  cursor?: string | null;
+  /** Only workouts containing this exercise template. */
+  exerciseId?: string | null;
+}
+
 /**
- * The user's workouts for the history view, active first then newest first.
- * Bounded so unbounded history is never loaded.
+ * The history list's shared projection. Returned so callers can keep chaining
+ * `where`/`orderBy` — the three correlated counts are the fiddly part and are
+ * worth stating once.
  */
-export async function listWorkouts(db: Kysely<Database>, userId: string) {
-  const rows = await db
+function summaryQuery(db: Kysely<Database>, userId: string) {
+  return db
     .selectFrom("workout as w")
     .select(["w.id", "w.title", "w.notes", "w.started_at", "w.ended_at"])
     .select(
@@ -370,16 +387,110 @@ export async function listWorkouts(db: Kysely<Database>, userId: string) {
         "completed_set_count",
       ),
     )
-    .where("w.owner_id", "=", userId)
-    .orderBy(sql`w.ended_at is null`, "desc")
+    .where("w.owner_id", "=", userId);
+}
+
+/**
+ * Keyset cursor over `(started_at, id)`. A cursor rather than an offset because
+ * history is appended to constantly: with `offset`, logging a workout between two
+ * page loads shifts every later page and the reader sees a row twice or not at
+ * all. The id breaks ties when two workouts share a timestamp.
+ */
+function encodeCursor(startedAt: Date, id: string): string {
+  return `${startedAt.toISOString()}_${id}`;
+}
+
+function decodeCursor(cursor: string | null | undefined): { startedAt: Date; id: string } | null {
+  if (!cursor) return null;
+  const separator = cursor.lastIndexOf("_");
+  if (separator <= 0) return null;
+
+  const startedAt = new Date(cursor.slice(0, separator));
+  const id = cursor.slice(separator + 1);
+  if (Number.isNaN(startedAt.getTime()) || id === "") return null;
+
+  return { startedAt, id };
+}
+
+/**
+ * One page of the user's history, active workout first.
+ *
+ * Completed workouts are paged; the active one is not, because there is at most
+ * one and folding it into the page would let it consume a slot. `nextCursor` is
+ * derived from a page fetched one row long, so "is there more" costs no second
+ * query.
+ */
+export async function listWorkouts(
+  db: Kysely<Database>,
+  userId: string,
+  query: WorkoutQuery = {},
+): Promise<WorkoutPage> {
+  const active = await summaryQuery(db, userId)
+    .where("w.ended_at", "is", null)
     .orderBy("w.started_at", "desc")
-    .limit(HISTORY_LIMIT)
     .execute();
 
+  let completed = summaryQuery(db, userId).where("w.ended_at", "is not", null);
+
+  // The id reaches SQL as a `::uuid` cast, so an unparseable value would throw
+  // instead of filtering. Guarded here so every caller is protected rather than
+  // each one having to remember.
+  const exerciseId =
+    query.exerciseId && uuidSchema.safeParse(query.exerciseId).success ? query.exerciseId : null;
+
+  if (exerciseId) {
+    // A workout matches when it contains the exercise, wherever it sits in the
+    // workout's order.
+    completed = completed.where(
+      sql<boolean>`exists (
+        select 1 from workout_exercise we
+        where we.workout_id = w.id and we.template_id = ${exerciseId}::uuid
+      )`,
+    );
+  }
+
+  const cursor = decodeCursor(query.cursor);
+  if (cursor) {
+    // Row-value comparison, which matches the (started_at desc, id desc) order
+    // exactly and stays correct across equal timestamps.
+    completed = completed.where(
+      sql<boolean>`(w.started_at, w.id) < (${cursor.startedAt}::timestamptz, ${cursor.id}::uuid)`,
+    );
+  }
+
+  const rows = await completed
+    .orderBy("w.started_at", "desc")
+    .orderBy("w.id", "desc")
+    .limit(HISTORY_PAGE_SIZE + 1)
+    .execute();
+
+  const hasOlder = rows.length > HISTORY_PAGE_SIZE;
+  const page = hasOlder ? rows.slice(0, HISTORY_PAGE_SIZE) : rows;
+  const last = page[page.length - 1];
+
   return {
-    active: rows.filter((r) => r.ended_at == null),
-    completed: rows.filter((r) => r.ended_at != null),
+    active,
+    completed: page,
+    nextCursor: hasOlder && last ? encodeCursor(last.started_at, last.id) : null,
   };
+}
+
+/**
+ * The exercises that appear in the user's finished workouts, for the history
+ * filter. Built from what they have actually logged rather than the whole
+ * catalog, which would offer filters that can only ever return nothing.
+ */
+export function listLoggedExercises(db: Kysely<Database>, userId: string) {
+  return db
+    .selectFrom("workout_exercise as we")
+    .innerJoin("workout as w", "w.id", "we.workout_id")
+    .innerJoin("exercise_template as et", "et.id", "we.template_id")
+    .select(["et.id", "et.title"])
+    .distinct()
+    .where("w.owner_id", "=", userId)
+    .where("w.ended_at", "is not", null)
+    .orderBy("et.title", "asc")
+    .execute();
 }
 
 export interface WorkoutStats {
