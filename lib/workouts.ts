@@ -79,6 +79,9 @@ export async function startWorkout(db: Kysely<Database>, userId: string, routine
           template_id: re.template_id,
           position: i,
           superset_key: re.superset_key,
+          // Snapshotted, not referenced: an in-progress workout must not change
+          // when the source routine's rest target is edited.
+          rest_seconds: re.rest_seconds,
           notes: re.notes,
         })
         .returningAll()

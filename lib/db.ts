@@ -99,6 +99,7 @@ export interface Database {
     template_id: string;
     position: number;
     superset_key: string | null;
+    rest_seconds: number | null;
     notes: string | null;
     created_at: Generated<Date>;
     updated_at: Generated<Date>;

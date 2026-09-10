@@ -32,6 +32,9 @@ analytics with personal records.
 - **Routines and workouts are separate.** A routine is a reusable template; starting a
   workout snapshots the routine into `workout` / `workout_exercise` / `workout_set`.
   Editing a routine never changes a started workout, and completed workouts are immutable.
+  The snapshot carries everything the logger needs at log time — including the rest
+  target (`workout_exercise.rest_seconds`) and superset grouping — so neither is ever
+  read back through `routine_id`.
 - **Analytics are derived, and aggregated in SQL.** PRs, volume, estimated 1RM and
   progression are computed from completed sets at read time — never stored as
   authoritative records. The aggregation runs in the database, so result sizes stay
@@ -80,6 +83,7 @@ analytics with personal records.
 | 11 | Mobile-first shell (bottom nav, safe areas, touch targets) + installable PWA (manifest, generated icons) | done |
 | 12 | Production readiness: validated env, secret hardening, timezone-aware analytics, account settings, PostgreSQL path verified | done |
 | 13 | Operability: CI, failure boundaries, structured logging, opt-in dev seed, SQL-aggregated analytics | done |
+| 14 | Logger depth: snapshotted rest target with a rest timer, and superset grouping | done |
 
 ## Routes
 
@@ -101,9 +105,10 @@ analytics with personal records.
 - `exercise_template` — catalog: global (`owner_id IS NULL`) plus per-user custom exercises.
 - `routine`, `routine_exercise`, `routine_set` — prescriptions (planned).
 - `workout`, `workout_exercise`, `workout_set` — results (actual: reps, weight, duration,
-  distance, RPE, completion; extensible `metrics` jsonb sidecar).
-- Vocabulary lookup tables: `muscle_group`, `equipment`; enums: `set_type`,
-  `exercise_type`, `workout_visibility`.
+  distance, RPE, completion; extensible `metrics` jsonb sidecar). `workout_exercise`
+  also carries the snapshotted `rest_seconds` and `superset_key`.
+- Vocabularies: `muscle_group`, `equipment`; enums: `set_type`, `exercise_type`,
+  `workout_visibility`.
 
 ## Getting started
 

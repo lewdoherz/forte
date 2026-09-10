@@ -63,8 +63,14 @@ async function resetDemoUser(): Promise<boolean> {
     .executeTakeFirst();
   if (!existing) return false;
 
-  // Sessions, accounts, routines, workouts and custom exercises all cascade from
-  // app_user, so this single delete is a complete reset.
+  // Deleted in dependency order rather than relying on the cascade from
+  // app_user. `routine_exercise.template_id` and `workout_exercise.template_id`
+  // are NO ACTION, so a cascade that removed the custom exercises before the
+  // routines and workouts referencing them would fail the foreign key — which it
+  // does as soon as the demo user has a routine using a custom exercise.
+  await db.deleteFrom("workout").where("owner_id", "=", existing.id).execute();
+  await db.deleteFrom("routine").where("owner_id", "=", existing.id).execute();
+  await db.deleteFrom("exercise_template").where("owner_id", "=", existing.id).execute();
   await db.deleteFrom("app_user").where("id", "=", existing.id).execute();
   return true;
 }

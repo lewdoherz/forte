@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RoutineTree, SetType } from "@/schema/types";
 import { SET_TYPES } from "@/schema/types";
+import { normaliseSupersetKeys } from "@/lib/supersets";
 import { saveRoutine } from "@/lib/routine-actions";
 
 const SET_TYPE_LABELS: Record<SetType, string> = {
@@ -14,7 +15,13 @@ const SET_TYPE_LABELS: Record<SetType, string> = {
 };
 
 type SetDraft = { set_type: SetType; reps: string; weight_kg: string };
-type ExerciseDraft = { template_id: string; rest_seconds: string; notes: string; sets: SetDraft[] };
+type ExerciseDraft = {
+  template_id: string;
+  superset_key: string | null;
+  rest_seconds: string;
+  notes: string;
+  sets: SetDraft[];
+};
 
 interface RoutineEditorProps {
   library: { id: string; title: string; primary_muscle: string }[];
@@ -28,6 +35,7 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
   const [exercises, setExercises] = useState<ExerciseDraft[]>(() =>
     (initial?.exercises ?? []).map((e) => ({
       template_id: e.template_id,
+      superset_key: e.superset_key,
       rest_seconds: e.rest_seconds?.toString() ?? "",
       notes: e.notes ?? "",
       sets: e.sets.map((s) => ({
@@ -51,13 +59,30 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
     if (addedIds.has(id)) return;
     setExercises((prev) => [
       ...prev,
-      { template_id: id, rest_seconds: "", notes: "", sets: [{ set_type: "normal", reps: "", weight_kg: "" }] },
+      {
+        template_id: id,
+        superset_key: null,
+        rest_seconds: "",
+        notes: "",
+        sets: [{ set_type: "normal", reps: "", weight_kg: "" }],
+      },
     ]);
     setQuery("");
   }
 
+  /**
+   * Grouping is recomputed after every structural change, because a superset is
+   * only valid while its members are CONSECUTIVE — moving an exercise can split
+   * a group, and the stored form must match what is shown. The same rule runs on
+   * save, so display and persistence cannot drift.
+   */
+  function withNormalisedGroups(next: ExerciseDraft[]): ExerciseDraft[] {
+    const keys = normaliseSupersetKeys(next);
+    return next.map((ex, i) => (ex.superset_key === keys[i] ? ex : { ...ex, superset_key: keys[i] }));
+  }
+
   function removeExercise(index: number) {
-    setExercises((prev) => prev.filter((_, i) => i !== index));
+    setExercises((prev) => withNormalisedGroups(prev.filter((_, i) => i !== index)));
   }
 
   function moveExercise(index: number, dir: -1 | 1) {
@@ -66,7 +91,26 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
       if (target < 0 || target >= prev.length) return prev;
       const next = [...prev];
       [next[index], next[target]] = [next[target], next[index]];
-      return next;
+      return withNormalisedGroups(next);
+    });
+  }
+
+  function groupWithNext(index: number) {
+    setExercises((prev) => {
+      if (index + 1 >= prev.length) return prev;
+      const next = prev.map((ex) => ({ ...ex }));
+      const key = next[index].superset_key ?? `ss-${crypto.randomUUID().slice(0, 8)}`;
+      next[index].superset_key = key;
+      next[index + 1].superset_key = key;
+      return withNormalisedGroups(next);
+    });
+  }
+
+  function ungroup(index: number) {
+    setExercises((prev) => {
+      const next = prev.map((ex) => ({ ...ex }));
+      next[index].superset_key = null;
+      return withNormalisedGroups(next);
     });
   }
 
@@ -112,6 +156,7 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
       notes: notes.trim() || null,
       exercises: exercises.map((ex) => ({
         template_id: ex.template_id,
+        superset_key: ex.superset_key,
         rest_seconds: ex.rest_seconds.trim() === "" ? null : Number(ex.rest_seconds),
         notes: ex.notes.trim() || null,
         sets: ex.sets.map((s) => ({
@@ -172,8 +217,34 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
             {exercises.map((ex, i) => (
               <li key={`${ex.template_id}-${i}`} className="rounded-lg border border-zinc-200 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 break-words font-medium">{i + 1}. {titleById.get(ex.template_id) ?? "Exercise"}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 break-words font-medium">{i + 1}. {titleById.get(ex.template_id) ?? "Exercise"}</span>
+                    {ex.superset_key ? (
+                      <span className="shrink-0 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-900">
+                        SS
+                      </span>
+                    ) : null}
+                  </span>
                   <div className="flex items-center gap-1">
+                    {ex.superset_key ? (
+                      <button
+                        type="button"
+                        onClick={() => ungroup(i)}
+                        aria-label="Remove from superset"
+                        className="flex h-9 items-center rounded border border-sky-300 px-2 text-xs text-sky-900"
+                      >
+                        Ungroup
+                      </button>
+                    ) : i < exercises.length - 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => groupWithNext(i)}
+                        aria-label="Superset with the next exercise"
+                        className="flex h-9 items-center rounded border px-2 text-xs"
+                      >
+                        +SS
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => moveExercise(i, -1)}

@@ -65,8 +65,15 @@ export default async function RoutineDetailPage({
           {routine.exercises.map((ex, i) => (
             <li key={ex.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0 break-words font-medium">
-                  {i + 1}. {ex.template.title}
+                <span className="flex min-w-0 items-baseline gap-1.5">
+                  <span className="min-w-0 break-words font-medium">
+                    {i + 1}. {ex.template.title}
+                  </span>
+                  {ex.superset_key ? (
+                    <span className="shrink-0 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-900">
+                      Superset
+                    </span>
+                  ) : null}
                 </span>
                 <span className="shrink-0 text-sm text-zinc-500">
                   {muscleNames.get(ex.template.primary_muscle) ?? ex.template.primary_muscle}

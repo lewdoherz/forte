@@ -57,6 +57,7 @@ const routine = await createRoutine(db, alice, {
   exercises: [
     {
       template_id: bench.id,
+      superset_key: "ss-workouts",
       rest_seconds: 90,
       notes: "warm",
       sets: [
@@ -66,6 +67,7 @@ const routine = await createRoutine(db, alice, {
     },
     {
       template_id: squat.id,
+      superset_key: "ss-workouts",
       rest_seconds: null,
       notes: null,
       sets: [{ set_type: "normal", reps: 5, weight_kg: "120" }],
@@ -94,6 +96,18 @@ check(
     workout.exercises[0].sets[0].reps === 10 &&
     Number(workout.exercises[0].sets[1].weight_kg) === 100,
 );
+// The rest target is snapshotted onto the workout_exercise (0008) rather than
+// read back from the routine, so the logger can offer a timer without breaking
+// the snapshot invariant.
+check(
+  "rest target snapshotted onto the workout",
+  workout.exercises[0].rest_seconds === 90 && workout.exercises[1].rest_seconds === null,
+);
+check(
+  "superset grouping snapshotted onto the workout",
+  workout.exercises[0].superset_key === "ss-workouts" &&
+    workout.exercises[1].superset_key === "ss-workouts",
+);
 
 // ---- cross-user start + duplicate prevention ------------------------------
 await expectThrow("another user's routine cannot start a workout", () => startWorkout(db, bob, routine.id));
@@ -118,6 +132,18 @@ const afterRoutineChange = await getWorkoutTree(db, started.id, alice);
 check(
   "workout unchanged after routine edit",
   afterRoutineChange?.title === "Push Day" && afterRoutineChange.exercises.length === 2,
+);
+// The edited routine dropped both the rest target and the grouping; the started
+// workout must keep the values it was created with.
+check(
+  "rest target survives a routine edit",
+  afterRoutineChange?.exercises[0].rest_seconds === 90,
+  `${afterRoutineChange?.exercises[0].rest_seconds}`,
+);
+check(
+  "superset grouping survives a routine edit",
+  afterRoutineChange?.exercises[0].superset_key === "ss-workouts",
+  `${afterRoutineChange?.exercises[0].superset_key}`,
 );
 
 // ---- log actual set values -------------------------------------------------

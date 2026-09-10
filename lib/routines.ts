@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "./db";
+import { normaliseSupersetKeys } from "./supersets";
 import {
   SET_TYPES,
   type Routine,
@@ -22,6 +23,9 @@ const routineSetInputSchema = z.object({
 
 const routineExerciseInputSchema = z.object({
   template_id: z.string().uuid(),
+  // Consecutive exercises sharing a key are performed together. Optional: most
+  // exercises are not supersetted.
+  superset_key: z.string().trim().min(1).max(40).nullish(),
   rest_seconds: z.number().int().min(0).nullish(),
   notes: z.string().trim().max(500).nullish(),
   sets: z.array(routineSetInputSchema).max(50).default([]),
@@ -144,6 +148,8 @@ async function insertExercises(
   routineId: string,
   exercises: RoutineInput["exercises"],
 ) {
+  const supersetKeys = normaliseSupersetKeys(exercises);
+
   for (const [i, ex] of exercises.entries()) {
     const row = await trx
       .insertInto("routine_exercise")
@@ -151,7 +157,7 @@ async function insertExercises(
         routine_id: routineId,
         template_id: ex.template_id,
         position: i,
-        superset_key: null,
+        superset_key: supersetKeys[i],
         rest_seconds: ex.rest_seconds ?? null,
         notes: ex.notes ?? null,
       })

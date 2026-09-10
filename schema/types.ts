@@ -286,10 +286,15 @@ export interface WorkoutExercise extends Timestamped {
   template_id: Uuid;
   position: number;
   superset_key: string | null;
+  /** Snapshotted from routine_exercise at start (0008); null when unset. */
+  rest_seconds: number | null;
   notes: string | null;
 }
 
-export type NewWorkoutExercise = New<WorkoutExercise, 'superset_key' | 'notes'>;
+export type NewWorkoutExercise = New<
+  WorkoutExercise,
+  'superset_key' | 'rest_seconds' | 'notes'
+>;
 
 /** Extensible per-set metrics. Widening this is a data change, not a migration. */
 export interface SetMetrics extends JsonObject {

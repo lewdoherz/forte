@@ -171,6 +171,82 @@ check(
   }).success,
 );
 
+// ---- supersets -------------------------------------------------------------
+// A superset is two or more CONSECUTIVE exercises sharing a key. Everything else
+// — a lone member, or a group split by a reorder — is stored ungrouped, so what
+// the editor shows and what is persisted cannot disagree.
+const supersetRoutine = await createRoutine(db, alice, {
+  title: "Superset Day",
+  notes: null,
+  exercises: [
+    { template_id: bench!.id, superset_key: "ss-a", rest_seconds: 90, notes: null, sets: [] },
+    { template_id: squat!.id, superset_key: "ss-a", rest_seconds: 90, notes: null, sets: [] },
+    { template_id: bench!.id, superset_key: null, rest_seconds: null, notes: null, sets: [] },
+    { template_id: squat!.id, superset_key: "ss-lone", rest_seconds: null, notes: null, sets: [] },
+  ],
+});
+const supersetKeys =
+  (await getRoutineTree(db, supersetRoutine.id, alice))?.exercises.map((e) => e.superset_key) ?? [];
+check(
+  "a consecutive pair keeps its superset key",
+  supersetKeys[0] === "ss-a" && supersetKeys[1] === "ss-a",
+  supersetKeys.join(","),
+);
+check("an ungrouped exercise stays ungrouped", supersetKeys[2] === null);
+check("a lone keyed exercise is stored ungrouped", supersetKeys[3] === null, `${supersetKeys[3]}`);
+
+const splitRoutine = await createRoutine(db, alice, {
+  title: "Split Day",
+  notes: null,
+  exercises: [
+    { template_id: bench!.id, superset_key: "ss-x", rest_seconds: null, notes: null, sets: [] },
+    { template_id: bench!.id, superset_key: null, rest_seconds: null, notes: null, sets: [] },
+    { template_id: bench!.id, superset_key: "ss-x", rest_seconds: null, notes: null, sets: [] },
+  ],
+});
+const splitKeys =
+  (await getRoutineTree(db, splitRoutine.id, alice))?.exercises.map((e) => e.superset_key) ?? [];
+check(
+  "a group split by a reorder is stored ungrouped",
+  splitKeys.length === 3 && splitKeys.every((key) => key === null),
+  splitKeys.join(","),
+);
+
+await updateRoutine(db, alice, supersetRoutine.id, {
+  title: "Superset Day v2",
+  notes: null,
+  exercises: [
+    { template_id: bench!.id, superset_key: "ss-b", rest_seconds: 60, notes: null, sets: [] },
+    { template_id: squat!.id, superset_key: "ss-b", rest_seconds: 60, notes: null, sets: [] },
+  ],
+});
+const regrouped =
+  (await getRoutineTree(db, supersetRoutine.id, alice))?.exercises.map((e) => e.superset_key) ?? [];
+check(
+  "update persists a regrouped superset",
+  regrouped.length === 2 && regrouped[0] === "ss-b" && regrouped[1] === "ss-b",
+  regrouped.join(","),
+);
+
+check(
+  "an empty superset key is rejected",
+  !routineInputSchema.safeParse({
+    title: "x",
+    notes: null,
+    exercises: [{ template_id: bench!.id, superset_key: "   ", rest_seconds: null, notes: null, sets: [] }],
+  }).success,
+);
+check(
+  "an over-long superset key is rejected",
+  !routineInputSchema.safeParse({
+    title: "x",
+    notes: null,
+    exercises: [
+      { template_id: bench!.id, superset_key: "s".repeat(41), rest_seconds: null, notes: null, sets: [] },
+    ],
+  }).success,
+);
+
 // ---- delete own routine ----------------------------------------------------
 await deleteRoutine(db, alice, created.id);
 check("delete own routine", (await getRoutineTree(db, created.id, alice)) === undefined);
