@@ -1,0 +1,74 @@
+name: Production verification
+
+# TEMPORARY harness, manual trigger only.
+#
+# The development machine's network DNS-poisons *.vercel.app (it resolves to Meta
+# addresses), so the deployed app cannot be reached from there. GitHub's runners
+# have an unblocked path, so the production checks run here and the log is read
+# back through the API.
+#
+# No credential is committed: the throwaway account's password is generated per
+# run, and only cookie ATTRIBUTES are printed (the token value is redacted).
+#
+# Remove this workflow once Step 16's verification has been recorded.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify deployment
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://forte-delta.vercel.app
+    steps:
+      - name: Public endpoints
+        run: |
+          for path in /sign-in /manifest.webmanifest /icon /apple-icon /pwa-icon/512; do
+            printf '%s -> %s\n' "$path" "$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "$BASE$path")"
+          done
+
+      - name: Manifest body
+        run: curl -sS "$BASE/manifest.webmanifest"; echo
+
+      - name: Not-found boundary renders in the shell
+        run: |
+          body=$(curl -sS "$BASE/workouts/00000000-0000-4000-8000-000000000000")
+          printf 'heading: %s\n' "$(grep -o 'Not found' <<<"$body" | head -1)"
+          printf 'copy:    %s\n' "$(grep -o 'belongs to another account' <<<"$body" | head -1)"
+          printf 'shell:   %s\n' "$(grep -o 'Routines' <<<"$body" | head -1)"
+
+      - name: Sign up, and inspect cookie attributes
+        run: |
+          EMAIL="verify-${GITHUB_RUN_ID}@example.com"
+          PASSWORD=$(openssl rand -base64 24)
+          echo "EMAIL=$EMAIL" >> "$GITHUB_ENV"
+          echo "PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
+          curl -sS -D signup.headers -o /dev/null -X POST "$BASE/api/auth/sign-up/email" \
+            -H 'content-type: application/json' \
+            -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\",\"name\":\"Verify\"}"
+          printf 'status: %s\n' "$(head -1 signup.headers)"
+          grep -i '^set-cookie' signup.headers | sed -E 's/=[^;]+;/=<redacted>;/'
+
+      - name: Sign in, and inspect cookie attributes
+        run: |
+          curl -sS -D signin.headers -o /dev/null -X POST "$BASE/api/auth/sign-in/email" \
+            -H 'content-type: application/json' \
+            -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
+          printf 'status: %s\n' "$(head -1 signin.headers)"
+          grep -i '^set-cookie' signin.headers | sed -E 's/=[^;]+;/=<redacted>;/'
+
+      - name: Rate limiting is enforced
+        run: |
+          for i in $(seq 1 8); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/sign-in/email" \
+              -H 'content-type: application/json' \
+              -d '{"email":"step16-rate-limit@example.com","password":"definitely-not-the-password"}')
+            printf 'attempt %s -> %s\n' "$i" "$code"
+          done
+          printf 'body: %s\n' "$(curl -sS -X POST "$BASE/api/auth/sign-in/email" \
+            -H 'content-type: application/json' \
+            -d '{"email":"step16-rate-limit@example.com","password":"definitely-not-the-password"}')"
