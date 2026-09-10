@@ -1,15 +1,8 @@
-import { PGlite } from "@electric-sql/pglite";
-import { Kysely, PGliteDialect } from "kysely";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createAuth } from "../../lib/auth";
-import type { Database } from "../../lib/db";
+import { createTestDatabase } from "./harness";
 
-const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations") + "/";
 const SESSION_COOKIE = "better-auth.session_token";
 
-const pglite = new PGlite();
 let failed = 0;
 const out: string[] = [];
 
@@ -42,12 +35,9 @@ function sessionCookie(headers: Headers): string | null {
   return null;
 }
 
-for (const f of ["0001_init.sql", "0002_seed_vocabularies.sql", "0003_social.sql", "0004_auth.sql"]) {
-  await pglite.exec(readFileSync(MIG + f, "utf8"));
-}
-check("0001-0004 apply", true);
+const { db, close, dialect } = await createTestDatabase();
+check(`schema migrations apply (${dialect})`, true);
 
-const db = new Kysely<Database>({ dialect: new PGliteDialect({ pglite }) });
 const auth = createAuth(db);
 
 // ---- sign-up validation ----------------------------------------------------
@@ -106,6 +96,7 @@ await auth.api.signOut({ headers: new Headers({ cookie: signinCookie ?? "" }) })
 const after = await auth.api.getSession({ headers: new Headers({ cookie: signinCookie ?? "" }) });
 check("sign-out invalidates the session", after === null);
 
+await close();
 console.log(out.join("\n"));
 console.log(`\n${out.length - failed}/${out.length} checks passed`);
 process.exit(failed ? 1 : 0);

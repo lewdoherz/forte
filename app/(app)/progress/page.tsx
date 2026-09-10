@@ -19,7 +19,8 @@ import {
 } from "@/lib/progress";
 import { ProgressControls } from "@/components/progress-controls";
 import { ProgressChart } from "@/components/progress-chart";
-import { formatDateTime } from "@/lib/format";
+import { getUserProfile } from "@/lib/users";
+import { DEFAULT_TIME_ZONE, formatDateTimeInTimeZone } from "@/lib/timezone";
 
 const SET_TYPE_LABELS: Record<SetType, string> = {
   warmup: "Warm-up",
@@ -42,6 +43,10 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
 
 export default async function ProgressPage({ searchParams }: { searchParams: SearchParams }) {
   const userId = await requireSessionUserId();
+  // The stored preference, not the browser or the server: range boundaries and
+  // rendered dates must not shift with either.
+  const profile = await getUserProfile(db, userId);
+  const timeZone = profile?.timezone ?? DEFAULT_TIME_ZONE;
   const params = await searchParams;
   const exerciseParam = typeof params.exercise === "string" ? params.exercise : "";
   const rangeParam = typeof params.range === "string" ? params.range : "all";
@@ -65,7 +70,7 @@ export default async function ProgressPage({ searchParams }: { searchParams: Sea
       const exercise = await getVisibleExercise(db, parsed.data.templateId, userId);
       if (exercise) {
         selectedTitle = exercise.title;
-        const rows = await getCompletedSetRows(db, userId, exercise.id, range);
+        const rows = await getCompletedSetRows(db, userId, exercise.id, range, timeZone);
         summary = summarizeProgress(rows);
         series = buildSessionSeries(rows);
         recent = recentSession(rows);
@@ -74,9 +79,12 @@ export default async function ProgressPage({ searchParams }: { searchParams: Sea
   }
 
   const strengthPoints = series.flatMap((p) =>
-    p.bestWeightKg != null ? [{ label: formatDateTime(p.date), value: p.bestWeightKg }] : [],
+    p.bestWeightKg != null ? [{ label: formatDateTimeInTimeZone(p.date, timeZone), value: p.bestWeightKg }] : [],
   );
-  const volumePoints = series.map((p) => ({ label: formatDateTime(p.date), value: p.volumeKg }));
+  const volumePoints = series.map((p) => ({
+    label: formatDateTimeInTimeZone(p.date, timeZone),
+    value: p.volumeKg,
+  }));
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
@@ -126,7 +134,7 @@ export default async function ProgressPage({ searchParams }: { searchParams: Sea
           {recent ? (
             <section className="mt-8">
               <h2 className="text-sm font-medium text-zinc-500">
-                Most recent session · {formatDateTime(recent.date)}
+                Most recent session · {formatDateTimeInTimeZone(recent.date, timeZone)}
               </h2>
               <ul className="mt-2 divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white shadow-sm">
                 {recent.sets.map((s, i) => {

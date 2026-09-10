@@ -82,6 +82,9 @@ export async function getRoutineTree(
         .selectFrom("exercise_template")
         .selectAll()
         .where("id", "in", templateIds)
+        // Mirrors assertExercisesVisible: a foreign custom template must never
+        // resolve here.
+        .where((eb) => eb.or([eb("owner_id", "is", null), eb("owner_id", "=", userId)]))
         .execute()
     : [];
   const templateMap = new Map(templates.map((t) => [t.id, t]));

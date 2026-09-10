@@ -9,11 +9,11 @@ export default async function RoutinesPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Routines</h1>
         <Link
           href="/routines/new"
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white"
+          className="flex h-11 items-center rounded-md bg-zinc-900 px-4 text-sm font-medium text-white"
         >
           Create routine
         </Link>
@@ -29,7 +29,7 @@ export default async function RoutinesPage() {
               className="flex items-center justify-between gap-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
             >
               <div className="min-w-0">
-                <Link href={`/routines/${r.id}`} className="font-medium hover:underline">
+                <Link href={`/routines/${r.id}`} className="break-words font-medium hover:underline">
                   {r.title}
                 </Link>
                 <div className="text-sm text-zinc-500">
@@ -38,7 +38,7 @@ export default async function RoutinesPage() {
               </div>
               <Link
                 href={`/routines/${r.id}/edit`}
-                className="shrink-0 rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100"
+                className="flex h-10 shrink-0 items-center rounded-md border border-zinc-300 px-3 text-sm font-medium hover:bg-zinc-100"
               >
                 Edit
               </Link>

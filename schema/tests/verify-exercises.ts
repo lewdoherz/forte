@@ -1,8 +1,3 @@
-import { PGlite } from "@electric-sql/pglite";
-import { Kysely, PGliteDialect } from "kysely";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   createCustomExercise,
   deleteCustomExercise,
@@ -11,10 +6,9 @@ import {
   listExercises,
   updateCustomExercise,
 } from "../../lib/exercises";
-import type { Database } from "../../lib/db";
+import { createRoutine, getRoutineTree } from "../../lib/routines";
+import { createTestDatabase } from "./harness";
 
-const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations") + "/";
-const pglite = new PGlite();
 let failed = 0;
 const out: string[] = [];
 
@@ -33,15 +27,11 @@ async function expectThrow(label: string, fn: () => Promise<unknown>) {
   }
 }
 
-for (const f of ["0001_init.sql", "0002_seed_vocabularies.sql", "0003_social.sql", "0004_auth.sql", "0005_seed_exercises.sql"]) {
-  await pglite.exec(readFileSync(MIG + f, "utf8"));
-}
-check("0001-0005 apply", true);
-
-const db = new Kysely<Database>({ dialect: new PGliteDialect({ pglite }) });
+const { db, query, close, dialect } = await createTestDatabase();
+check(`schema migrations apply (${dialect})`, true);
 
 const mkUser = async (email: string) =>
-  (await pglite.query<{ id: string }>(`insert into app_user (email) values ($1) returning id`, [email])).rows[0].id;
+  (await query<{ id: string }>(`insert into app_user (email) values ($1) returning id`, [email])).rows[0].id;
 
 const alice = await mkUser("alice@example.com");
 const bob = await mkUser("bob@example.com");
@@ -110,6 +100,45 @@ check("owner can update own exercise", updated.title === "Updated Lift" && updat
 await deleteCustomExercise(db, alice, created.id);
 check("owner can delete own exercise", (await getVisibleExercise(db, created.id, alice)) === undefined);
 
+// ---- an exercise referenced by history is archived, never silently kept ----
+// routine_exercise.template_id is NO ACTION, so a hard delete would raise a
+// foreign-key error. Deleting must still work, and must leave the reference
+// resolvable.
+const inUse = await createCustomExercise(db, alice, {
+  title: "In Use Lift",
+  exercise_type: "weight_reps",
+  primary_muscle: "chest",
+  secondary_muscles: [],
+  equipment: "barbell",
+});
+const inUseRoutine = await createRoutine(db, alice, {
+  title: "References a custom lift",
+  notes: null,
+  exercises: [
+    {
+      template_id: inUse.id,
+      rest_seconds: null,
+      notes: null,
+      sets: [{ set_type: "normal", reps: 5, weight_kg: "20" }],
+    },
+  ],
+});
+
+await deleteCustomExercise(db, alice, inUse.id);
+
+check(
+  "deleting an in-use exercise removes it from the owner's library",
+  (await getVisibleExercise(db, inUse.id, alice)) === undefined,
+);
+check(
+  "deleting an in-use exercise removes it from the owner's list",
+  !(await listExercises(db, alice)).some((e) => e.id === inUse.id),
+);
+check(
+  "the routine referencing it still resolves",
+  (await getRoutineTree(db, inUseRoutine.id, alice))?.exercises[0].template.title === "In Use Lift",
+);
+
 // ---- invalid input (Zod) --------------------------------------------------
 check(
   "invalid exercise_type rejected",
@@ -120,6 +149,7 @@ check(
   !exerciseInputSchema.safeParse({ title: "   ", exercise_type: "weight_reps", primary_muscle: "chest", equipment: "barbell" }).success,
 );
 
+await close();
 console.log(out.join("\n"));
 console.log(`\n${out.length - failed}/${out.length} checks passed`);
 process.exit(failed ? 1 : 0);

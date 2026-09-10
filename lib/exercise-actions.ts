@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { db } from "./db";
 import { requireSessionUserId } from "./auth-session";
 import {
@@ -29,13 +30,17 @@ export async function createExercise(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
+  let createdId: string;
   try {
-    const created = await createCustomExercise(db, userId, parsed.data);
-    revalidatePath("/exercises");
-    redirect(`/exercises/${created.id}`);
+    createdId = (await createCustomExercise(db, userId, parsed.data)).id;
   } catch {
     return { error: "Could not create the exercise." };
   }
+  // redirect() deliberately sits OUTSIDE the try: it signals by throwing
+  // NEXT_REDIRECT, which a catch block would swallow — reporting a failure
+  // after a write that actually succeeded, and inviting a duplicate resubmit.
+  revalidatePath("/exercises");
+  redirect(`/exercises/${createdId}`);
 }
 
 export async function updateExercise(
@@ -44,6 +49,8 @@ export async function updateExercise(
   formData: FormData,
 ): Promise<ExerciseActionState> {
   const userId = await requireSessionUserId();
+  const parsedId = z.string().uuid().safeParse(id);
+  if (!parsedId.success) return { error: "Invalid exercise." };
   const parsed = exerciseInputSchema.safeParse({
     title: formData.get("title"),
     exercise_type: formData.get("exercise_type"),
@@ -56,21 +63,24 @@ export async function updateExercise(
   }
 
   try {
-    await updateCustomExercise(db, userId, id, parsed.data);
-    revalidatePath("/exercises");
-    revalidatePath(`/exercises/${id}`);
-    redirect(`/exercises/${id}`);
+    await updateCustomExercise(db, userId, parsedId.data, parsed.data);
   } catch (e) {
     return e instanceof Error && e.message === "not_authorized"
       ? { error: "You don't have permission to edit this exercise." }
       : { error: "Could not update the exercise." };
   }
+  // Outside the try — see createExercise.
+  revalidatePath("/exercises");
+  revalidatePath(`/exercises/${id}`);
+  redirect(`/exercises/${id}`);
 }
 
 export async function deleteExercise(id: string): Promise<void> {
   const userId = await requireSessionUserId();
+  const parsedId = z.string().uuid().safeParse(id);
+  if (!parsedId.success) return;
   try {
-    await deleteCustomExercise(db, userId, id);
+    await deleteCustomExercise(db, userId, parsedId.data);
   } catch {
     // Ownership is enforced server-side in deleteCustomExercise; the button is
     // only rendered for owned exercises, so a failure here is a race/edge case.

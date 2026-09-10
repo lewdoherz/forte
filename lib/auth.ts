@@ -2,6 +2,10 @@ import { betterAuth } from "better-auth";
 import { kyselyAdapter } from "@better-auth/kysely-adapter";
 import type { Kysely } from "kysely";
 import type { Database } from "@/lib/db";
+import { env, isProductionRuntime } from "./env";
+
+/** Development-only fallback; production must set BETTER_AUTH_SECRET. */
+const DEV_AUTH_SECRET = "forte-dev-secret";
 
 /**
  * Better Auth mapped onto the application's `app_user` table (single identity:
@@ -10,9 +14,20 @@ import type { Database } from "@/lib/db";
  * validation is disabled in favour of schema/tests/verify-auth.ts.
  */
 export function createAuth(instance: Kysely<Database>) {
+  // The development fallback below must never apply in production.
+  // assertProductionEnv() rejects a missing secret at server start; this is the
+  // second line of defence for any code path that builds the auth instance first.
+  if (isProductionRuntime && !env.BETTER_AUTH_SECRET) {
+    throw new Error("BETTER_AUTH_SECRET is required in production — see .env.example.");
+  }
+
   return betterAuth({
     database: kyselyAdapter(instance, { type: "postgres" }),
-    secret: process.env.BETTER_AUTH_SECRET ?? "forte-dev-secret",
+    secret: env.BETTER_AUTH_SECRET ?? DEV_AUTH_SECRET,
+    // Absolute origin used for callbacks and redirects. Left undefined locally
+    // so Better Auth derives it from the incoming request; required in
+    // production by assertProductionEnv().
+    baseURL: env.BETTER_AUTH_URL,
     emailAndPassword: { enabled: true },
     user: {
       modelName: "app_user",

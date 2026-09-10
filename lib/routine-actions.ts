@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { db } from "./db";
 import { requireSessionUserId } from "./auth-session";
 import {
@@ -43,8 +44,10 @@ export async function saveRoutine(input: RoutineInput): Promise<RoutineActionSta
 
 export async function deleteRoutine(id: string): Promise<RoutineActionState> {
   const userId = await requireSessionUserId();
+  const parsedId = z.string().uuid().safeParse(id);
+  if (!parsedId.success) return { error: "Invalid routine." };
   try {
-    await deleteRoutineById(db, userId, id);
+    await deleteRoutineById(db, userId, parsedId.data);
     revalidatePath("/routines");
     return {};
   } catch (e) {

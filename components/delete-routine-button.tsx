@@ -17,7 +17,7 @@ export function DeleteRoutineButton({ id }: { id: string }) {
           router.refresh();
         }
       }}
-      className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+      className="flex h-11 items-center rounded-md border border-red-300 px-4 text-sm font-medium text-red-700 hover:bg-red-50"
     >
       Delete
     </button>

@@ -1,41 +1,51 @@
 import { PGlite } from "@electric-sql/pglite";
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { Pool } from "pg";
+import { join } from "node:path";
+import { env } from "../lib/env";
+import { applyMigrations, type SqlTarget } from "./apply-migrations";
 
-const root = dirname(fileURLToPath(import.meta.url)) + "/..";
-const migrationsDir = join(root, "schema", "migrations");
-const dataDir = join(root, ".pglite");
+/**
+ * Applies schema/migrations to whichever database this process is configured
+ * for: `DATABASE_URL` (PostgreSQL) when set, otherwise the local PGlite data
+ * directory. Both paths share one applier so the two dialects cannot drift.
+ */
+const connectionString = env.DATABASE_URL;
 
-const db = new PGlite(dataDir);
-
-await db.exec(
-  `create table if not exists schema_migrations (
-     name text primary key,
-     applied_at timestamptz not null default now()
-   )`,
-);
-
-const applied = new Set(
-  (await db.query<{ name: string }>("select name from schema_migrations")).rows.map(
-    (r) => r.name,
-  ),
-);
-
-const files = readdirSync(migrationsDir)
-  .filter((f) => f.endsWith(".sql"))
-  .sort();
-
-for (const f of files) {
-  if (applied.has(f)) {
-    console.log(`skip   ${f} (already applied)`);
-    continue;
+if (connectionString) {
+  const pool = new Pool({ connectionString });
+  try {
+    const target: SqlTarget = {
+      exec: async (sql) => {
+        await pool.query(sql);
+      },
+      query: async <T>(sql: string, params?: unknown[]) => {
+        // node-postgres constrains its row type to QueryResultRow; the shared
+        // SqlTarget contract is deliberately looser, so narrow here.
+        const result = await pool.query<Record<string, unknown>>(sql, params);
+        return { rows: result.rows as T[] };
+      },
+    };
+    await applyMigrations(target, (line) => console.log(line));
+    // Never echo credentials into build/deploy logs.
+    console.log(`migrations up to date (postgres: ${connectionString.replace(/\/\/[^@/]*@/, "//***:***@")})`);
+  } finally {
+    await pool.end();
   }
-  const sql = readFileSync(join(migrationsDir, f), "utf8");
-  await db.exec(sql);
-  await db.query("insert into schema_migrations (name) values ($1)", [f]);
-  console.log(`apply  ${f}`);
+} else {
+  const pglite = new PGlite(join(process.cwd(), ".pglite"));
+  try {
+    const target: SqlTarget = {
+      exec: async (sql) => {
+        await pglite.exec(sql);
+      },
+      query: async <T>(sql: string, params?: unknown[]) => {
+        const result = await pglite.query<T>(sql, params);
+        return { rows: result.rows };
+      },
+    };
+    await applyMigrations(target, (line) => console.log(line));
+    console.log("migrations up to date (pglite: .pglite)");
+  } finally {
+    await pglite.close();
+  }
 }
-
-await db.close();
-console.log("migrations up to date");

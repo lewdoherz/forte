@@ -48,25 +48,47 @@ export default async function WorkoutPage({
   const stats = summarizeWorkout(workout);
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8">
-      <Link href="/workouts" className="text-sm text-zinc-500 underline">
-        ← Workouts
-      </Link>
+    <main className="mx-auto max-w-2xl px-4 pb-8">
+      {/* Sticky so the timer and finish action stay reachable while logging. */}
+      <div className="sticky top-0 z-30 -mx-4 border-b border-zinc-200 bg-zinc-50/95 px-4 py-2 backdrop-blur">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Link
+            href="/workouts"
+            aria-label="Back to workouts"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-lg text-zinc-600 hover:bg-zinc-200/60"
+          >
+            ←
+          </Link>
+          <h1 className="min-w-0 flex-1 truncate text-base font-semibold sm:text-xl">
+            {workout.title}
+          </h1>
+          {active ? (
+            <span className="shrink-0 text-sm font-medium tabular-nums text-zinc-700">
+              <ElapsedTimer startedAt={workout.started_at.toISOString()} endedAt={null} />
+            </span>
+          ) : null}
+          {active ? (
+            <form action={finishWorkoutFormAction} className="shrink-0">
+              <input type="hidden" name="workoutId" value={workout.id} />
+              <button
+                type="submit"
+                className="h-10 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white"
+              >
+                Finish
+              </button>
+            </form>
+          ) : null}
+        </div>
+      </div>
 
-      <div className="mt-3 flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">{workout.title}</h1>
-        {active ? (
-          <ElapsedTimer startedAt={workout.started_at.toISOString()} endedAt={null} />
-        ) : (
+      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-zinc-500">
+        <span>{formatDateTime(workout.started_at)}</span>
+        {workout.ended_at ? <span>→ {formatDateTime(workout.ended_at)}</span> : null}
+        {!active ? (
           <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
             Completed · {formatDuration(stats.durationSeconds)}
           </span>
-        )}
-      </div>
-
-      <div className="mt-2 text-sm text-zinc-500">
-        {formatDateTime(workout.started_at)}
-        {workout.ended_at ? ` → ${formatDateTime(workout.ended_at)}` : ""}
+        ) : null}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-600">
@@ -81,24 +103,15 @@ export default async function WorkoutPage({
         ) : null}
       </div>
 
-      {active ? (
-        <form action={finishWorkoutFormAction} className="mt-4">
-          <input type="hidden" name="workoutId" value={workout.id} />
-          <button
-            type="submit"
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white"
-          >
-            Finish workout
-          </button>
-        </form>
-      ) : null}
-
       <ol className="mt-6 space-y-4">
         {workout.exercises.map((ex) => (
-          <li key={ex.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-            <div className="flex items-baseline justify-between">
-              <span className="font-medium">{ex.template.title}</span>
-              <span className="text-sm text-zinc-500">
+          <li
+            key={ex.id}
+            className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-4"
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="min-w-0 break-words font-medium">{ex.template.title}</span>
+              <span className="shrink-0 text-sm text-zinc-500">
                 {muscleNames.get(ex.template.primary_muscle) ?? ex.template.primary_muscle}
               </span>
             </div>
@@ -110,13 +123,46 @@ export default async function WorkoutPage({
                 return (
                   <div
                     key={s.id}
-                    className={`rounded-md border p-2 ${done ? "border-green-300 bg-green-50" : "border-zinc-200"}`}
+                    className={`rounded-md border p-2 ${
+                      done ? "border-green-300 bg-green-50" : "border-zinc-200"
+                    }`}
                   >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="w-20 shrink-0 text-xs text-zinc-500">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-zinc-500">
                         {SET_TYPE_LABELS[s.set_type]}
                       </span>
 
+                      {active ? (
+                        <div className="flex shrink-0 items-center gap-1">
+                          {done ? (
+                            <form action={uncompleteSetFormAction}>
+                              <input type="hidden" name="workoutId" value={workout.id} />
+                              <input type="hidden" name="setId" value={s.id} />
+                              <button
+                                type="submit"
+                                aria-label="Undo set completion"
+                                className="flex h-10 min-w-10 items-center justify-center rounded-md text-base text-zinc-600 hover:bg-zinc-200/60"
+                              >
+                                ↺
+                              </button>
+                            </form>
+                          ) : null}
+                          <form action={removeSetFormAction}>
+                            <input type="hidden" name="workoutId" value={workout.id} />
+                            <input type="hidden" name="setId" value={s.id} />
+                            <button
+                              type="submit"
+                              aria-label="Remove set"
+                              className="flex h-10 min-w-10 items-center justify-center rounded-md text-sm text-red-600 hover:bg-red-50"
+                            >
+                              ✕
+                            </button>
+                          </form>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-1">
                       {!active || done ? (
                         <span className="text-sm text-zinc-700">
                           <SetValues set={s} />
@@ -131,27 +177,6 @@ export default async function WorkoutPage({
                           rpe={s.rpe}
                         />
                       )}
-
-                      {active ? (
-                        <div className="ml-auto flex items-center gap-1">
-                          {done ? (
-                            <form action={uncompleteSetFormAction}>
-                              <input type="hidden" name="workoutId" value={workout.id} />
-                              <input type="hidden" name="setId" value={s.id} />
-                              <button type="submit" className="text-xs text-zinc-600 underline">
-                                Undo
-                              </button>
-                            </form>
-                          ) : null}
-                          <form action={removeSetFormAction}>
-                            <input type="hidden" name="workoutId" value={workout.id} />
-                            <input type="hidden" name="setId" value={s.id} />
-                            <button type="submit" className="px-1 text-xs text-red-600">
-                              ✕
-                            </button>
-                          </form>
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                 );
@@ -161,7 +186,10 @@ export default async function WorkoutPage({
                 <form action={addSetFormAction}>
                   <input type="hidden" name="workoutId" value={workout.id} />
                   <input type="hidden" name="workoutExerciseId" value={ex.id} />
-                  <button type="submit" className="text-xs text-zinc-600 underline">
+                  <button
+                    type="submit"
+                    className="h-10 rounded-md border border-dashed border-zinc-300 px-3 text-sm text-zinc-600 hover:bg-zinc-50"
+                  >
                     + Add set
                   </button>
                 </form>

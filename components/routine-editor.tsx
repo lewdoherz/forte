@@ -171,12 +171,35 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
           <ol className="mt-2 space-y-3">
             {exercises.map((ex, i) => (
               <li key={`${ex.template_id}-${i}`} className="rounded-lg border border-zinc-200 p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{i + 1}. {titleById.get(ex.template_id) ?? "Exercise"}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 break-words font-medium">{i + 1}. {titleById.get(ex.template_id) ?? "Exercise"}</span>
                   <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => moveExercise(i, -1)} disabled={i === 0} className="rounded border px-2 py-0.5 text-sm disabled:opacity-40">↑</button>
-                    <button type="button" onClick={() => moveExercise(i, 1)} disabled={i === exercises.length - 1} className="rounded border px-2 py-0.5 text-sm disabled:opacity-40">↓</button>
-                    <button type="button" onClick={() => removeExercise(i)} className="rounded border border-red-200 px-2 py-0.5 text-sm text-red-700">✕</button>
+                    <button
+                      type="button"
+                      onClick={() => moveExercise(i, -1)}
+                      disabled={i === 0}
+                      aria-label="Move exercise up"
+                      className="flex h-9 w-9 items-center justify-center rounded border text-sm disabled:opacity-40"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveExercise(i, 1)}
+                      disabled={i === exercises.length - 1}
+                      aria-label="Move exercise down"
+                      className="flex h-9 w-9 items-center justify-center rounded border text-sm disabled:opacity-40"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeExercise(i)}
+                      aria-label="Remove exercise"
+                      className="flex h-9 w-9 items-center justify-center rounded border border-red-200 text-sm text-red-700"
+                    >
+                      ✕
+                    </button>
                   </div>
                 </div>
 
@@ -207,7 +230,8 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
                       <select
                         value={s.set_type}
                         onChange={(e) => patchSet(i, j, { set_type: e.target.value as SetType })}
-                        className="rounded border border-zinc-300 px-2 py-1"
+                        aria-label="Set type"
+                        className="h-10 rounded border border-zinc-300 px-2"
                       >
                         {SET_TYPES.map((t) => (
                           <option key={t} value={t}>{SET_TYPE_LABELS[t]}</option>
@@ -215,25 +239,40 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
                       </select>
                       <input
                         type="number"
+                        inputMode="numeric"
                         min={0}
                         placeholder="reps"
+                        aria-label="Reps"
                         value={s.reps}
                         onChange={(e) => patchSet(i, j, { reps: e.target.value })}
-                        className="w-20 rounded border border-zinc-300 px-2 py-1"
+                        className="h-10 w-20 rounded border border-zinc-300 px-2"
                       />
                       <input
                         type="number"
+                        inputMode="decimal"
                         min={0}
                         step="0.001"
                         placeholder="kg"
+                        aria-label="Weight in kilograms"
                         value={s.weight_kg}
                         onChange={(e) => patchSet(i, j, { weight_kg: e.target.value })}
-                        className="w-20 rounded border border-zinc-300 px-2 py-1"
+                        className="h-10 w-20 rounded border border-zinc-300 px-2"
                       />
-                      <button type="button" onClick={() => removeSet(i, j)} className="text-xs text-red-600">remove</button>
+                      <button
+                        type="button"
+                        onClick={() => removeSet(i, j)}
+                        aria-label="Remove set"
+                        className="flex h-10 items-center rounded px-2 text-xs text-red-600 hover:bg-red-50"
+                      >
+                        remove
+                      </button>
                     </div>
                   ))}
-                  <button type="button" onClick={() => addSet(i)} className="text-xs text-zinc-600 underline">
+                  <button
+                    type="button"
+                    onClick={() => addSet(i)}
+                    className="flex h-10 items-center rounded border border-dashed border-zinc-300 px-3 text-sm text-zinc-600 hover:bg-zinc-50"
+                  >
                     + Add set
                   </button>
                 </div>
@@ -261,7 +300,7 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
                 <button
                   type="button"
                   onClick={() => addExercise(e.id)}
-                  className="rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100"
+                  className="flex h-9 shrink-0 items-center rounded border border-zinc-300 px-3 text-xs hover:bg-zinc-100"
                 >
                   Add
                 </button>
@@ -276,7 +315,7 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
           type="button"
           onClick={onSave}
           disabled={saving}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          className="h-11 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-60"
         >
           {saving ? "Saving…" : initial ? "Save changes" : "Create routine"}
         </button>

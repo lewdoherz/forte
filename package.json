@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "bun run scripts/migrate.ts",
-    "db:verify": "bun run schema/tests/verify-schema.ts && bun run schema/tests/verify-social.ts && bun run schema/tests/verify-auth.ts && bun run schema/tests/verify-auth-flow.ts && bun run schema/tests/verify-exercises.ts && bun run schema/tests/verify-routines.ts && bun run schema/tests/verify-workouts.ts && bun run schema/tests/verify-history.ts && bun run schema/tests/verify-progress.ts",
+    "db:verify": "bun run schema/tests/verify-schema.ts && bun run schema/tests/verify-social.ts && bun run schema/tests/verify-auth.ts && bun run schema/tests/verify-auth-flow.ts && bun run schema/tests/verify-exercises.ts && bun run schema/tests/verify-routines.ts && bun run schema/tests/verify-workouts.ts && bun run schema/tests/verify-history.ts && bun run schema/tests/verify-progress.ts && bun run schema/tests/verify-timezone.ts",
+    "db:verify:postgres": "bun run scripts/verify-postgres.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "embedded-postgres": "^18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Kysely } from "kysely";
 import type { Database } from "./db";
 import type { SetType } from "@/schema/types";
+import { DEFAULT_TIME_ZONE, startOfLocalDay } from "./timezone";
 
 export const PROGRESS_RANGES = ["all", "30d", "90d", "1y"] as const;
 export type ProgressRange = (typeof PROGRESS_RANGES)[number];
@@ -18,14 +19,23 @@ export const progressQuerySchema = z.object({
   range: z.enum(PROGRESS_RANGES),
 });
 
-/** Inclusive lower bound for a range, or null for all time. */
-export function rangeStart(range: ProgressRange, now: Date = new Date()): Date | null {
+/**
+ * Inclusive lower bound for a range, or null for all time.
+ *
+ * The bound is the start of the user's LOCAL calendar day, so "last 30 days"
+ * means 30 local days rather than 30 × 24h from an arbitrary server instant.
+ * Pass the user's stored zone; the default is an explicit UTC, never the
+ * server's ambient zone.
+ */
+export function rangeStart(
+  range: ProgressRange,
+  now: Date = new Date(),
+  timeZone: string = DEFAULT_TIME_ZONE,
+): Date | null {
   if (range === "all") return null;
-  const start = new Date(now);
-  if (range === "30d") start.setDate(start.getDate() - 30);
-  else if (range === "90d") start.setDate(start.getDate() - 90);
-  else start.setFullYear(start.getFullYear() - 1);
-  return start;
+  if (range === "30d") return startOfLocalDay(now, timeZone, { days: -30 });
+  if (range === "90d") return startOfLocalDay(now, timeZone, { days: -90 });
+  return startOfLocalDay(now, timeZone, { years: -1 });
 }
 
 /**
@@ -52,14 +62,16 @@ export interface CompletedSetRow {
 /**
  * Completed sets of one exercise for one user's completed workouts,
  * chronological. Owner-scoped: no other user's data can be reached.
+ * `timeZone` is the owner's stored zone, used for the range lower bound.
  */
 export async function getCompletedSetRows(
   db: Kysely<Database>,
   userId: string,
   templateId: string,
   range: ProgressRange,
+  timeZone: string = DEFAULT_TIME_ZONE,
 ): Promise<CompletedSetRow[]> {
-  const since = rangeStart(range);
+  const since = rangeStart(range, new Date(), timeZone);
   let query = db
     .selectFrom("workout_set as ws")
     .innerJoin("workout_exercise as we", "we.id", "ws.workout_exercise_id")

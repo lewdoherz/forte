@@ -27,6 +27,22 @@ function message(e: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * Builds the workout revalidation path from a form, accepting the id only when
+ * it is a well-formed uuid.
+ *
+ * This value is attacker-controlled and exists solely as a cache key — the
+ * mutation itself is authorized on the set/exercise id, never on this field.
+ * It is validated anyway so an untrusted string is never interpolated into a
+ * path, and so the field cannot quietly become trusted after a later refactor.
+ */
+function workoutPathFromForm(formData: FormData): string | null {
+  const parsed = finishWorkoutInputSchema.safeParse({
+    workoutId: String(formData.get("workoutId") ?? ""),
+  });
+  return parsed.success ? `/workouts/${parsed.data.workoutId}` : null;
+}
+
 export async function startWorkoutFormAction(formData: FormData): Promise<void> {
   const userId = await requireSessionUserId();
   const routineId = String(formData.get("routineId") ?? "");
@@ -47,7 +63,7 @@ export async function logSetFormAction(
   formData: FormData,
 ): Promise<LogSetState> {
   const userId = await requireSessionUserId();
-  const workoutId = String(formData.get("workoutId") ?? "");
+  const workoutPath = workoutPathFromForm(formData);
   const repsRaw = formData.get("reps");
   const parsed = logSetInputSchema.safeParse({
     setId: String(formData.get("setId") ?? ""),
@@ -63,13 +79,13 @@ export async function logSetFormAction(
   } catch (e) {
     return { error: message(e, "Could not save this set.") };
   }
-  revalidatePath(`/workouts/${workoutId}`);
+  if (workoutPath) revalidatePath(workoutPath);
   return {};
 }
 
 export async function uncompleteSetFormAction(formData: FormData): Promise<void> {
   const userId = await requireSessionUserId();
-  const workoutId = String(formData.get("workoutId") ?? "");
+  const workoutPath = workoutPathFromForm(formData);
   const parsed = setIdSchema.safeParse({ setId: String(formData.get("setId") ?? "") });
   if (!parsed.success) return;
   try {
@@ -77,12 +93,12 @@ export async function uncompleteSetFormAction(formData: FormData): Promise<void>
   } catch {
     return;
   }
-  revalidatePath(`/workouts/${workoutId}`);
+  if (workoutPath) revalidatePath(workoutPath);
 }
 
 export async function addSetFormAction(formData: FormData): Promise<void> {
   const userId = await requireSessionUserId();
-  const workoutId = String(formData.get("workoutId") ?? "");
+  const workoutPath = workoutPathFromForm(formData);
   const parsed = addSetInputSchema.safeParse({
     workoutExerciseId: String(formData.get("workoutExerciseId") ?? ""),
   });
@@ -92,12 +108,12 @@ export async function addSetFormAction(formData: FormData): Promise<void> {
   } catch {
     return;
   }
-  revalidatePath(`/workouts/${workoutId}`);
+  if (workoutPath) revalidatePath(workoutPath);
 }
 
 export async function removeSetFormAction(formData: FormData): Promise<void> {
   const userId = await requireSessionUserId();
-  const workoutId = String(formData.get("workoutId") ?? "");
+  const workoutPath = workoutPathFromForm(formData);
   const parsed = setIdSchema.safeParse({ setId: String(formData.get("setId") ?? "") });
   if (!parsed.success) return;
   try {
@@ -105,7 +121,7 @@ export async function removeSetFormAction(formData: FormData): Promise<void> {
   } catch {
     return;
   }
-  revalidatePath(`/workouts/${workoutId}`);
+  if (workoutPath) revalidatePath(workoutPath);
 }
 
 export async function finishWorkoutFormAction(formData: FormData): Promise<void> {

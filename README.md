@@ -32,6 +32,25 @@ analytics with personal records.
   Editing a routine never changes a started workout, and completed workouts are immutable.
 - **Analytics are derived.** PRs, volume and progression are computed from completed
   sets — never stored as authoritative records.
+- **Mobile shell.** Below `sm` the primary navigation is a fixed bottom bar
+  (`components/bottom-nav.tsx`); the desktop header nav is hidden. The bar is omitted
+  entirely on `/workouts/[id]` so the logger's sticky control bar owns the bottom of the
+  screen. Safe areas come from `viewportFit: "cover"` plus
+  `pb-[env(safe-area-inset-bottom)]`. There is deliberately **no service worker** — no
+  offline or background sync.
+- **PWA icons are generated, not assets.** `next/og` renders a neutral monogram
+  (`components/forte-mark.tsx`) into PNGs at request/build time, so no binary image
+  files are checked in.
+- **Configuration is validated in one place.** `lib/env.ts` is the single source of
+  truth (zod). Development stays zero-config; a production server refuses to start
+  without `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`
+  (`assertProductionEnv()`, called from `instrumentation.ts`). The `next build`
+  phase is deliberately exempt so builds do not need runtime secrets.
+- **Calendar bucketing uses the user's stored timezone.** Instants are absolute
+  (`timestamptz`); every conversion into a calendar concept — a day boundary, a
+  range lower bound, a rendered date — goes through `lib/timezone.ts` using
+  `app_user.timezone`. The zone is a stored preference, never inferred per request
+  from the browser, so analytics bucketing is stable and server-computable.
 
 ## Progress
 
@@ -46,6 +65,8 @@ analytics with personal records.
 | 8 | Active workout logger (`/workouts/[id]`, set logging, completion, finish) | done |
 | 9 | Workout history (`/workouts` list + read-only completed detail) | done |
 | 10 | Progress analytics + PRs (`/progress`, Epley 1RM, charts) | done |
+| 11 | Mobile-first shell (bottom nav, safe areas, touch targets) + installable PWA (manifest, generated icons) | done |
+| 12 | Production readiness: validated env, secret hardening, timezone-aware analytics, account settings, PostgreSQL path verified | done |
 
 ## Routes
 
@@ -57,7 +78,9 @@ analytics with personal records.
 | `/routines`, `/routines/[id]`, `/routines/new`, `/routines/[id]/edit` | Routine templates |
 | `/workouts`, `/workouts/[id]` | History list / active logger or completed detail |
 | `/progress` | Per-exercise analytics and PRs |
+| `/account` | Account settings (display name, IANA timezone) |
 | `/api/auth/[...all]` | Better Auth handler |
+| `/manifest.webmanifest`, `/icon`, `/apple-icon`, `/pwa-icon/[size]` | Generated PWA manifest and icons |
 
 ## Data model (highlights)
 
@@ -89,6 +112,7 @@ bun run typecheck    # tsc --noEmit
 bun run lint         # eslint
 bun run db:migrate   # apply SQL migrations
 bun run db:verify    # run all schema/feature verification suites
+bun run db:verify:postgres  # same suites against a temporary real PostgreSQL
 ```
 
 ## Testing
@@ -103,7 +127,14 @@ Verification suites live in `schema/tests/` and run against a real PostgreSQL (P
 - `verify-workouts` — start/snapshot, set logging, completion, ownership, historical identity
 - `verify-history` — history list, ordering, read-only enforcement, summaries
 - `verify-progress` — PRs, Epley 1RM, volume, ranges, ownership
+- `verify-timezone` — local day boundaries, DST transitions, range lower bounds, end-to-end bucketing
 
 ```bash
 bun run db:verify
 ```
+
+Every suite runs against in-memory PGlite by default. Set `TEST_DATABASE_URL` to
+run them against PostgreSQL instead (`TEST_DATABASE_URL=... bun run db:verify`) —
+the suites never read `DATABASE_URL`, so they cannot be aimed at a real database
+by accident. See [DEPLOYMENT.md](DEPLOYMENT.md) for deployment and the dialect
+differences this uncovered.

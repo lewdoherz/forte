@@ -2,6 +2,7 @@ import { Kysely, PGliteDialect, PostgresDialect, type Generated } from "kysely";
 import { PGlite } from "@electric-sql/pglite";
 import { Pool } from "pg";
 import { join } from "node:path";
+import { env } from "./env";
 import type {
   Account,
   AppUser,
@@ -21,7 +22,9 @@ import type {
  * schema; Kysely is the query layer only.
  */
 export interface Database {
-  app_user: AppUser;
+  // `timezone` (0006_user_timezone.sql) is application-only: it is not part of
+  // Better Auth's user model, so it is not on the shared `AppUser` row type.
+  app_user: AppUser & { timezone: string };
   session: Session;
   account: Account;
   verification: Verification;
@@ -120,7 +123,7 @@ export interface Database {
 const globalForDb = globalThis as unknown as { __forteDb?: Kysely<Database> };
 
 function createDb(): Kysely<Database> {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString = env.DATABASE_URL;
   if (connectionString) {
     return new Kysely<Database>({
       dialect: new PostgresDialect({ pool: new Pool({ connectionString }) }),

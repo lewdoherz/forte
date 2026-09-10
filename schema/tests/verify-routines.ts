@@ -1,8 +1,3 @@
-import { PGlite } from "@electric-sql/pglite";
-import { Kysely, PGliteDialect } from "kysely";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   createRoutine,
   deleteRoutine,
@@ -12,10 +7,8 @@ import {
   updateRoutine,
 } from "../../lib/routines";
 import { createCustomExercise } from "../../lib/exercises";
-import type { Database } from "../../lib/db";
+import { createTestDatabase } from "./harness";
 
-const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations") + "/";
-const pglite = new PGlite();
 let failed = 0;
 const out: string[] = [];
 
@@ -34,15 +27,11 @@ async function expectThrow(label: string, fn: () => Promise<unknown>) {
   }
 }
 
-for (const f of ["0001_init.sql", "0002_seed_vocabularies.sql", "0003_social.sql", "0004_auth.sql", "0005_seed_exercises.sql"]) {
-  await pglite.exec(readFileSync(MIG + f, "utf8"));
-}
-check("0001-0005 apply", true);
-
-const db = new Kysely<Database>({ dialect: new PGliteDialect({ pglite }) });
+const { db, query, close, dialect } = await createTestDatabase();
+check(`schema migrations apply (${dialect})`, true);
 
 const mkUser = async (email: string) =>
-  (await pglite.query<{ id: string }>(`insert into app_user (email) values ($1) returning id`, [email])).rows[0].id;
+  (await query<{ id: string }>(`insert into app_user (email) values ($1) returning id`, [email])).rows[0].id;
 
 const alice = await mkUser("alice@example.com");
 const bob = await mkUser("bob@example.com");
@@ -186,6 +175,7 @@ check(
 await deleteRoutine(db, alice, created.id);
 check("delete own routine", (await getRoutineTree(db, created.id, alice)) === undefined);
 
+await close();
 console.log(out.join("\n"));
 console.log(`\n${out.length - failed}/${out.length} checks passed`);
 process.exit(failed ? 1 : 0);

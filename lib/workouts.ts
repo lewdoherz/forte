@@ -135,7 +135,15 @@ export async function getWorkoutTree(
 
   const templateIds = exercises.map((e) => e.template_id);
   const templates = templateIds.length
-    ? await db.selectFrom("exercise_template").selectAll().where("id", "in", templateIds).execute()
+    ? await db
+        .selectFrom("exercise_template")
+        .selectAll()
+        .where("id", "in", templateIds)
+        // Same visibility rule the write path enforces: global rows plus the
+        // caller's own. Without it a reference to a foreign template would
+        // render that user's exercise.
+        .where((eb) => eb.or([eb("owner_id", "is", null), eb("owner_id", "=", userId)]))
+        .execute()
     : [];
   const templateMap = new Map(templates.map((t) => [t.id, t]));
 
@@ -179,16 +187,6 @@ async function setWorkoutOwner(db: Kysely<Database>, setId: string) {
     .executeTakeFirst();
 }
 
-/** Returns the owner + completion state of the workout an exercise belongs to. */
-async function exerciseWorkoutOwner(db: Kysely<Database>, exerciseId: string) {
-  return db
-    .selectFrom("workout_exercise as we")
-    .innerJoin("workout as w", "w.id", "we.workout_id")
-    .select(["w.owner_id", "w.ended_at"])
-    .where("we.id", "=", exerciseId)
-    .executeTakeFirst();
-}
-
 function assertActiveOwned(
   ctx: { owner_id: string; ended_at: Date | null } | undefined,
   userId: string,
@@ -196,6 +194,24 @@ function assertActiveOwned(
   if (!ctx) throw new Error("not_found");
   if (ctx.owner_id !== userId) throw new Error("not_authorized");
   if (ctx.ended_at !== null) throw new Error("not_active");
+}
+
+/**
+ * Subquery of `workout_exercise` ids belonging to an active workout owned by
+ * `userId`.
+ *
+ * Mutations apply this to the WRITE itself, not only to a preceding read, so
+ * ownership/state cannot change between an authorization check and its write.
+ * The preceding checks are kept because they produce accurate errors; this is
+ * the enforcement that cannot be raced.
+ */
+function ownedActiveExerciseIds(db: Kysely<Database>, userId: string) {
+  return db
+    .selectFrom("workout_exercise as we")
+    .innerJoin("workout as w", "w.id", "we.workout_id")
+    .select("we.id")
+    .where("w.owner_id", "=", userId)
+    .where("w.ended_at", "is", null);
 }
 
 /** Records actual values and marks the set completed. */
@@ -210,6 +226,7 @@ export async function logSet(db: Kysely<Database>, userId: string, input: LogSet
       completed_at: new Date(),
     })
     .where("id", "=", input.setId)
+    .where("workout_exercise_id", "in", ownedActiveExerciseIds(db, userId))
     .returningAll()
     .executeTakeFirstOrThrow();
 }
@@ -221,40 +238,60 @@ export async function uncompleteSet(db: Kysely<Database>, userId: string, setId:
     .updateTable("workout_set")
     .set({ completed_at: null })
     .where("id", "=", setId)
+    .where("workout_exercise_id", "in", ownedActiveExerciseIds(db, userId))
     .returningAll()
     .executeTakeFirstOrThrow();
 }
 
 /** Appends an empty set to an exercise in an active, owned workout. */
 export async function addSet(db: Kysely<Database>, userId: string, workoutExerciseId: string) {
-  await assertActiveOwned(await exerciseWorkoutOwner(db, workoutExerciseId), userId);
-  const pos = await db
-    .selectFrom("workout_set")
-    .select((eb) => eb.fn.coalesce(eb.fn.max("position"), eb.val(-1)).as("m"))
-    .where("workout_exercise_id", "=", workoutExerciseId)
-    .executeTakeFirst();
-  const nextPosition = (pos?.m ?? -1) + 1;
-  return db
-    .insertInto("workout_set")
-    .values({
-      workout_exercise_id: workoutExerciseId,
-      position: nextPosition,
-      set_type: "normal",
-      reps: null,
-      weight_kg: null,
-      duration_seconds: null,
-      distance_meters: null,
-      rpe: null,
-      completed_at: null,
-    })
-    .returningAll()
-    .executeTakeFirstOrThrow();
+  // Single transaction with the parent row locked: the ownership/state check,
+  // the position read and the insert cannot interleave — neither with a
+  // concurrent add (which would collide on workout_set_position_key) nor with a
+  // concurrent finish that would close the workout mid-append.
+  return db.transaction().execute(async (trx) => {
+    const parent = await trx
+      .selectFrom("workout_exercise as we")
+      .innerJoin("workout as w", "w.id", "we.workout_id")
+      .select(["w.owner_id", "w.ended_at"])
+      .where("we.id", "=", workoutExerciseId)
+      .forUpdate()
+      .executeTakeFirst();
+    assertActiveOwned(parent, userId);
+
+    const pos = await trx
+      .selectFrom("workout_set")
+      .select((eb) => eb.fn.coalesce(eb.fn.max("position"), eb.val(-1)).as("m"))
+      .where("workout_exercise_id", "=", workoutExerciseId)
+      .executeTakeFirst();
+    const nextPosition = (pos?.m ?? -1) + 1;
+
+    return trx
+      .insertInto("workout_set")
+      .values({
+        workout_exercise_id: workoutExerciseId,
+        position: nextPosition,
+        set_type: "normal",
+        reps: null,
+        weight_kg: null,
+        duration_seconds: null,
+        distance_meters: null,
+        rpe: null,
+        completed_at: null,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  });
 }
 
 /** Removes a set from an active, owned workout. */
 export async function removeSet(db: Kysely<Database>, userId: string, setId: string) {
   await assertActiveOwned(await setWorkoutOwner(db, setId), userId);
-  await db.deleteFrom("workout_set").where("id", "=", setId).execute();
+  await db
+    .deleteFrom("workout_set")
+    .where("id", "=", setId)
+    .where("workout_exercise_id", "in", ownedActiveExerciseIds(db, userId))
+    .execute();
 }
 
 /** Marks an active workout finished by stamping ended_at. */
@@ -272,8 +309,25 @@ export async function finishWorkout(db: Kysely<Database>, userId: string, workou
     .updateTable("workout")
     .set({ ended_at: new Date() })
     .where("id", "=", workoutId)
+    .where("owner_id", "=", userId)
+    .where("ended_at", "is", null)
     .returningAll()
     .executeTakeFirstOrThrow();
+}
+
+/**
+ * The user's most recent still-active workout, or undefined. Lightweight
+ * (indexed on owner_id, started_at) — used by the app shell to offer a resume
+ * affordance without loading history.
+ */
+export function getActiveWorkout(db: Kysely<Database>, userId: string) {
+  return db
+    .selectFrom("workout")
+    .select(["id", "title", "started_at"])
+    .where("owner_id", "=", userId)
+    .where("ended_at", "is", null)
+    .orderBy("started_at", "desc")
+    .executeTakeFirst();
 }
 
 /** Maximum completed workouts returned by the v1 history list. */

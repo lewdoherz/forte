@@ -19,45 +19,54 @@ export function SetForm({
   const [state, formAction, pending] = useActionState(logSetFormAction, null);
 
   return (
-    <form action={formAction} className="flex flex-wrap items-center gap-2">
+    <form
+      action={formAction}
+      className="grid grid-cols-2 gap-2 sm:grid-cols-[5rem_5rem_5rem_auto]"
+    >
       <input type="hidden" name="workoutId" value={workoutId} />
       <input type="hidden" name="setId" value={setId} />
       <input
         type="number"
         name="reps"
+        inputMode="numeric"
         min={0}
         defaultValue={reps ?? ""}
         placeholder="reps"
-        className="w-20 rounded border border-zinc-300 px-2 py-1 text-sm"
+        aria-label="Reps"
+        className="h-11 min-w-0 rounded-md border border-zinc-300 px-3 text-sm"
       />
       <input
         type="number"
         name="weight_kg"
+        inputMode="decimal"
         min={0}
         step="0.001"
         defaultValue={weight ?? ""}
         placeholder="kg"
-        className="w-20 rounded border border-zinc-300 px-2 py-1 text-sm"
+        aria-label="Weight in kilograms"
+        className="h-11 min-w-0 rounded-md border border-zinc-300 px-3 text-sm"
       />
       <input
         type="number"
         name="rpe"
+        inputMode="decimal"
         min={1}
         max={10}
         step="0.5"
         defaultValue={rpe ?? ""}
         placeholder="RPE"
-        className="w-16 rounded border border-zinc-300 px-2 py-1 text-sm"
+        aria-label="Rate of perceived exertion"
+        className="h-11 min-w-0 rounded-md border border-zinc-300 px-3 text-sm"
       />
       <button
         type="submit"
         disabled={pending}
-        className="rounded bg-zinc-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
+        className="h-11 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-60"
       >
         {pending ? "…" : "Done"}
       </button>
       {state?.error ? (
-        <span role="alert" className="w-full text-xs text-red-600">
+        <span role="alert" className="col-span-full text-xs text-red-600">
           {state.error}
         </span>
       ) : null}

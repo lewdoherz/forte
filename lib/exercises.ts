@@ -137,10 +137,21 @@ export async function updateCustomExercise(
       equipment: input.equipment,
     })
     .where("id", "=", id)
+    .where("is_custom", "=", true)
+    .where("owner_id", "=", userId)
     .returningAll()
     .executeTakeFirstOrThrow();
 }
 
+/**
+ * Removes a custom exercise from the owner's library.
+ *
+ * A template referenced by a routine or a logged workout cannot be physically
+ * deleted (`routine_exercise.template_id` / `workout_exercise.template_id` are
+ * `NO ACTION`), and history must keep resolving it. Such a template is archived
+ * instead — it disappears from the library while existing routines and workouts
+ * keep working. This mirrors the behaviour asserted in schema/tests/verify-schema.ts.
+ */
 export async function deleteCustomExercise(db: Kysely<Database>, userId: string, id: string) {
   const existing = await db
     .selectFrom("exercise_template")
@@ -151,5 +162,24 @@ export async function deleteCustomExercise(db: Kysely<Database>, userId: string,
   if (!existing) throw new Error("not_found");
   if (!existing.is_custom || existing.owner_id !== userId) throw new Error("not_authorized");
 
-  await db.deleteFrom("exercise_template").where("id", "=", id).execute();
+  const [usedInRoutine, usedInWorkout] = await Promise.all([
+    db.selectFrom("routine_exercise").select("id").where("template_id", "=", id).executeTakeFirst(),
+    db.selectFrom("workout_exercise").select("id").where("template_id", "=", id).executeTakeFirst(),
+  ]);
+
+  if (usedInRoutine || usedInWorkout) {
+    await db
+      .updateTable("exercise_template")
+      .set({ archived_at: new Date() })
+      .where("id", "=", id)
+      .where("owner_id", "=", userId)
+      .execute();
+    return;
+  }
+
+  await db
+    .deleteFrom("exercise_template")
+    .where("id", "=", id)
+    .where("owner_id", "=", userId)
+    .execute();
 }

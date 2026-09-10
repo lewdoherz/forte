@@ -44,6 +44,9 @@ next-env.d.ts
 # pglite local dev database
 .pglite/
 
+# embedded PostgreSQL data directory (db:verify:postgres harness, disposable)
+.pgdata*/
+
 # hevy reference workspace — never commit the API key or third-party media
 hevy/.hevy-key
 hevy/Exercise vids/

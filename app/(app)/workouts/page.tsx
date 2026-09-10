@@ -22,7 +22,7 @@ export default async function WorkoutsPage() {
                 className="flex items-center justify-between gap-4 rounded-xl border border-amber-300 bg-amber-50 p-4"
               >
                 <div className="min-w-0">
-                  <Link href={`/workouts/${w.id}`} className="font-medium hover:underline">
+                  <Link href={`/workouts/${w.id}`} className="break-words font-medium hover:underline">
                     {w.title}
                   </Link>
                   <div className="text-sm text-zinc-600">
@@ -31,7 +31,7 @@ export default async function WorkoutsPage() {
                 </div>
                 <Link
                   href={`/workouts/${w.id}`}
-                  className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white"
+                  className="flex h-10 shrink-0 items-center rounded-md bg-zinc-900 px-4 text-sm font-medium text-white"
                 >
                   Resume
                 </Link>
@@ -69,7 +69,7 @@ export default async function WorkoutsPage() {
                     href={`/workouts/${w.id}`}
                     className="block rounded-xl border border-zinc-200 bg-white p-4 shadow-sm hover:border-zinc-400"
                   >
-                    <div className="font-medium">{w.title}</div>
+                    <div className="break-words font-medium">{w.title}</div>
                     <div className="mt-1 text-sm text-zinc-500">
                       {formatDateTime(w.started_at)} · {formatDuration(seconds)} ·{" "}
                       {w.exercise_count} {w.exercise_count === 1 ? "exercise" : "exercises"} ·{" "}
