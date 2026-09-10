@@ -62,11 +62,20 @@ jobs:
 
       - name: Sign in, and inspect cookie attributes
         run: |
-          curl -sS -D signin.headers -o /dev/null -X POST "$BASE/api/auth/sign-in/email" \
+          curl -sS -D signin.headers -c /tmp/jar -o /dev/null -X POST "$BASE/api/auth/sign-in/email" \
             -H 'content-type: application/json' \
             -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
           printf 'status: %s\n' "$(head -1 signin.headers)"
           grep -i '^set-cookie' signin.headers | sed -E 's/=[^;]+;/=<redacted>;/'
+
+      # Runs before the rate-limit step: that step blocks this runner's IP for
+      # /sign-in/email, which would leave this request unauthenticated.
+      - name: Not-found boundary, signed in
+        run: |
+          curl -sS -b /tmp/jar -o /tmp/i.html -w 'status:      %{http_code}\n' \
+            "$BASE/workouts/00000000-0000-4000-8000-000000000000"
+          printf 'nested-copy: %s\n' "$(grep -o 'belongs to another account' /tmp/i.html | head -1)"
+          printf 'nav:         %s\n' "$(grep -c 'aria-label="Primary"' /tmp/i.html)"
 
       - name: Rate limiting is enforced
         run: |
@@ -79,14 +88,3 @@ jobs:
           printf 'body: %s\n' "$(curl -sS -X POST "$BASE/api/auth/sign-in/email" \
             -H 'content-type: application/json' \
             -d '{"email":"step16-rate-limit@example.com","password":"definitely-not-the-password"}')"
-
-      - name: Not-found boundary, signed in
-        run: |
-          curl -sS -c /tmp/jar -o /dev/null -X POST "$BASE/api/auth/sign-in/email" \
-            -H 'content-type: application/json' \
-            -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
-          code=$(curl -sS -b /tmp/jar -o /tmp/i.html -w '%{http_code}' \
-            "$BASE/workouts/00000000-0000-4000-8000-000000000000")
-          printf 'status:      %s\n' "$code"
-          printf 'nested-copy: %s\n' "$(grep -o 'belongs to another account' /tmp/i.html | head -1)"
-          printf 'nav:         %s\n' "$(grep -c 'aria-label="Primary"' /tmp/i.html)"
