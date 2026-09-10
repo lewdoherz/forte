@@ -86,6 +86,15 @@ async function createPostgres(adminUrl: string): Promise<TestDatabase> {
     query,
     close: async () => {
       await db.destroy();
+      // Leave no trace: the scratch database is dropped once the suite is done.
+      // Without this a run against a managed server accumulates stranded
+      // databases — it did, the first time the suite was pointed at a real one.
+      const admin = new Pool({ connectionString: adminUrl });
+      try {
+        await admin.query(`drop database if exists ${TEST_DATABASE_NAME} with (force)`);
+      } finally {
+        await admin.end();
+      }
     },
   };
 }
