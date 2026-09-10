@@ -1,7 +1,6 @@
 -- ---------------------------------------------------------------------------
 -- 0001_init.sql — core domain schema for a workout tracker
 --
--- Derived from the structure documented in ../hevy-structure/06-design-guidance.md.
 -- Target: PostgreSQL 13+ (uses core gen_random_uuid(); no extensions required).
 --
 -- Run with any plain-SQL migration runner (dbmate, node-pg-migrate, Flyway,
@@ -25,9 +24,9 @@ create type set_type as enum ('warmup', 'normal', 'failure', 'dropset');
 
 create type workout_visibility as enum ('public', 'followers', 'private');
 
--- The union of Hevy's catalog vocabulary. Note their public API exposes a
--- *differently named* 8-value set (e.g. bodyweight_assisted_reps); we
--- standardise on one vocabulary and map at the edge.
+-- The full vocabulary for how a set is measured. External APIs expose
+-- *differently named* subsets (e.g. bodyweight_assisted_reps); this schema
+-- standardises on one vocabulary and maps at the edge.
 create type exercise_type as enum (
   'weight_reps',
   'bodyweight_reps',
@@ -204,8 +203,8 @@ create table routine_set (
 
 comment on table routine_set is
   'Prescription only. Results live in workout_set — the two are intentionally '
-  'separate types (Hevy does the same in its public API) so that result-only '
-  'fields such as rpe, completed_at and PRs cannot leak into a plan.';
+  'separate types so that result-only fields such as rpe, completed_at and PRs '
+  'cannot leak into a plan.';
 
 -- ===========================================================================
 -- Workouts (results, immutable in spirit)

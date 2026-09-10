@@ -353,9 +353,9 @@ export interface WorkoutTree extends Workout {
 }
 
 /**
- * Write DTO for creating/updating a routine in one shot (the shape a
- * "save routine" mutation needs; mirrors the nested request body Hevy's own
- * public API uses).
+ * Write DTO for creating/updating a routine in one shot: the nested shape a
+ * "save routine" mutation needs, so the whole tree can be replaced atomically
+ * rather than patched exercise by exercise.
  */
 export interface RoutineDraft {
   title: string;

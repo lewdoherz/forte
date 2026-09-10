@@ -47,6 +47,19 @@ analytics with personal records.
   outcomes (an ownership check, a stale page) are filtered out so real ones are not
   buried. The log never carries error messages, which can embed SQL, parameters or
   connection strings.
+- **Authentication is rate limited, and the limits are persisted.** Better Auth rate
+  limits in production; its store is moved to the database (`rate_limit`, migration
+  0009) so limits survive a deploy and are shared between instances, and the password
+  endpoints carry their own rules instead of the global traffic allowance. The client
+  IP is read from forwarded headers, so trusting them is **opt-in** via
+  `TRUSTED_PROXY_CIDRS`: without trusted proxy addresses a single-value
+  `X-Forwarded-For` is accepted from any caller (a fresh value per request is a fresh
+  bucket, so the limit is bypassed), while a multi-hop chain is refused outright (every
+  caller then shares one bucket, so one abusive client can lock everyone out). The
+  server warns at startup when the variable is unset.
+- **Sessions are visible and revocable.** `/account` lists the devices that can reach
+  the account and can end any of them, through Better Auth's own session APIs rather
+  than direct SQL.
 - **Mobile shell.** Below `sm` the primary navigation is a fixed bottom bar
   (`components/bottom-nav.tsx`); the desktop header nav is hidden. The bar is omitted
   entirely on `/workouts/[id]` so the logger's sticky control bar owns the bottom of the
@@ -84,6 +97,7 @@ analytics with personal records.
 | 12 | Production readiness: validated env, secret hardening, timezone-aware analytics, account settings, PostgreSQL path verified | done |
 | 13 | Operability: CI, failure boundaries, structured logging, opt-in dev seed, SQL-aggregated analytics | done |
 | 14 | Logger depth: snapshotted rest target with a rest timer, and superset grouping | done |
+| 15 | Auth hardening: database-backed rate limiting with per-endpoint rules, and session management | done |
 
 ## Routes
 

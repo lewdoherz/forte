@@ -6,8 +6,46 @@ import { auth } from "./auth-server";
 import { db } from "./db";
 import { requireSessionUserId } from "./auth-session";
 import { updateUserProfile, userProfileInputSchema } from "./users";
+import { reportFailure } from "./log";
 
 export type AccountActionState = { error?: string } | { ok: true };
+
+/**
+ * Signed out, so the token is unknown or already gone — a normal outcome when the
+ * list is stale, not something to report as a failure.
+ */
+const EXPECTED_SESSION_FAILURES = ["not_found", "unauthorized", "UNAUTHORIZED"] as const;
+
+/**
+ * Revokes one of the caller's own sessions.
+ *
+ * Better Auth verifies the token belongs to the signed-in user before deleting
+ * it, but the acting user still comes from the session helper — the token is a
+ * form value and is never treated as proof of identity.
+ */
+export async function revokeSessionAction(formData: FormData): Promise<void> {
+  await requireSessionUserId();
+  const token = String(formData.get("token") ?? "");
+  if (token === "") return;
+
+  try {
+    await auth.api.revokeSession({ body: { token }, headers: await headers() });
+  } catch (error) {
+    reportFailure("revokeSession", error, EXPECTED_SESSION_FAILURES);
+  }
+  revalidatePath("/account");
+}
+
+/** Signs out every device except the one making the request. */
+export async function revokeOtherSessionsAction(): Promise<void> {
+  await requireSessionUserId();
+  try {
+    await auth.api.revokeOtherSessions({ headers: await headers() });
+  } catch (error) {
+    reportFailure("revokeOtherSessions", error);
+  }
+  revalidatePath("/account");
+}
 
 export async function updateAccount(
   _prev: AccountActionState | null,

@@ -25,6 +25,17 @@ const envSchema = z.object({
     .min(32, "must be at least 32 characters")
     .optional(),
   BETTER_AUTH_URL: z.string().url("must be an absolute URL").optional(),
+  TRUSTED_PROXY_CIDRS: z
+    .string()
+    .optional()
+    .transform((value) =>
+      value
+        ? value
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0)
+        : undefined,
+    ),
 });
 
 const parsed = envSchema.safeParse({

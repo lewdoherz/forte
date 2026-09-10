@@ -26,11 +26,51 @@ const tables = await query<{ table_name: string }>(
   `select table_name from information_schema.tables where table_schema = 'public' order by table_name`,
 );
 const names = tables.rows.map((r) => r.table_name);
-check("20 tables created", names.length === 20, `n=${names.length}`);
+check("21 tables created", names.length === 21, `n=${names.length}`);
 check(
   "auth tables exist",
   ["account", "session", "verification"].every((t) => names.includes(t)),
   names.filter((t) => ["account", "session", "verification"].includes(t)).join(","),
+);
+
+// ---- rate limit storage (0009) ---------------------------------------------
+// Better Auth only expects this table when `rateLimit.storage = "database"`, so
+// its presence and shape are what make persisted limits possible at all.
+check("rate limit table exists", names.includes("rate_limit"));
+
+const rateLimitColumns = await query<{
+  column_name: string;
+  is_nullable: string;
+  data_type: string;
+}>(
+  `select column_name, is_nullable, data_type from information_schema.columns
+    where table_schema = 'public' and table_name = 'rate_limit'`,
+);
+const rateLimitColumnNames = rateLimitColumns.rows.map((r) => r.column_name);
+check(
+  "rate limit table has the columns Better Auth writes",
+  ["key", "count", "last_request"].every((c) => rateLimitColumnNames.includes(c)),
+  rateLimitColumnNames.join(","),
+);
+check(
+  "rate limit columns are not nullable",
+  rateLimitColumns.rows
+    .filter((r) => ["key", "count", "last_request"].includes(r.column_name))
+    .every((r) => r.is_nullable === "NO"),
+);
+check(
+  "last_request is a bigint",
+  // Epoch milliseconds do not fit in int4, and Better Auth reads the field as a
+  // bigint.
+  rateLimitColumns.rows.some((r) => r.column_name === "last_request" && r.data_type === "bigint"),
+  rateLimitColumns.rows.map((r) => `${r.column_name}:${r.data_type}`).join(","),
+);
+
+// One row per client+path bucket: the limiter reads, then increments, by key, so
+// a duplicate key is a bug rather than a state it should tolerate.
+await query(`insert into rate_limit ("key", "count", "last_request") values ('1.2.3.4|/sign-in/email', 1, 1)`);
+await expectFail("duplicate rate limit key is rejected", () =>
+  query(`insert into rate_limit ("key", "count", "last_request") values ('1.2.3.4|/sign-in/email', 1, 1)`),
 );
 
 // ---- username nullable + email_verified default (0004) ---------------------

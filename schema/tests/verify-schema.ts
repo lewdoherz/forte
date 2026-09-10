@@ -30,7 +30,7 @@ const tables = await query<{ table_name: string }>(
   `select table_name from information_schema.tables
    where table_schema = 'public' order by table_name`,
 );
-check("tables created", tables.rows.length === 20, tables.rows.map((r) => r.table_name).join(","));
+check("tables created", tables.rows.length === 21, tables.rows.map((r) => r.table_name).join(","));
 
 const vocab = await query<{ m: number; e: number }>(
   `select (select count(*) from muscle_group)::int as m, (select count(*) from equipment)::int as e`,

@@ -47,6 +47,9 @@ next-env.d.ts
 # embedded PostgreSQL data directory (db:verify:postgres harness, disposable)
 .pgdata*/
 
-# hevy reference workspace — never commit the API key or third-party media
+# Local reference material. It is not part of this repository — the remaining
+# files are a live API key and hundreds of third-party exercise videos — so these
+# must stay ignored. They are still required: the directory exists on developer
+# machines even though it was removed from the repository.
 hevy/.hevy-key
 hevy/Exercise vids/

@@ -74,11 +74,42 @@ export function createAuth(instance: Kysely<Database>) {
         updatedAt: "updated_at",
       },
     },
+    rateLimit: {
+      // Enabled in production by the framework default (window 10s, max 100) —
+      // deliberately not overridden, so development stays unlimited.
+      //
+      // The store is moved off the in-process default so limits survive a deploy
+      // and are shared between instances; the table comes from 0009.
+      storage: "database",
+      modelName: "rate_limit",
+      fields: { key: "key", count: "count", lastRequest: "last_request" },
+      window: 60,
+      max: 100,
+      customRules: {
+        // Password endpoints need a credential policy, not a traffic policy: the
+        // global allowance is far too generous for guessing a password.
+        "/sign-in/email": { window: 60, max: 5 },
+        "/sign-up/email": { window: 60, max: 5 },
+      },
+    },
     advanced: {
       database: {
         generateId: "uuid",
         validateSchema: false,
       },
+      // Forwarded headers are only trusted when the deployment actually sits
+      // behind a proxy, and only for the addresses it sits behind.
+      //
+      // Both failure modes are real: with no trusted proxies Better Auth accepts
+      // a single-value X-Forwarded-For from anyone, so a caller can mint a fresh
+      // bucket per request and never be limited; and it refuses a multi-hop chain
+      // outright, which makes every caller share one bucket, so a single abusive
+      // client can lock everyone out. Which of those you get depends on topology,
+      // which is why this is configuration and not a guess — see
+      // TRUSTED_PROXY_CIDRS.
+      ...(env.TRUSTED_PROXY_CIDRS
+        ? { ipAddress: { trustedProxies: env.TRUSTED_PROXY_CIDRS } }
+        : {}),
     },
   });
 }

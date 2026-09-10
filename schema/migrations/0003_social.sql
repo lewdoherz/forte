@@ -1,11 +1,10 @@
 -- ---------------------------------------------------------------------------
 -- 0003_social.sql — follows, likes, comments, mentions, share links
 --
--- Shape follows the surface documented in ../hevy-structure/01-routes-and-features.md
--- and the payloads in ../hevy-structure/02-api-private.md:
---   * follow requests exist  -> followButton.{follow,followBack,unfollow,pending,pendingApproval}
---   * mentions exist         -> account payload has comment_mention_push_enabled
---   * sharing is link-based  -> routineDetail.copyRoutineLink / shareable_folder / short ids
+-- The shape follows the behaviour these features need:
+--   * follow requests   -> a follow may stay pending until the followee approves
+--   * mentions          -> extracted from comment bodies at write time
+--   * link-based shares -> routines and folders are shareable by token
 --
 -- Target: PostgreSQL 13+. Transactional; applies on top of 0001_init.sql.
 -- Mutable tables get an updated_at trigger; immutable event tables (likes,
@@ -145,7 +144,7 @@ create table share (
     check (num_nonnulls(workout_id, routine_id, routine_folder_id) = 1),
   constraint share_expiry_chk check (expires_at is null or expires_at > created_at),
   -- Guard against sequential/guessable tokens; generate >= 64 bits of entropy
-  -- app-side (Hevy's are ~12 base62 chars, e.g. 'ZTNVLuJjSzM').
+  -- app-side (12 base62 characters is roughly 71 bits).
   constraint share_token_length_chk check (char_length(token) >= 10)
 );
 
