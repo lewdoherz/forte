@@ -6,44 +6,21 @@ import { db } from "./db";
 import { requireSessionUserId } from "./auth-session";
 import { reportFailure } from "./log";
 import {
-  addSet,
-  addSetInputSchema,
-  finishWorkout,
-  finishWorkoutInputSchema,
   listWorkouts,
-  logSet,
-  logSetInputSchema,
-  removeSet,
-  setIdSchema,
   startWorkout,
-  uncompleteSet,
+  syncWorkoutInputSchema,
+  syncWorkoutSets,
   type WorkoutPage,
 } from "./workouts";
-
-export type LogSetState = { error?: string };
+import type { WorkoutSyncInput } from "./workout-sync";
 
 function message(e: unknown, fallback: string): string {
   if (!(e instanceof Error)) return fallback;
   if (e.message === "not_authorized") return "You don't have permission to do that.";
   if (e.message === "not_active") return "This workout is already finished.";
   if (e.message === "already_finished") return "This workout is already finished.";
+  if (e.message === "invalid_ended_at") return "That finish time is outside the workout.";
   return fallback;
-}
-
-/**
- * Builds the workout revalidation path from a form, accepting the id only when
- * it is a well-formed uuid.
- *
- * This value is attacker-controlled and exists solely as a cache key — the
- * mutation itself is authorized on the set/exercise id, never on this field.
- * It is validated anyway so an untrusted string is never interpolated into a
- * path, and so the field cannot quietly become trusted after a later refactor.
- */
-function workoutPathFromForm(formData: FormData): string | null {
-  const parsed = finishWorkoutInputSchema.safeParse({
-    workoutId: String(formData.get("workoutId") ?? ""),
-  });
-  return parsed.success ? `/workouts/${parsed.data.workoutId}` : null;
 }
 
 /**
@@ -56,6 +33,7 @@ const EXPECTED_FAILURES = [
   "not_found",
   "not_active",
   "already_finished",
+  "invalid_ended_at",
 ] as const;
 
 /**
@@ -83,92 +61,6 @@ export async function startWorkoutFormAction(formData: FormData): Promise<void> 
   redirect(`/workouts/${id}`);
 }
 
-export async function logSetFormAction(
-  _prevState: LogSetState | null,
-  formData: FormData,
-): Promise<LogSetState> {
-  const userId = await requireSessionUserId();
-  const workoutPath = workoutPathFromForm(formData);
-  const repsRaw = formData.get("reps");
-  const parsed = logSetInputSchema.safeParse({
-    setId: String(formData.get("setId") ?? ""),
-    reps: repsRaw === null || repsRaw === "" ? null : Number(repsRaw),
-    weight_kg: String(formData.get("weight_kg") ?? "").trim() || null,
-    rpe: String(formData.get("rpe") ?? "").trim() || null,
-  });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid set." };
-  }
-  try {
-    await logSet(db, userId, parsed.data);
-  } catch (e) {
-    reportActionFailure("logSet", e);
-    return { error: message(e, "Could not save this set.") };
-  }
-  if (workoutPath) revalidatePath(workoutPath);
-  return {};
-}
-
-export async function uncompleteSetFormAction(formData: FormData): Promise<void> {
-  const userId = await requireSessionUserId();
-  const workoutPath = workoutPathFromForm(formData);
-  const parsed = setIdSchema.safeParse({ setId: String(formData.get("setId") ?? "") });
-  if (!parsed.success) return;
-  try {
-    await uncompleteSet(db, userId, parsed.data.setId);
-  } catch (error) {
-    reportActionFailure("uncompleteSet", error);
-    return;
-  }
-  if (workoutPath) revalidatePath(workoutPath);
-}
-
-export async function addSetFormAction(formData: FormData): Promise<void> {
-  const userId = await requireSessionUserId();
-  const workoutPath = workoutPathFromForm(formData);
-  const parsed = addSetInputSchema.safeParse({
-    workoutExerciseId: String(formData.get("workoutExerciseId") ?? ""),
-  });
-  if (!parsed.success) return;
-  try {
-    await addSet(db, userId, parsed.data.workoutExerciseId);
-  } catch (error) {
-    reportActionFailure("addSet", error);
-    return;
-  }
-  if (workoutPath) revalidatePath(workoutPath);
-}
-
-export async function removeSetFormAction(formData: FormData): Promise<void> {
-  const userId = await requireSessionUserId();
-  const workoutPath = workoutPathFromForm(formData);
-  const parsed = setIdSchema.safeParse({ setId: String(formData.get("setId") ?? "") });
-  if (!parsed.success) return;
-  try {
-    await removeSet(db, userId, parsed.data.setId);
-  } catch (error) {
-    reportActionFailure("removeSet", error);
-    return;
-  }
-  if (workoutPath) revalidatePath(workoutPath);
-}
-
-export async function finishWorkoutFormAction(formData: FormData): Promise<void> {
-  const userId = await requireSessionUserId();
-  const parsed = finishWorkoutInputSchema.safeParse({
-    workoutId: String(formData.get("workoutId") ?? ""),
-  });
-  if (!parsed.success) return;
-  try {
-    await finishWorkout(db, userId, parsed.data.workoutId);
-  } catch (error) {
-    reportActionFailure("finishWorkout", error);
-    return;
-  }
-  revalidatePath("/workouts");
-  revalidatePath(`/workouts/${parsed.data.workoutId}`);
-}
-
 /**
  * The next page of history, for the list's "load older" control.
  *
@@ -184,4 +76,66 @@ export async function loadWorkoutPageAction(
 ): Promise<WorkoutPage> {
   const userId = await requireSessionUserId();
   return listWorkouts(db, userId, { cursor, exerciseId });
+}
+
+/**
+ * Sentinel errors a replay of the same document reproduces exactly — an
+ * ownership loss, a workout finished elsewhere, a deleted workout, a finish time
+ * the server will keep rejecting. A sync failing this way will fail the same way
+ * forever, so the client stops retrying it until a new local edit supersedes the
+ * document.
+ */
+const PERMANENT_SYNC_ERRORS = new Set([
+  "not_authorized",
+  "not_active",
+  "already_finished",
+  "invalid_ended_at",
+  "not_found",
+]);
+
+/**
+ * Machine-readable outcome of a rejected sync.
+ *
+ * The logging screen has to decide whether retrying can ever help, and it used
+ * to do that by matching the user-facing message. That coupling breaks silently
+ * the first time a message is reworded — the retry loop would quietly revert to
+ * hammering a request that cannot succeed — so the classification is made here,
+ * where the sentinel errors are actually known, and returned alongside the
+ * message.
+ */
+export type SyncFailureCode = "permanent" | "transient";
+
+/**
+ * Applies an offline-logged workout document. The whole payload is
+ * attacker-controlled, so it is validated before anything reaches the
+ * reconciliation, and the owner always comes from the session rather than the
+ * document.
+ *
+ * A data-returning action rather than a form action: the client retries it from
+ * an outbox and needs the outcome to decide whether to keep the queued changes.
+ */
+
+export async function syncWorkoutStateAction(
+  input: WorkoutSyncInput,
+): Promise<{ ok: true } | { error: string; code: SyncFailureCode }> {
+  const userId = await requireSessionUserId();
+  const parsed = syncWorkoutInputSchema.safeParse(input);
+  if (!parsed.success) {
+    // A malformed document is rejected identically on every attempt, so it is
+    // permanent for this revision; the next edit sends a fresh one.
+    return {
+      error: parsed.error.issues[0]?.message ?? "Invalid workout state.",
+      code: "permanent",
+    };
+  }
+  try {
+    await syncWorkoutSets(db, userId, parsed.data);
+  } catch (e) {
+    reportActionFailure("syncWorkoutState", e);
+    return {
+      error: message(e, "Could not sync this workout."),
+      code: e instanceof Error && PERMANENT_SYNC_ERRORS.has(e.message) ? "permanent" : "transient",
+    };
+  }
+  return { ok: true };
 }

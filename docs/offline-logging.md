@@ -46,7 +46,7 @@ IndexedDB, one database per origin, hand-written (no new dependency):
 
 - `workouts` — the active workout document: exercises, sets, rest targets, title.
   Keyed by workout id.
-- `outbox` — workout ids with unsynced local changes, plus the timestamp of the
+- `pending` — workout ids with unsynced local changes, plus the timestamp of the
   last successful sync. A set of ids rather than a queue: syncing the document is
   idempotent, so coalescing repeated edits is correct and a partial flush is
   simply retried.

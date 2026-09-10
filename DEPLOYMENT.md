@@ -56,8 +56,17 @@ authority; no ORM owns or generates the schema.
   `/apple-icon`, `/manifest.webmanifest`) and `/_not-found` are static.
 - **PWA assets are generated, not static files.** `next/og` renders the icons at
   request/build time, so no image binaries are committed.
-- **No service worker.** There is deliberately no offline behaviour; do not
-  configure a CDN to serve the app shell as if it were offline-capable.
+- **Service worker:** a hand-written runtime cache (`public/sw.js`), registered
+  in production only. It is **not** a build-time precache — the logging route is
+  dynamic and its chunks are content-hashed — so it caches same-origin GETs as
+  they are fetched, cache-first with a network fallback, and answers an uncached
+  navigation with a small offline page. That means the app opens without a
+  network *once it has been opened with one*; a fresh install still cannot cold
+  start offline. It never intercepts `/api/` or non-GET requests: writes belong
+  to the app's reconciliation path, and a worker that queued them would be a
+  second, conflicting outbox. Do not configure a CDN to serve the app shell as
+  if it were offline-capable — a cache that pretends the network is up is not the
+  same as a worker that owns the shell and falls back honestly.
 - **Connection pooling:** a single `pg.Pool` per server process. If your platform
   runs many instances, use a pooler (e.g. PgBouncer) and set `DATABASE_URL`
   to it.

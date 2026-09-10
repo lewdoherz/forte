@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { sql, type Kysely } from "kysely";
 import type { Database } from "./db";
-import type { WorkoutSet, WorkoutTree } from "@/schema/types";
+import { planSetReconciliation, sameClientValues, type WorkoutSyncInput } from "./workout-sync";
+import { SET_TYPES, type WorkoutSet, type WorkoutTree } from "@/schema/types";
 
 const weightString = z
   .string()
@@ -25,6 +26,44 @@ export const logSetInputSchema = workoutSetInputSchema.extend({ setId: z.string(
 export const addSetInputSchema = z.object({ workoutExerciseId: z.string().uuid() });
 export const setIdSchema = z.object({ setId: z.string().uuid() });
 export const finishWorkoutInputSchema = z.object({ workoutId: z.string().uuid() });
+
+/**
+ * How many sets one sync document may carry. A logged workout is a few tens of
+ * sets; the cap keeps an attacker-controlled array from being unbounded.
+ */
+export const MAX_SYNC_SETS = 300;
+
+const syncSetInputSchema = z.object({
+  id: z.string().uuid(),
+  workout_exercise_id: z.string().uuid(),
+  // The client's ordering within its exercise. Bounded so a malformed document
+  // cannot store absurd positions; uniqueness per exercise is checked below.
+  position: z.number().int().min(0).max(10_000),
+  set_type: z.enum(SET_TYPES),
+  reps: z.number().int().min(0).max(100_000).nullable(),
+  weight_kg: weightString.nullable(),
+  rpe: rpeString.nullable(),
+  completed_at: z.string().datetime().nullable(),
+});
+
+/**
+ * The reconciliation action's payload. Entirely attacker-controlled, so it is
+ * validated in full before any of it reaches SQL.
+ */
+export const syncWorkoutInputSchema = z.object({
+  workoutId: z.string().uuid(),
+  endedAt: z.string().datetime().nullable(),
+  sets: z
+    .array(syncSetInputSchema)
+    .max(MAX_SYNC_SETS)
+    // Both refines reject a document the database would reject anyway, but as
+    // a clean validation error rather than a constraint violation.
+    .refine((sets) => new Set(sets.map((s) => s.id)).size === sets.length, "Duplicate set id")
+    .refine(
+      (sets) => new Set(sets.map((s) => `${s.workout_exercise_id}:${s.position}`)).size === sets.length,
+      "Two sets share a position",
+    ),
+});
 
 export type LogSetInput = z.infer<typeof logSetInputSchema>;
 
@@ -322,6 +361,171 @@ export async function finishWorkout(db: Kysely<Database>, userId: string, workou
 }
 
 /**
+ * Makes the database match a client's complete set list for one workout.
+ *
+ * The client owns the active workout's state (last write wins, see
+ * docs/offline-logging.md), so this replaces sets rather than merging: present
+ * sets are updated, absent ones deleted, new ones inserted under their
+ * client-supplied id. Applying the same document twice performs no writes the
+ * second time.
+ */
+export async function syncWorkoutSets(
+  db: Kysely<Database>,
+  userId: string,
+  input: WorkoutSyncInput,
+): Promise<void> {
+  // A malformed end time is rejected before any work, so the error does not
+  // depend on the set writes that follow.
+  if (input.endedAt !== null && Number.isNaN(new Date(input.endedAt).getTime())) {
+    throw new Error("invalid_ended_at");
+  }
+
+  await db.transaction().execute(async (trx) => {
+    // Ownership is part of the locking read, not only a preceding check: a
+    // workout owned by anyone else is reported exactly like a missing one, so
+    // this path cannot probe for another user's rows. The row lock serializes
+    // the reconcile against finishWorkout and against a second sync, so the
+    // ended_at state read here cannot change under it.
+    const workout = await trx
+      .selectFrom("workout")
+      .select(["id", "started_at", "ended_at"])
+      .where("id", "=", input.workoutId)
+      .where("owner_id", "=", userId)
+      .forUpdate()
+      .executeTakeFirst();
+    if (!workout) throw new Error("not_found");
+
+    if (workout.ended_at !== null) {
+      // A finished workout refuses further reconciliation. The one exception is
+      // replaying the sync that finished it: the document the client holds when
+      // it finishes still contains the full set list, and refusing it would
+      // make finishing non-idempotent. `ended_at` is already set, so this is a
+      // no-op rather than a second write.
+      if (input.endedAt === null) throw new Error("not_active");
+      return;
+    }
+
+    // The exercises of THIS workout, read under the same lock. Every payload
+    // exercise id is checked against this set, so a document naming another
+    // user's workout_exercise cannot attach a set to it. `ownedActiveExerciseIds`
+    // is then applied to each write as a second, unraceable guard.
+    const exercises = await trx
+      .selectFrom("workout_exercise")
+      .select("id")
+      .where("workout_id", "=", workout.id)
+      .execute();
+    const ownedIds = new Set(exercises.map((e) => e.id));
+    for (const set of input.sets) {
+      if (!ownedIds.has(set.workout_exercise_id)) throw new Error("not_found");
+    }
+
+    const existing = await trx
+      .selectFrom("workout_set as ws")
+      .innerJoin("workout_exercise as we", "we.id", "ws.workout_exercise_id")
+      .selectAll("ws")
+      .where("we.workout_id", "=", workout.id)
+      .execute();
+
+    // A set cannot move between exercises — the logging screen has no such
+    // action — so a document that remaps an existing id is corrupt or hostile.
+    // Rejecting keeps the write predicates below exact.
+    const existingById = new Map(existing.map((s) => [s.id, s]));
+    for (const set of input.sets) {
+      const current = existingById.get(set.id);
+      if (current && current.workout_exercise_id !== set.workout_exercise_id) {
+        throw new Error("not_found");
+      }
+    }
+
+    const plan = planSetReconciliation(input.sets, existing);
+
+    // A new set id that already exists belongs to a different workout — this
+    // workout's rows are in `existing` — and reaching the insert would fail on
+    // the primary key, confirming to a probe that the id exists. Check first
+    // and reject with the same error a missing row would produce.
+    if (plan.insert.length) {
+      const clash = await trx
+        .selectFrom("workout_set")
+        .select("id")
+        .where("id", "in", plan.insert.map((s) => s.id))
+        .executeTakeFirst();
+      if (clash) throw new Error("not_found");
+    }
+
+    if (plan.remove.length) {
+      await trx
+        .deleteFrom("workout_set")
+        .where("id", "in", plan.remove)
+        .where("workout_exercise_id", "in", ownedActiveExerciseIds(trx, userId))
+        .execute();
+    }
+
+    for (const set of plan.update) {
+      const current = existingById.get(set.id);
+      // `update` lists every present row; an UPDATE rewrites `updated_at`
+      // through a trigger even when nothing differs, so only rows that actually
+      // carry a changed client value are written. This is what makes a replayed
+      // sync leave the workout untouched.
+      if (current && sameClientValues(set, current)) continue;
+
+      await trx
+        .updateTable("workout_set")
+        .set({
+          // Only the fields the client is the source of. duration_seconds,
+          // distance_meters, metrics and set_type are deliberately untouched:
+          // the client does not carry them, so writing them would erase values
+          // it never saw.
+          position: set.position,
+          reps: set.reps,
+          weight_kg: set.weight_kg,
+          rpe: set.rpe,
+          completed_at: set.completed_at === null ? null : new Date(set.completed_at),
+        })
+        .where("id", "=", set.id)
+        .where("workout_exercise_id", "=", set.workout_exercise_id)
+        .where("workout_exercise_id", "in", ownedActiveExerciseIds(trx, userId))
+        .execute();
+    }
+
+    for (const set of plan.insert) {
+      await trx
+        .insertInto("workout_set")
+        .values({
+          id: set.id,
+          workout_exercise_id: set.workout_exercise_id,
+          position: set.position,
+          set_type: set.set_type,
+          reps: set.reps,
+          weight_kg: set.weight_kg,
+          duration_seconds: null,
+          distance_meters: null,
+          rpe: set.rpe,
+          completed_at: set.completed_at === null ? null : new Date(set.completed_at),
+        })
+        .execute();
+    }
+
+    if (input.endedAt !== null) {
+      const endedAt = new Date(input.endedAt);
+      // A timestamp before the workout started would report a negative
+      // duration; reject rather than record nonsense.
+      if (endedAt.getTime() < workout.started_at.getTime()) throw new Error("invalid_ended_at");
+      // Stamped last: the write predicates above require the workout to still
+      // be active (`ownedActiveExerciseIds`), so finishing before them would
+      // make every one of them match nothing.
+      await trx
+        .updateTable("workout")
+        .set({ ended_at: endedAt })
+        .where("id", "=", workout.id)
+        .where("owner_id", "=", userId)
+        // Stamped once: a replayed finish must not move the end time.
+        .where("ended_at", "is", null)
+        .execute();
+    }
+  });
+}
+
+/**
  * The user's most recent still-active workout, or undefined. Lightweight
  * (indexed on owner_id, started_at) — used by the app shell to offer a resume
  * affordance without loading history.
@@ -493,31 +697,6 @@ export function listLoggedExercises(db: Kysely<Database>, userId: string) {
     .execute();
 }
 
-export interface WorkoutStats {
-  exerciseCount: number;
-  totalSets: number;
-  completedSets: number;
-  volumeKg: number;
-  durationSeconds: number;
-}
-
-/**
- * Lightweight summaries derived from the loaded tree. Volume is the sum of
- * weight × reps over completed sets (skipping rows with missing values); it is
- * never stored.
- */
-export function summarizeWorkout(workout: WorkoutTree): WorkoutStats {
-  const sets = workout.exercises.flatMap((e) => e.sets);
-  const volumeKg = sets.reduce((sum, s) => {
-    if (s.completed_at == null || s.reps == null || s.weight_kg == null) return sum;
-    return sum + Number(s.weight_kg) * s.reps;
-  }, 0);
-  const end = workout.ended_at ?? new Date();
-  return {
-    exerciseCount: workout.exercises.length,
-    totalSets: sets.length,
-    completedSets: sets.filter((s) => s.completed_at != null).length,
-    volumeKg,
-    durationSeconds: Math.max(0, Math.floor((end.getTime() - workout.started_at.getTime()) / 1000)),
-  };
-}
+// Re-exported so this module's callers are unchanged, while client components
+// import the Kysely-free module directly. See lib/workout-stats.ts.
+export { summarizeWorkout, type WorkoutStats } from "./workout-stats";
