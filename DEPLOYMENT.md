@@ -60,6 +60,63 @@ authority; no ORM owns or generates the schema.
   runs many instances, use a pooler (e.g. PgBouncer) and set `DATABASE_URL`
   to it.
 
+## The deployed instance
+
+| | |
+|---|---|
+| Application | `forte` on Vercel, function region `iad1` |
+| URLs | https://forte-delta.vercel.app (production), https://forte-herco1.vercel.app |
+| Deployment | `dpl_2PeT8N4o7jSMBhAnVBWjuxW7ASgc`, target `production`, `READY` |
+| Database | Neon project `forte` — PostgreSQL 18.6, `us-east-2`, pooled endpoint |
+| Environment | `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `TRUST_FORWARDED_HEADER=true` |
+
+**The Vercel project is not linked to the GitHub repository** (`link: null`), so
+pushing to `main` does **not** deploy. Linking needs a browser step — Vercel →
+Account Settings → Login Connections → connect GitHub — after which the project
+can be linked and push-to-deploy enabled. Until then, deployments are made
+explicitly.
+
+`sslmode=verify-full` is set on `DATABASE_URL` deliberately. `pg` currently treats
+`require` as `verify-full`, but warns that `pg-connection-string` v3 will adopt
+libpq semantics, under which `require` no longer verifies the certificate chain.
+Pinning the strict mode keeps the connection verified across that upgrade.
+
+The database is in `us-east-2` and functions run in `iad1`, which is the platform
+default; the round trip is a few milliseconds and needs no tuning.
+
+### What was verified against it
+
+Checked over HTTPS against the deployed instance rather than inferred from source:
+
+| Check | Result |
+|---|---|
+| `/sign-in` | `200`, `text/html` |
+| `/manifest.webmanifest` | `200`, `application/manifest+json`; icons 192/512, one maskable |
+| `/icon`, `/apple-icon`, `/pwa-icon/512` | `200`, `image/png` — installable over HTTPS |
+| Protected route, signed out | `307` → `/sign-in` |
+| Unmatched URL | `404`, boundary copy rendered |
+| Sign-up / sign-in | `200`, session cookie `__Secure-better-auth.session_token` — `HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800` |
+| Not-found inside the shell, signed in | shell boundary rendered, primary navigation intact |
+| Rate limiting | four `401`s, then `429` — "Too many requests. Please try again later." |
+| Per-client buckets | one bucket key per client IP — `<ip>|/sign-in/email` |
+
+The cookie carries the `__Secure-` prefix, which browsers accept only over HTTPS,
+alongside `Secure` and `HttpOnly`.
+
+Two things that run surfaced:
+
+- **`notFound()` inside the protected shell answers `200`, not `404`.** The right
+  UI and navigation render, but the status is committed before the not-found is
+  raised, because the shell's layout awaits the session and active-workout queries
+  and therefore streams first. Impact is small — signed-out clients and crawlers
+  get the `307` to `/sign-in` and never reach it — but the status is wrong for
+  signed-in clients.
+- **The rate limiter keys per client IP, as intended.** Requests from two
+  different runner addresses produced two distinct buckets, so one client
+  tripping the limit cannot lock out others. That is precisely the behaviour
+  `TRUST_FORWARDED_HEADER=true` depends on: had the platform header not been
+  resolved, every request would have shared a single bucket.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push and pull request to `main`:
@@ -114,7 +171,8 @@ TEST_DATABASE_URL="postgresql://user:pass@host:5432/postgres" bun run db:verify
 
 The suites deliberately key on `TEST_DATABASE_URL` and never on `DATABASE_URL`,
 so tests can never be aimed at a development or production database by accident.
-Each suite creates and drops its own `forte_verify` database.
+Each suite creates a `forte_verify` scratch database and drops it again when it
+finishes, so pointing the suites at a shared server leaves nothing behind.
 
 ### Dialect differences found by running against both
 
