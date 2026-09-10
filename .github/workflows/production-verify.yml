@@ -34,12 +34,19 @@ jobs:
       - name: Manifest body
         run: curl -sS "$BASE/manifest.webmanifest"; echo
 
-      - name: Not-found boundary renders in the shell
+      - name: Protected route, unauthenticated
         run: |
-          body=$(curl -sS "$BASE/workouts/00000000-0000-4000-8000-000000000000")
-          printf 'heading: %s\n' "$(grep -o 'Not found' <<<"$body" | head -1)"
-          printf 'copy:    %s\n' "$(grep -o 'belongs to another account' <<<"$body" | head -1)"
-          printf 'shell:   %s\n' "$(grep -o 'Routines' <<<"$body" | head -1)"
+          code=$(curl -sS -o /tmp/u.html -D /tmp/u.headers -w '%{http_code}' \
+            "$BASE/workouts/00000000-0000-4000-8000-000000000000")
+          printf 'status:   %s\n' "$code"
+          printf 'location: %s\n' "$(grep -i '^location:' /tmp/u.headers | tr -d '\r')"
+          printf 'nav:      %s\n' "$(grep -c 'aria-label="Primary"' /tmp/u.html)"
+
+      - name: Unmatched URL
+        run: |
+          code=$(curl -sS -o /tmp/n.html -w '%{http_code}' "$BASE/no-such-page")
+          printf 'status:    %s\n' "$code"
+          printf 'root-copy: %s\n' "$(grep -o 'That page does not exist' /tmp/n.html | head -1)"
 
       - name: Sign up, and inspect cookie attributes
         run: |
@@ -72,3 +79,14 @@ jobs:
           printf 'body: %s\n' "$(curl -sS -X POST "$BASE/api/auth/sign-in/email" \
             -H 'content-type: application/json' \
             -d '{"email":"step16-rate-limit@example.com","password":"definitely-not-the-password"}')"
+
+      - name: Not-found boundary, signed in
+        run: |
+          curl -sS -c /tmp/jar -o /dev/null -X POST "$BASE/api/auth/sign-in/email" \
+            -H 'content-type: application/json' \
+            -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
+          code=$(curl -sS -b /tmp/jar -o /tmp/i.html -w '%{http_code}' \
+            "$BASE/workouts/00000000-0000-4000-8000-000000000000")
+          printf 'status:      %s\n' "$code"
+          printf 'nested-copy: %s\n' "$(grep -o 'belongs to another account' /tmp/i.html | head -1)"
+          printf 'nav:         %s\n' "$(grep -c 'aria-label="Primary"' /tmp/i.html)"
