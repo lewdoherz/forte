@@ -52,9 +52,12 @@ jobs:
           bun-version: "1.4.2"
       - run: bun install --frozen-lockfile
       - run: bun run db:verify
-      # The development seed is opt-in and must never be required by
-      # migrations. Running it here proves it still works against a database
-      # that migrations just created.
+      # The development seed is opt-in and must never be required by migrations.
+      # Migrating and then seeding proves the two work together from a standing
+      # start, which is exactly what a fresh clone does — without the migrate
+      # step this fails, because the verification suites all run against
+      # in-memory databases and never create the persistent schema.
+      - run: bun run db:migrate
       - run: bun run db:seed:dev
 
   verify-postgres:

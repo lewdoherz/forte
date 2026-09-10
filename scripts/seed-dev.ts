@@ -69,8 +69,28 @@ async function resetDemoUser(): Promise<boolean> {
   return true;
 }
 
+/**
+ * A fresh clone has no schema: `db:verify` runs against in-memory databases and
+ * never touches `.pglite`, so seeding immediately after a clone would otherwise
+ * fail with a raw "relation does not exist". Fail with the command to run.
+ */
+async function assertMigrated(): Promise<void> {
+  const ready = await db
+    .selectFrom("app_user")
+    .select("id")
+    .limit(1)
+    .execute()
+    .then(() => true)
+    .catch(() => false);
+
+  if (!ready) {
+    throw new Error("This database has no schema yet — run `bun run db:migrate` first.");
+  }
+}
+
 async function main(): Promise<void> {
   const target = assertLocalTarget();
+  await assertMigrated();
   console.log(`seeding ${target}`);
 
   const reset = await resetDemoUser();
