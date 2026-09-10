@@ -1,6 +1,6 @@
 # forte
 
-A web-based workout tracker inspired by Hevy: authentication, an exercise library,
+A web-based workout tracker inspired by different existent trackers: authentication, an exercise library,
 reusable routine templates, an active workout logger, workout history, and progress
 analytics with personal records.
 
