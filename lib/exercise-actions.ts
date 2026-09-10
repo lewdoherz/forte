@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "./db";
+import { reportFailure } from "./log";
 import { requireSessionUserId } from "./auth-session";
 import {
   createCustomExercise,
@@ -81,9 +82,11 @@ export async function deleteExercise(id: string): Promise<void> {
   if (!parsedId.success) return;
   try {
     await deleteCustomExercise(db, userId, parsedId.data);
-  } catch {
-    // Ownership is enforced server-side in deleteCustomExercise; the button is
-    // only rendered for owned exercises, so a failure here is a race/edge case.
+  } catch (error) {
+    // Ownership is enforced inside deleteCustomExercise, and an exercise that is
+    // still referenced is archived rather than failing — so reaching here is
+    // genuinely unexpected and must not be discarded silently.
+    reportFailure("deleteExercise", error, ["not_authorized", "not_found"]);
   }
   revalidatePath("/exercises");
   redirect("/exercises");

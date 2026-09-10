@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "./db";
+import { reportFailure } from "./log";
 import { requireSessionUserId } from "./auth-session";
 import {
   createRoutine,
@@ -13,6 +14,9 @@ import {
 } from "./routines";
 
 export type RoutineActionState = { error?: string; id?: string };
+
+/** Sentinel failures that are normal traffic rather than incidents. */
+const EXPECTED_FAILURES = ["not_authorized", "invalid_exercise"] as const;
 
 export async function saveRoutine(input: RoutineInput): Promise<RoutineActionState> {
   const userId = await requireSessionUserId();
@@ -38,6 +42,7 @@ export async function saveRoutine(input: RoutineInput): Promise<RoutineActionSta
     if (e instanceof Error && e.message === "invalid_exercise") {
       return { error: "One or more exercises are not available to you." };
     }
+    reportFailure("saveRoutine", e, EXPECTED_FAILURES);
     return { error: "Could not save the routine." };
   }
 }
@@ -51,8 +56,10 @@ export async function deleteRoutine(id: string): Promise<RoutineActionState> {
     revalidatePath("/routines");
     return {};
   } catch (e) {
-    return e instanceof Error && e.message === "not_authorized"
-      ? { error: "You don't have permission to delete this routine." }
-      : { error: "Could not delete the routine." };
+    if (e instanceof Error && e.message === "not_authorized") {
+      return { error: "You don't have permission to delete this routine." };
+    }
+    reportFailure("deleteRoutine", e, EXPECTED_FAILURES);
+    return { error: "Could not delete the routine." };
   }
 }

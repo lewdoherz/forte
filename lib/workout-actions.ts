@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "./db";
 import { requireSessionUserId } from "./auth-session";
+import { reportFailure } from "./log";
 import {
   addSet,
   addSetInputSchema,
@@ -43,6 +44,27 @@ function workoutPathFromForm(formData: FormData): string | null {
   return parsed.success ? `/workouts/${parsed.data.workoutId}` : null;
 }
 
+/**
+ * Outcomes that are normal traffic rather than incidents: an ownership check, a
+ * stale page, a workout that was already finished. Reporting these would bury
+ * the failures that actually matter.
+ */
+const EXPECTED_FAILURES = [
+  "not_authorized",
+  "not_found",
+  "not_active",
+  "already_finished",
+] as const;
+
+/**
+ * Records an unexpected server-action failure, which previously vanished.
+ * Delegates to the shared reporter so all action modules classify failures the
+ * same way; the module's expected-failure set is bound here.
+ */
+function reportActionFailure(action: string, error: unknown): void {
+  reportFailure(action, error, EXPECTED_FAILURES);
+}
+
 export async function startWorkoutFormAction(formData: FormData): Promise<void> {
   const userId = await requireSessionUserId();
   const routineId = String(formData.get("routineId") ?? "");
@@ -51,7 +73,8 @@ export async function startWorkoutFormAction(formData: FormData): Promise<void> 
   let id: string;
   try {
     ({ id } = await startWorkout(db, userId, routineId));
-  } catch {
+  } catch (error) {
+    reportActionFailure("startWorkout", error);
     return;
   }
   revalidatePath("/workouts");
@@ -77,6 +100,7 @@ export async function logSetFormAction(
   try {
     await logSet(db, userId, parsed.data);
   } catch (e) {
+    reportActionFailure("logSet", e);
     return { error: message(e, "Could not save this set.") };
   }
   if (workoutPath) revalidatePath(workoutPath);
@@ -90,7 +114,8 @@ export async function uncompleteSetFormAction(formData: FormData): Promise<void>
   if (!parsed.success) return;
   try {
     await uncompleteSet(db, userId, parsed.data.setId);
-  } catch {
+  } catch (error) {
+    reportActionFailure("uncompleteSet", error);
     return;
   }
   if (workoutPath) revalidatePath(workoutPath);
@@ -105,7 +130,8 @@ export async function addSetFormAction(formData: FormData): Promise<void> {
   if (!parsed.success) return;
   try {
     await addSet(db, userId, parsed.data.workoutExerciseId);
-  } catch {
+  } catch (error) {
+    reportActionFailure("addSet", error);
     return;
   }
   if (workoutPath) revalidatePath(workoutPath);
@@ -118,7 +144,8 @@ export async function removeSetFormAction(formData: FormData): Promise<void> {
   if (!parsed.success) return;
   try {
     await removeSet(db, userId, parsed.data.setId);
-  } catch {
+  } catch (error) {
+    reportActionFailure("removeSet", error);
     return;
   }
   if (workoutPath) revalidatePath(workoutPath);
@@ -132,7 +159,8 @@ export async function finishWorkoutFormAction(formData: FormData): Promise<void>
   if (!parsed.success) return;
   try {
     await finishWorkout(db, userId, parsed.data.workoutId);
-  } catch {
+  } catch (error) {
+    reportActionFailure("finishWorkout", error);
     return;
   }
   revalidatePath("/workouts");

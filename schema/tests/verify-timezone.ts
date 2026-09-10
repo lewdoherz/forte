@@ -1,7 +1,7 @@
 import { createTestDatabase } from "./harness";
 import { createRoutine } from "../../lib/routines";
 import { finishWorkout, getWorkoutTree, logSet, startWorkout } from "../../lib/workouts";
-import { getCompletedSetRows, rangeStart } from "../../lib/progress";
+import { getSessionSeries, rangeStart } from "../../lib/progress";
 import {
   DEFAULT_TIME_ZONE,
   formatDateTimeInTimeZone,
@@ -170,12 +170,12 @@ await db
   .where("id", "=", started.id)
   .execute();
 
-const inRows = await getCompletedSetRows(db, alice, bench, "30d", earlier.zone);
+const inRows = await getSessionSeries(db, alice, bench, "30d", earlier.zone);
 check(
   `a session inside the ${earlier.zone} 30-day window is included`,
   inRows.some((r) => r.workoutId === started.id),
 );
-const outRows = await getCompletedSetRows(db, alice, bench, "30d", later.zone);
+const outRows = await getSessionSeries(db, alice, bench, "30d", later.zone);
 check(
   `the same session is outside the ${later.zone} 30-day window`,
   !outRows.some((r) => r.workoutId === started.id),
@@ -185,10 +185,10 @@ check(
   earlier.zone !== later.zone,
 );
 
-const allRows = await getCompletedSetRows(db, alice, bench, "all", ZONE);
+const allRows = await getSessionSeries(db, alice, bench, "all", ZONE);
 check("timezone never drops data from the all-time range", allRows.some((r) => r.workoutId === started.id));
 
-const unknown = await getCompletedSetRows(db, alice, bench, "30d", DEFAULT_TIME_ZONE);
+const unknown = await getSessionSeries(db, alice, bench, "30d", DEFAULT_TIME_ZONE);
 check("an explicit UTC default is applied when no zone is supplied", Array.isArray(unknown));
 
 await close();

@@ -55,7 +55,7 @@ export async function getUserProfile(
 export async function updateUserProfile(
   db: Kysely<Database>,
   userId: string,
-  input: UserProfileInput,
+  input: Pick<UserProfileInput, "timeZone">,
 ): Promise<void> {
   await db
     .updateTable("app_user")

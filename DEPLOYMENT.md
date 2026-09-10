@@ -60,6 +60,24 @@ authority; no ORM owns or generates the schema.
   runs many instances, use a pooler (e.g. PgBouncer) and set `DATABASE_URL`
   to it.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request to `main`:
+
+- **quality** — install with a frozen lockfile, then typecheck, lint and the production
+  build. The build runs with **no environment variables on purpose**: `next build`
+  serves no traffic, so `lib/env.ts` exempts the build phase and the build must succeed
+  without runtime secrets. If that ever stops being true, this job fails instead of a
+  deployment.
+- **verify-pglite** — every verification suite against in-memory PGlite, followed by the
+  development seed, which proves the seed still works against a database that
+  migrations have just created.
+- **verify-postgres** — the same suites against a `postgres:18-alpine` service
+  container, reached through `TEST_DATABASE_URL`.
+
+**No repository secrets are required.** The suites read `TEST_DATABASE_URL` and never
+`DATABASE_URL`, so CI cannot be pointed at a real database.
+
 ## Verifying a deployment
 
 ```bash

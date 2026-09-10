@@ -32,7 +32,7 @@ export async function updateAccount(
     });
     // `timezone` is application-only; Better Auth does not know about it, so it
     // is written directly against the owner's row.
-    await updateUserProfile(db, userId, parsed.data);
+    await updateUserProfile(db, userId, { timeZone: parsed.data.timeZone });
   } catch {
     return { error: "Could not save your settings." };
   }

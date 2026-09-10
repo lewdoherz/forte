@@ -1,0 +1,88 @@
+name: CI
+
+# Every push to main is guarded: typecheck, lint and the production build, plus
+# the full verification suite on BOTH supported database dialects.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A newer push supersedes an in-flight run for the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  quality:
+    name: typecheck, lint, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in step with package.json's `packageManager`.
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      # Deliberately NO environment variables are provided here.
+      #
+      # `next build` runs with NODE_ENV=production but serves no traffic, so
+      # lib/env.ts exempts the build phase from the production requirements and
+      # the build must succeed without runtime secrets. This step is the
+      # regression guard for that design: if the build ever starts requiring
+      # DATABASE_URL / BETTER_AUTH_SECRET / BETTER_AUTH_URL, it fails here on
+      # purpose rather than on someone's machine.
+      - run: bun run build
+
+  verify-pglite:
+    name: verification (PGlite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile
+      - run: bun run db:verify
+      # The development seed is opt-in and must never be required by
+      # migrations. Running it here proves it still works against a database
+      # that migrations just created.
+      - run: bun run db:seed:dev
+
+  verify-postgres:
+    name: verification (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # The suites key on TEST_DATABASE_URL and never read DATABASE_URL, so they
+      # cannot be aimed at a real database by accident. Each suite creates and
+      # drops its own `forte_verify` database.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile
+      - run: bun run db:verify

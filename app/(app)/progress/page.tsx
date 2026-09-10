@@ -6,12 +6,11 @@ import { requireSessionUserId } from "@/lib/auth-session";
 import {
   PROGRESS_RANGES,
   RANGE_LABELS,
-  buildSessionSeries,
   estimateOneRepMax,
-  getCompletedSetRows,
+  getProgressSummary,
+  getRecentSession,
+  getSessionSeries,
   progressQuerySchema,
-  recentSession,
-  summarizeProgress,
   type ProgressRange,
   type ProgressSummary,
   type RecentSession,
@@ -70,10 +69,17 @@ export default async function ProgressPage({ searchParams }: { searchParams: Sea
       const exercise = await getVisibleExercise(db, parsed.data.templateId, userId);
       if (exercise) {
         selectedTitle = exercise.title;
-        const rows = await getCompletedSetRows(db, userId, exercise.id, range, timeZone);
-        summary = summarizeProgress(rows);
-        series = buildSessionSeries(rows);
-        recent = recentSession(rows);
+        // Three bounded queries instead of loading every completed set: the
+        // summary is a single row, the series one row per session, and the most
+        // recent session one workout's sets.
+        const [nextSummary, nextSeries, nextRecent] = await Promise.all([
+          getProgressSummary(db, userId, exercise.id, range, timeZone),
+          getSessionSeries(db, userId, exercise.id, range, timeZone),
+          getRecentSession(db, userId, exercise.id, range, timeZone),
+        ]);
+        summary = nextSummary;
+        series = nextSeries;
+        recent = nextRecent;
       }
     }
   }

@@ -1,5 +1,7 @@
 # forte
 
+[![CI](https://github.com/lewdoherz/forte/actions/workflows/ci.yml/badge.svg)](https://github.com/lewdoherz/forte/actions/workflows/ci.yml)
+
 A web-based workout tracker inspired by different existent trackers: authentication, an exercise library,
 reusable routine templates, an active workout logger, workout history, and progress
 analytics with personal records.
@@ -30,8 +32,18 @@ analytics with personal records.
 - **Routines and workouts are separate.** A routine is a reusable template; starting a
   workout snapshots the routine into `workout` / `workout_exercise` / `workout_set`.
   Editing a routine never changes a started workout, and completed workouts are immutable.
-- **Analytics are derived.** PRs, volume and progression are computed from completed
-  sets — never stored as authoritative records.
+- **Analytics are derived, and aggregated in SQL.** PRs, volume, estimated 1RM and
+  progression are computed from completed sets at read time — never stored as
+  authoritative records. The aggregation runs in the database, so result sizes stay
+  bounded by the number of *sessions* rather than the number of *sets*; an earlier
+  implementation folded every completed set in JavaScript, which grew without bound.
+- **Failures are visible.** Route-level `error`/`loading`/`not-found` boundaries render
+  inside the shell so navigation survives a failure, and the reference they show is the
+  same `digest` recorded server-side by `onRequestError` (instrumentation.ts) through
+  `lib/log.ts`. Server actions no longer swallow unexpected failures; expected
+  outcomes (an ownership check, a stale page) are filtered out so real ones are not
+  buried. The log never carries error messages, which can embed SQL, parameters or
+  connection strings.
 - **Mobile shell.** Below `sm` the primary navigation is a fixed bottom bar
   (`components/bottom-nav.tsx`); the desktop header nav is hidden. The bar is omitted
   entirely on `/workouts/[id]` so the logger's sticky control bar owns the bottom of the
@@ -67,6 +79,7 @@ analytics with personal records.
 | 10 | Progress analytics + PRs (`/progress`, Epley 1RM, charts) | done |
 | 11 | Mobile-first shell (bottom nav, safe areas, touch targets) + installable PWA (manifest, generated icons) | done |
 | 12 | Production readiness: validated env, secret hardening, timezone-aware analytics, account settings, PostgreSQL path verified | done |
+| 13 | Operability: CI, failure boundaries, structured logging, opt-in dev seed, SQL-aggregated analytics | done |
 
 ## Routes
 
@@ -97,6 +110,7 @@ analytics with personal records.
 ```bash
 bun install
 bun run db:migrate   # apply migrations to .pglite/
+bun run db:seed:dev  # optional: demo account + history to explore with
 bun run dev          # http://localhost:3000
 ```
 
@@ -111,6 +125,7 @@ bun run build        # production build
 bun run typecheck    # tsc --noEmit
 bun run lint         # eslint
 bun run db:migrate   # apply SQL migrations
+bun run db:seed:dev  # OPT-IN demo account + ~4 months of history (local databases only)
 bun run db:verify    # run all schema/feature verification suites
 bun run db:verify:postgres  # same suites against a temporary real PostgreSQL
 ```
@@ -138,3 +153,9 @@ run them against PostgreSQL instead (`TEST_DATABASE_URL=... bun run db:verify`) 
 the suites never read `DATABASE_URL`, so they cannot be aimed at a real database
 by accident. See [DEPLOYMENT.md](DEPLOYMENT.md) for deployment and the dialect
 differences this uncovered.
+
+CI (`.github/workflows/ci.yml`) runs typecheck, lint and the production build —
+deliberately with **no environment variables**, so a build that starts requiring
+secrets fails there rather than on someone's machine — plus the full suite on both
+PGlite and a PostgreSQL service container, and a run of the dev seed to prove it
+still works against a freshly migrated database.
