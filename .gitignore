@@ -54,3 +54,9 @@ next-env.d.ts
 # machines even though it was removed from the repository.
 hevy/.hevy-key
 hevy/Exercise vids/
+
+# Exercise library import source: 452 .txt files, 450 thumbnails and 189 MB of
+# videos. It is input for scripts/import-exercises.ts, not versioned output —
+# the durable artifacts are schema/migrations/0011_import_exercise_library.sql
+# and the slug-renamed copies under public/exercise-media/thumbnails/.
+/exercises/

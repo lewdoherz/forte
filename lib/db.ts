@@ -39,6 +39,10 @@ export interface Database {
     secondary_muscles: string[];
     equipment: string;
     media_url: string | null;
+    // Added by 0010. Declared here as well as on the row type: this map is a
+    // separate list, and a column present on only one of the two makes every
+    // `selectAll` fail to typecheck.
+    how_to: string | null;
     is_custom: boolean;
     owner_id: string | null;
     archived_at: Date | null;

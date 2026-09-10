@@ -118,6 +118,41 @@ routines, workouts and sets follow through the cascades in 0004 and the ownershi
 foreign keys. The lifecycle suite counts the dependants after a delete, and checks
 that an export contains the owner's rows and nobody else's.
 
+## Exercise library and media
+
+The library is 468 exercises: a small curated set with hand-chosen muscles and
+types, plus an imported catalog of 452 with instructions for each. The import
+lives entirely in migrations — `0010_exercise_how_to.sql` adds the column and any
+vocabulary the source needed, `0011_import_exercise_library.sql` carries the rows.
+
+**The source is input, not source code.** The `exercises/` directory holds 452
+`.txt` files, 450 thumbnails and 189 MB of video; it is gitignored. The durable
+outputs are the migrations and the copied thumbnails, so a fresh clone has the
+whole library without the 200 MB. `scripts/import-exercises.ts` regenerates the
+import from that directory when it is present.
+
+Ten source exercises already existed as curated rows. Those collide on slug and
+gain only their `how_to` text — the curated muscles and types are left alone.
+Some curated rows are near-duplicates of imported ones under different titles
+(`Barbell Back Squat` versus `Squat (Barbell)`); both are kept deliberately,
+because the curated rows are what existing workouts and routines reference.
+
+**Media is addressed by slug, not stored per row**, so switching hosts is a
+configuration change rather than a data migration:
+
+| Asset | Where it comes from |
+|---|---|
+| Thumbnail | `/exercise-media/thumbnails/<slug>.jpg`, committed (8.8 MB) |
+| Video | `${NEXT_PUBLIC_MEDIA_BASE_URL}/<slug>.mp4`, Vercel Blob |
+
+`NEXT_PUBLIC_MEDIA_BASE_URL` is both the host and the switch: unset — which is a
+supported state, not a broken one — the video element is not rendered at all.
+To populate a new environment, create a **public** Blob store, connect it to the
+project, and run `scripts/upload-exercise-videos.ts` with
+`BLOB_READ_WRITE_TOKEN` (a token for code running outside Vercel; the app itself
+only ever reads public URLs, so it is not needed at runtime and is not part of
+the required production set).
+
 ## The deployed instance
 
 | | |

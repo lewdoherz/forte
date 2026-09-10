@@ -44,9 +44,12 @@ const u = await query<{ id: string }>(
 );
 const userId = u.rows[0].id;
 
+// Fixture slugs are namespaced because the imported library has claimed the
+// obvious ones: this row was 'bench-press-barbell' until a real
+// "Bench Press (Barbell)" arrived with that exact slug.
 const bench = await query<{ id: string }>(
   `insert into exercise_template (slug, title, exercise_type, primary_muscle, secondary_muscles, equipment)
-   values ('bench-press-barbell','Bench Press (Barbell)','weight_reps','chest','{triceps,shoulders}','barbell')
+   values ('bench-press-barbell-fixture','Bench Press (Barbell)','weight_reps','chest','{triceps,shoulders}','barbell')
    returning id`,
 );
 const benchId = bench.rows[0].id;
