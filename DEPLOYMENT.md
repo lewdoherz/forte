@@ -115,20 +115,20 @@ that an export contains the owner's rows and nobody else's.
 |---|---|
 | Application | `forte` on Vercel, function region `iad1` |
 | URLs | https://forte-delta.vercel.app (production), https://forte-herco1.vercel.app |
-| Deployment | `dpl_2PeT8N4o7jSMBhAnVBWjuxW7ASgc`, target `production`, `READY` |
+| Deployment | production, deployed from `main` (no pinned deployment id — that changes on every push) |
 | Database | Neon project `forte` — PostgreSQL 18.6, `us-east-2`, pooled endpoint |
-| Environment | `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `TRUST_FORWARDED_HEADER=true` |
+| Environment | `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `TRUST_FORWARDED_HEADER=true`, `EMAIL_API_KEY`, `EMAIL_FROM` |
 
-**A redeploy now requires the email variables.** `EMAIL_API_KEY` and
-`EMAIL_FROM` joined the required set when the account lifecycle landed, so the
-project refuses to boot without them — set both in the Vercel project before the
-next deployment.
+**The Vercel project is linked to the GitHub repository** (`lewdoherz/forte`,
+production branch `main`), so pushing to `main` deploys. Establishing that took a
+one-time browser step — Vercel → Settings → Authentication → connect GitHub —
+because the account was created with email and so had no Git provider attached.
+The link is a second, separate action from that connection.
 
-**The Vercel project is not linked to the GitHub repository** (`link: null`), so
-pushing to `main` does **not** deploy. Linking needs a browser step — Vercel →
-Account Settings → Login Connections → connect GitHub — after which the project
-can be linked and push-to-deploy enabled. Until then, deployments are made
-explicitly.
+**The email variables are required, and are set** for Production and Preview.
+`EMAIL_API_KEY` and `EMAIL_FROM` joined the required set when the account
+lifecycle landed, and the project refuses to boot without them: a deployment with
+them missing starts and then exits, which is worse than not deploying at all.
 
 `sslmode=verify-full` is set on `DATABASE_URL` deliberately. `pg` currently treats
 `require` as `verify-full`, but warns that `pg-connection-string` v3 will adopt
