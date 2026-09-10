@@ -3,67 +3,23 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { EXERCISE_TYPE_LABELS, getVisibleExercise, getVocabularies } from "@/lib/exercises";
 import { requireSessionUserId } from "@/lib/auth-session";
-import { getUserProfile } from "@/lib/users";
-import { listWorkouts } from "@/lib/workouts";
-import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 import { DeleteExerciseButton } from "@/components/delete-exercise-button";
-import { ExerciseThumbnail, ExerciseVideo } from "@/components/exercise-media";
-import { ExerciseStats } from "@/components/exercise-stats";
-import { WorkoutHistory } from "@/components/workout-history";
-
-/**
- * The page's sections, in the order the feature describes them. `how-to` is the
- * default: someone opening an exercise is usually there to learn it.
- */
-const TABS = [
-  { id: "how-to", label: "How to" },
-  { id: "statistics", label: "Statistics" },
-  { id: "history", label: "History" },
-] as const;
-
-type TabId = (typeof TABS)[number]["id"];
-
-function isTabId(value: string | undefined): value is TabId {
-  return TABS.some((tab) => tab.id === value);
-}
 
 export default async function ExerciseDetailPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
 }) {
   const userId = await requireSessionUserId();
   const { id } = await params;
   const exercise = await getVisibleExercise(db, id, userId);
   if (!exercise) notFound();
 
-  // The active tab lives in the URL rather than in client state — the same
-  // approach /workouts takes for its exercise filter. A tab is therefore
-  // linkable and survives a reload, and the whole page works without JavaScript.
-  // An unknown value degrades to the default instead of rendering nothing.
-  const { tab } = await searchParams;
-  const activeTab: TabId = isTabId(tab) ? tab : "how-to";
-
-  const [{ muscles, equipment: equipmentList }, profile] = await Promise.all([
-    getVocabularies(db),
-    getUserProfile(db, userId),
-  ]);
-  const timeZone = profile?.timezone ?? DEFAULT_TIME_ZONE;
+  const { muscles, equipment: equipmentList } = await getVocabularies(db);
   const muscleNames = new Map(muscles.map((m) => [m.code, m.display_name]));
   const equipmentNames = new Map(equipmentList.map((e) => [e.code, e.display_name]));
   const secondary = exercise.secondary_muscles.map((code) => muscleNames.get(code) ?? code);
   const isOwner = exercise.is_custom && exercise.owner_id === userId;
-
-  const howTo = exercise.how_to;
-
-  // Only the active tab's data is read, so opening the instructions costs no
-  // history or analytics query.
-  const history =
-    activeTab === "history"
-      ? await listWorkouts(db, userId, { exerciseId: exercise.id })
-      : null;
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
@@ -71,14 +27,11 @@ export default async function ExerciseDetailPage({
         ← Exercises
       </Link>
 
-      <div className="mt-4 flex items-start gap-4">
-        <ExerciseThumbnail slug={exercise.slug} />
-        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3">
-          <h1 className="min-w-0 break-words text-2xl font-semibold">{exercise.title}</h1>
-          <span className="shrink-0 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
-            {exercise.is_custom ? "Custom exercise" : "Library exercise"}
-          </span>
-        </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="min-w-0 break-words text-2xl font-semibold">{exercise.title}</h1>
+        <span className="shrink-0 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
+          {exercise.is_custom ? "Custom exercise" : "Library exercise"}
+        </span>
       </div>
 
       <dl className="mt-6 divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white shadow-sm">
@@ -113,68 +66,6 @@ export default async function ExerciseDetailPage({
           <DeleteExerciseButton id={exercise.id} />
         </div>
       ) : null}
-
-      <nav className="mt-8 flex gap-1 border-b border-zinc-200" aria-label="Exercise sections">
-        {TABS.map((t) => {
-          const isActive = t.id === activeTab;
-          return (
-            <Link
-              key={t.id}
-              href={`/exercises/${exercise.id}?tab=${t.id}`}
-              aria-current={isActive ? "page" : undefined}
-              className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
-                isActive
-                  ? "border-zinc-900 text-zinc-900"
-                  : "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700"
-              }`}
-            >
-              {t.label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div className="mt-6">
-        {activeTab === "how-to" ? (
-          <>
-            <ExerciseVideo slug={exercise.slug} />
-            {howTo ? (
-              // Source text with its own numbering and line breaks: preserving
-              // them is the whole point, so it must not be reflowed.
-              <p className="whitespace-pre-line rounded-xl border border-zinc-200 bg-white p-4 text-sm leading-relaxed shadow-sm">
-                {howTo}
-              </p>
-            ) : (
-              <p className="text-zinc-500">No instructions for {exercise.title} yet.</p>
-            )}
-          </>
-        ) : null}
-
-        {activeTab === "statistics" ? (
-          <ExerciseStats
-            userId={userId}
-            exerciseId={exercise.id}
-            exerciseTitle={exercise.title}
-            timeZone={timeZone}
-          />
-        ) : null}
-
-        {activeTab === "history" && history ? (
-          history.completed.length === 0 ? (
-            <p className="text-zinc-500">No workouts include {exercise.title} yet.</p>
-          ) : (
-            // The same list /workouts renders, including its cursor-based "Load
-            // older" control; it already filters by exercise, which is what this
-            // tab wants.
-            <WorkoutHistory
-              initial={history.completed}
-              initialCursor={history.nextCursor}
-              exerciseId={exercise.id}
-              timeZone={timeZone}
-            />
-          )
-        ) : null}
-      </div>
     </main>
   );
 }

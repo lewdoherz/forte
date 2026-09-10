@@ -194,7 +194,6 @@ export interface ExerciseTemplate extends Timestamped {
   secondary_muscles: string[]; // -> muscle_group.code[]
   equipment: string; // -> equipment.code
   media_url: string | null;
-  how_to: string | null; // imported library's numbered "How to" body
   is_custom: boolean;
   owner_id: Uuid | null; // null = global catalog
   archived_at: Date | null;
@@ -202,7 +201,7 @@ export interface ExerciseTemplate extends Timestamped {
 
 export type NewExerciseTemplate = New<
   ExerciseTemplate,
-  'secondary_muscles' | 'media_url' | 'how_to' | 'is_custom' | 'owner_id' | 'archived_at'
+  'secondary_muscles' | 'media_url' | 'is_custom' | 'owner_id' | 'archived_at'
 >;
 
 // ---------------------------------------------------------------------------
