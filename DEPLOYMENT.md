@@ -94,6 +94,16 @@ both flows are exercised locally without a provider account. A rejected send thr
 with the provider's status and body rather than failing quietly: a dropped reset
 email locks a user out while the request still looks successful.
 
+**Sender, and the sandbox limit.** `EMAIL_FROM` should be an address on a domain
+verified at resend.com/domains. Until one is verified, Resend's shared
+`onboarding@resend.dev` sender works but delivers **only to the Resend account
+owner's own address** — any other recipient is rejected with a 403 that names the
+restriction. Sign-up is unaffected either way: Better Auth dispatches the
+verification mail as a background task, so a rejected send is recorded as
+`Failed to run background task` and the account is still created normally. Worth
+knowing before inviting anyone: their verification and reset mail will not arrive,
+and nothing in the UI will say so.
+
 **Deletion cascades.** Better Auth removes the `app_user` row; sessions, accounts,
 routines, workouts and sets follow through the cascades in 0004 and the ownership
 foreign keys. The lifecycle suite counts the dependants after a delete, and checks
