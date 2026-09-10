@@ -112,19 +112,75 @@ export type NewEquipment = Omit<Equipment, 'sort_order'> & { sort_order?: number
 // ---------------------------------------------------------------------------
 
 export interface AppUser extends Timestamped {
-  username: string;
+  username: string | null;
   email: string;
   display_name: string | null;
   bio: string | null;
   link: string | null;
   profile_pic_url: string | null;
+  email_verified: boolean;
   private_profile: boolean;
 }
 
 export type NewAppUser = New<
   AppUser,
-  'display_name' | 'bio' | 'link' | 'profile_pic_url' | 'private_profile'
+  | 'username'
+  | 'display_name'
+  | 'bio'
+  | 'link'
+  | 'profile_pic_url'
+  | 'email_verified'
+  | 'private_profile'
 >;
+
+// ---------------------------------------------------------------------------
+// Auth (Better Auth) — 0004_auth.sql
+// ---------------------------------------------------------------------------
+
+/** Better Auth session: one row per active browser/device session. */
+export interface Session extends Timestamped {
+  user_id: Uuid;
+  token: string;
+  expires_at: Date;
+  ip_address: string | null;
+  user_agent: string | null;
+}
+
+export type NewSession = New<Session, 'ip_address' | 'user_agent'>;
+
+/** Better Auth account: one row per authentication method (provider) per user. */
+export interface Account extends Timestamped {
+  user_id: Uuid;
+  account_id: string;
+  provider_id: string;
+  access_token: string | null;
+  refresh_token: string | null;
+  id_token: string | null;
+  access_token_expires_at: Date | null;
+  refresh_token_expires_at: Date | null;
+  scope: string | null;
+  password: string | null;
+}
+
+export type NewAccount = New<
+  Account,
+  | 'access_token'
+  | 'refresh_token'
+  | 'id_token'
+  | 'access_token_expires_at'
+  | 'refresh_token_expires_at'
+  | 'scope'
+  | 'password'
+>;
+
+/** Better Auth verification: short-lived tokens (unused until email flows). */
+export interface Verification extends Timestamped {
+  identifier: string;
+  value: string;
+  expires_at: Date;
+}
+
+export type NewVerification = New<Verification>;
 
 // ---------------------------------------------------------------------------
 // Catalog

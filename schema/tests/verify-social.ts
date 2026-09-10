@@ -43,11 +43,6 @@ const alice = await mkUser("alice", "alice@example.com", false);
 const bob = await mkUser("bob", "bob@example.com", false);
 const carol = await mkUser("carol", "carol@example.com", true); // private profile
 
-const template = (await db.query<{ id: string }>(
-  `insert into exercise_template (slug, title, exercise_type, primary_muscle, equipment)
-   values ('squat-barbell','Squat (Barbell)','weight_reps','quadriceps','barbell') returning id`,
-)).rows[0].id;
-
 const mkWorkout = async (owner: string, title: string) =>
   (await db.query<{ id: string }>(
     `insert into workout (owner_id, title, started_at) values ($1,$2, now()) returning id`,

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars -- assertion vars exist only to trip the type checker */
 /**
  * Type-level assertions for schema/types.ts. Compiled with --strict; the
  * @ts-expect-error lines fail the build if the types ever stop rejecting them.
@@ -104,9 +105,12 @@ const mentioned: string = mention.mentioned_user_id;
 void mentioned;
 
 declare const node: CommentNode;
-const authorName: string = node.author.username;
+const authorName: string | null = node.author.username;
 const replyCount: number = node.replies.length;
 void [authorName, replyCount];
+
+// @ts-expect-error username is nullable (collected during profile onboarding)
+const badAuthorName: string = node.author.username;
 
 // exclusive arc: exactly one target, expressed in the type
 const shareWorkout: NewShare = { token: "Abc123XyZ9q", owner_id: "u", workout_id: "w" };
