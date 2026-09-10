@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { auth } from "./auth-server";
 import { db } from "./db";
 import { requireSessionUserId } from "./auth-session";
-import { updateUserProfile, userProfileInputSchema } from "./users";
+import { getUserProfile, updateUserProfile, userProfileInputSchema } from "./users";
 import { reportFailure } from "./log";
 
 export type AccountActionState = { error?: string } | { ok: true };
@@ -77,4 +78,56 @@ export async function updateAccount(
 
   revalidatePath("/account");
   return { ok: true };
+}
+
+/**
+ * Re-sends the verification link to the signed-in user's own address.
+ *
+ * The address is read from the session's own row rather than from the form, so
+ * this cannot be turned into a way to send mail from the app's domain to an
+ * address of the caller's choosing.
+ */
+export async function resendVerificationAction(): Promise<void> {
+  const userId = await requireSessionUserId();
+  const profile = await getUserProfile(db, userId);
+  if (!profile) return;
+
+  try {
+    await auth.api.sendVerificationEmail({
+      body: { email: profile.email, callbackURL: "/verify-email" },
+      headers: await headers(),
+    });
+  } catch (error) {
+    reportFailure("sendVerificationEmail", error);
+  }
+  revalidatePath("/account");
+}
+
+/**
+ * Deletes the account and everything it owns.
+ *
+ * Irreversible, and it destroys the training history too, so it takes a typed
+ * confirmation rather than a single click. Better Auth removes the `app_user`
+ * row; sessions, routines, workouts and sets follow through the cascades added
+ * in 0004 and the ownership foreign keys. The redirect leaves the browser at a
+ * page that still exists, since the one it was on cannot load without a session.
+ */
+export async function deleteAccountAction(
+  _prev: AccountActionState | null,
+  formData: FormData,
+): Promise<AccountActionState> {
+  await requireSessionUserId();
+
+  if (String(formData.get("confirmation") ?? "").trim() !== "DELETE") {
+    return { error: "Type DELETE in capitals to confirm." };
+  }
+
+  try {
+    await auth.api.deleteUser({ body: { callbackURL: "/" }, headers: await headers() });
+  } catch (error) {
+    reportFailure("deleteUser", error);
+    return { error: "Could not delete the account. Try again." };
+  }
+
+  redirect("/");
 }

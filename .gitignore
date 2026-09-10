@@ -43,6 +43,7 @@ next-env.d.ts
 
 # pglite local dev database
 .pglite/
+.mail/
 
 # embedded PostgreSQL data directory (db:verify:postgres harness, disposable)
 .pgdata*/

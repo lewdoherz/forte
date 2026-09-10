@@ -25,6 +25,28 @@ const envSchema = z.object({
     .min(32, "must be at least 32 characters")
     .optional(),
   BETTER_AUTH_URL: z.string().url("must be an absolute URL").optional(),
+  /**
+   * Resend API key. Required in production, because verification and
+   * password-reset mail are part of the account lifecycle: a deployment that
+   * cannot send them is one where a forgotten password is unrecoverable.
+   */
+  EMAIL_API_KEY: z.string().min(1).optional(),
+  /**
+   * The From address on outgoing mail, e.g. `forte <accounts@example.com>`.
+   * Resend requires a verified domain; until one is verified it will only
+   * deliver to the account owner's own address.
+   */
+  EMAIL_FROM: z
+    .string()
+    .trim()
+    .min(1)
+    .refine(
+      (value) =>
+        /^[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+$/.test(value) ||
+        /^.+<[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+>$/.test(value),
+      "must be an email address, optionally with a display name: forte <accounts@example.com>",
+    )
+    .optional(),
   TRUSTED_PROXY_CIDRS: z
     .string()
     .optional()
@@ -85,6 +107,11 @@ const REQUIRED_IN_PRODUCTION = [
   "DATABASE_URL",
   "BETTER_AUTH_SECRET",
   "BETTER_AUTH_URL",
+  // Verification and password-reset mail are part of sign-up and recovery, so an
+  // instance that cannot send them is broken in a way that only shows up when a
+  // user is already locked out.
+  "EMAIL_API_KEY",
+  "EMAIL_FROM",
 ] as const;
 
 /**

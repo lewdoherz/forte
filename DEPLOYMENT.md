@@ -22,6 +22,8 @@ refuses to start without them (`assertProductionEnv()`, invoked from
 | `DATABASE_URL` | **Required in production.** `postgres://` or `postgresql://`. Unset locally, this falls back to PGlite. |
 | `BETTER_AUTH_SECRET` | **Required in production.** Token-signing secret, minimum 32 characters. Generate with `openssl rand -base64 32`. A development-only fallback is used outside production and must never protect real data. |
 | `BETTER_AUTH_URL` | **Required in production.** Absolute origin used for auth callbacks and redirects, e.g. `https://forte.example.com` — no trailing slash. Unset locally, Better Auth derives the origin from the request. |
+| `EMAIL_API_KEY` | **Required in production.** Resend API key. Verification and password-reset mail are part of sign-up and recovery, so the server refuses to start without it — an instance that cannot send them looks healthy while being unable to complete the flows. |
+| `EMAIL_FROM` | **Required in production.** From address on outgoing mail, e.g. `forte <accounts@example.com>`. Resend requires a verified domain; until one is verified it delivers only to the account owner's own address. |
 | `NODE_ENV` | Set by the platform. `production` activates the requirements above. |
 
 See `.env.example`. Note that `next build` also runs with `NODE_ENV=production`
@@ -60,6 +62,43 @@ authority; no ORM owns or generates the schema.
   runs many instances, use a pooler (e.g. PgBouncer) and set `DATABASE_URL`
   to it.
 
+## Account lifecycle and email
+
+Sign-up, recovery and deletion are Better Auth's flows; what was added is the mail
+it sends, the pages that drive it, and the rules around both.
+
+| Flow | Endpoints | Surfaces |
+|---|---|---|
+| Verification | `/send-verification-email` | Sent at sign-up; resendable from `/account` |
+| Password reset | `/forget-password`, `/reset-password` | `/forgot-password`, `/reset-password` |
+| Deletion | `deleteUser` | `/account`, behind a typed confirmation |
+| Export | `/account/export` | A JSON download of everything the account owns |
+
+**Verification does not gate sign-in.** Enforcing it would strand every account
+created before the flow existed, whose `email_verified` is still false — including
+the first production account. The state is surfaced on `/account` instead, and
+`requireEmailVerification` can be turned on once no unverified accounts remain.
+
+**A password reset revokes every other session.** A reset is the recovery path for
+an account someone else may hold, so leaving other sessions alive would hand back
+the access the reset was meant to remove.
+
+**The three mail-sending endpoints carry their own rate limits** (3, 3 and 5 per
+minute). Inheriting the global 100/60s allowance would make them an email-bombing
+vector, since each request sends mail to an address the caller chooses.
+
+**Transport.** Resend's HTTP API over `fetch`, so no SDK dependency has to be kept
+current. With `EMAIL_API_KEY` unset, messages are written to `.mail/` at the repo
+root instead — the bodies carry the verification and reset links, which is how
+both flows are exercised locally without a provider account. A rejected send throws
+with the provider's status and body rather than failing quietly: a dropped reset
+email locks a user out while the request still looks successful.
+
+**Deletion cascades.** Better Auth removes the `app_user` row; sessions, accounts,
+routines, workouts and sets follow through the cascades in 0004 and the ownership
+foreign keys. The lifecycle suite counts the dependants after a delete, and checks
+that an export contains the owner's rows and nobody else's.
+
 ## The deployed instance
 
 | | |
@@ -69,6 +108,11 @@ authority; no ORM owns or generates the schema.
 | Deployment | `dpl_2PeT8N4o7jSMBhAnVBWjuxW7ASgc`, target `production`, `READY` |
 | Database | Neon project `forte` — PostgreSQL 18.6, `us-east-2`, pooled endpoint |
 | Environment | `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `TRUST_FORWARDED_HEADER=true` |
+
+**A redeploy now requires the email variables.** `EMAIL_API_KEY` and
+`EMAIL_FROM` joined the required set when the account lifecycle landed, so the
+project refuses to boot without them — set both in the Vercel project before the
+next deployment.
 
 **The Vercel project is not linked to the GitHub repository** (`link: null`), so
 pushing to `main` does **not** deploy. Linking needs a browser step — Vercel →

@@ -5,8 +5,13 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth-server";
 import { requireSession, requireSessionUserId } from "@/lib/auth-session";
 import { getUserProfile } from "@/lib/users";
-import { updateAccount } from "@/lib/account-actions";
+import {
+  deleteAccountAction,
+  resendVerificationAction,
+  updateAccount,
+} from "@/lib/account-actions";
 import { AccountForm } from "@/components/account-form";
+import { DeleteAccountForm } from "@/components/delete-account-form";
 import { SessionList, type ActiveSession } from "@/components/session-list";
 
 export default async function AccountPage() {
@@ -58,11 +63,62 @@ export default async function AccountPage() {
         submitLabel="Save changes"
       />
 
+      <section className="mt-10 border-t border-zinc-200 pt-6">
+        <h2 className="text-lg font-semibold">Email</h2>
+        {profile.email_verified ? (
+          <p className="mt-2 text-sm text-zinc-600">
+            <span className="font-medium text-green-700">Verified.</span>{" "}
+            {profile.email} is confirmed.
+          </p>
+        ) : (
+          <>
+            <p className="mt-2 text-sm text-zinc-600">
+              <span className="font-medium text-amber-700">Not verified.</span>{" "}
+              {profile.email} has not been confirmed yet. The account works without it —
+              nothing is blocked — but confirming the address proves we can reach you. An
+              address mistyped at sign-up is one that a password reset would never arrive
+              at.
+            </p>
+            <form action={resendVerificationAction} className="mt-3">
+              <button
+                type="submit"
+                className="h-11 rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-100"
+              >
+                Send verification email
+              </button>
+            </form>
+          </>
+        )}
+      </section>
+
       <SessionList
         sessions={activeSessions}
         currentToken={currentToken}
         timeZone={profile.timezone}
       />
+
+      <section className="mt-10 border-t border-zinc-200 pt-6">
+        <h2 className="text-lg font-semibold">Your data</h2>
+        <p className="mt-2 text-sm text-zinc-600">
+          Download everything recorded here — routines, workouts, sets and any custom
+          exercises — as a JSON file.
+        </p>
+        <a
+          href="/account/export"
+          className="mt-3 inline-flex h-11 items-center rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-100"
+        >
+          Download your data
+        </a>
+      </section>
+
+      <section className="mt-10 border-t border-zinc-200 pt-6">
+        <h2 className="text-lg font-semibold text-red-700">Delete account</h2>
+        <p className="mt-2 text-sm text-zinc-600">
+          Removes the account and everything in it — routines, workouts and history. This
+          cannot be undone, so download your data first if you want to keep it.
+        </p>
+        <DeleteAccountForm action={deleteAccountAction} />
+      </section>
     </main>
   );
 }

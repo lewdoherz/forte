@@ -29,6 +29,8 @@ export interface UserProfile {
   email: string;
   display_name: string | null;
   timezone: string;
+  /** False until the address is confirmed; never blocks sign-in (see lib/auth.ts). */
+  email_verified: boolean;
 }
 
 /**
@@ -41,7 +43,7 @@ export async function getUserProfile(
 ): Promise<UserProfile | undefined> {
   return db
     .selectFrom("app_user")
-    .select(["id", "email", "display_name", "timezone"])
+    .select(["id", "email", "display_name", "timezone", "email_verified"])
     .where("id", "=", userId)
     .executeTakeFirst();
 }
