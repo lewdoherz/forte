@@ -1,0 +1,755 @@
+{
+ "/client_invites": {
+  "status": 200,
+  "len": 2,
+  "shape": {
+   "array": 0,
+   "item": null
+  }
+ },
+ "/clients_coach": {
+  "status": 404,
+  "len": 12,
+  "note": "truncated/non-json",
+  "head": "InvalidCoach"
+ },
+ "/feed_workouts_paged": {
+  "status": 200,
+  "len": 18017,
+  "shape": {
+   "workouts": {
+    "array": 2,
+    "item": {
+     "id": "string",
+     "gym": "null",
+     "name": "string",
+     "index": "number",
+     "media": {
+      "array": 0,
+      "item": null
+     },
+     "user_id": "string",
+     "comments": {
+      "array": 0,
+      "item": null
+     },
+     "end_time": "number",
+     "short_id": "string",
+     "username": "string",
+     "verified": "boolean",
+     "exercises": {
+      "array": 3,
+      "item": {
+       "id": "string",
+       "url": "string",
+       "sets": "[…]",
+       "notes": "string",
+       "title": "string",
+       "ar_title": "string",
+       "ca_title": "string",
+       "de_title": "string",
+       "es_title": "string",
+       "fr_title": "string",
+       "hi_title": "string",
+       "it_title": "string",
+       "ja_title": "string",
+       "ko_title": "string",
+       "pl_title": "string",
+       "priority": "number",
+       "pt_title": "string",
+       "ru_title": "string",
+       "tr_title": "string",
+       "media_type": "string",
+       "pt_br_title": "string",
+       "superset_id": "null",
+       "zh_cn_title": "string",
+       "zh_tw_title": "string",
+       "muscle_group": "string",
+       "pinned_notes": "[…]",
+       "rest_seconds": "number",
+       "exercise_type": "string",
+       "other_muscles": "[…]",
+       "thumbnail_url": "string",
+       "equipment_category": "string",
+       "exercise_template_id": "string",
+       "volume_doubling_enabled": "boolean",
+       "custom_exercise_image_url": "null"
+      }
+     },
+     "created_at": "string",
+     "image_urls": {
+      "array": 0,
+      "item": null
+     },
+     "is_private": "boolean",
+     "like_count": "number",
+     "routine_id": "string",
+     "start_time": "number",
+     "updated_at": "string",
+     "apple_watch": "boolean",
+     "description": "string",
+     "like_images": {
+      "array": 0,
+      "item": null
+     },
+     "nth_workout": "number",
+     "wearos_watch": "boolean",
+     "comment_count": "number",
+     "profile_image": "string",
+     "is_trainer_workout": "boolean",
+     "estimated_volume_kg": "number",
+     "include_warmup_sets": "boolean",
+     "is_biometrics_public": "boolean",
+     "preview_workout_likes": {
+      "array": 0,
+      "item": null
+     },
+     "is_liked_by_user": "boolean"
+    }
+   }
+  }
+ },
+ "/feed_workouts_paged/329186830": {
+  "status": 200,
+  "len": 18860,
+  "shape": {
+   "workouts": {
+    "array": 2,
+    "item": {
+     "id": "string",
+     "gym": "null",
+     "name": "string",
+     "index": "number",
+     "media": {
+      "array": 0,
+      "item": null
+     },
+     "user_id": "string",
+     "comments": {
+      "array": 0,
+      "item": null
+     },
+     "end_time": "number",
+     "short_id": "string",
+     "username": "string",
+     "verified": "boolean",
+     "exercises": {
+      "array": 4,
+      "item": {
+       "id": "string",
+       "url": "string",
+       "sets": "[…]",
+       "notes": "string",
+       "title": "string",
+       "ar_title": "string",
+       "ca_title": "string",
+       "de_title": "string",
+       "es_title": "string",
+       "fr_title": "string",
+       "hi_title": "string",
+       "it_title": "string",
+       "ja_title": "string",
+       "ko_title": "string",
+       "pl_title": "string",
+       "priority": "number",
+       "pt_title": "string",
+       "ru_title": "string",
+       "tr_title": "string",
+       "media_type": "string",
+       "pt_br_title": "string",
+       "superset_id": "null",
+       "zh_cn_title": "string",
+       "zh_tw_title": "string",
+       "muscle_group": "string",
+       "pinned_notes": "[…]",
+       "rest_seconds": "number",
+       "exercise_type": "string",
+       "other_muscles": "[…]",
+       "thumbnail_url": "string",
+       "equipment_category": "string",
+       "exercise_template_id": "string",
+       "volume_doubling_enabled": "boolean",
+       "custom_exercise_image_url": "null"
+      }
+     },
+     "created_at": "string",
+     "image_urls": {
+      "array": 0,
+      "item": null
+     },
+     "is_private": "boolean",
+     "like_count": "number",
+     "routine_id": "string",
+     "start_time": "number",
+     "updated_at": "string",
+     "apple_watch": "boolean",
+     "description": "string",
+     "like_images": {
+      "array": 0,
+      "item": null
+     },
+     "nth_workout": "number",
+     "wearos_watch": "boolean",
+     "comment_count": "number",
+     "profile_image": "string",
+     "is_trainer_workout": "boolean",
+     "estimated_volume_kg": "number",
+     "include_warmup_sets": "boolean",
+     "is_biometrics_public": "boolean",
+     "preview_workout_likes": {
+      "array": 0,
+      "item": null
+     },
+     "is_liked_by_user": "boolean"
+    }
+   }
+  }
+ },
+ "/follow_counts": {
+  "status": 200,
+  "len": 40,
+  "shape": {
+   "follower_count": "number",
+   "following_count": "number"
+  }
+ },
+ "/following_statuses": {
+  "status": 200,
+  "len": 2,
+  "shape": {}
+ },
+ "/hevy_trainer/program": {
+  "status": 200,
+  "len": 2,
+  "shape": {}
+ },
+ "/paddle_prices": {
+  "status": 200,
+  "len": 290,
+  "shape": {
+   "array": 3,
+   "item": {
+    "paddle_price_id": "string",
+    "billing_period": "string",
+    "price_usd": "number"
+   }
+  }
+ },
+ "/recommended_users": {
+  "status": 200,
+  "len": 2336,
+  "shape": {
+   "array": 7,
+   "item": {
+    "id": "string",
+    "username": "string",
+    "verified": "boolean",
+    "full_name": "string",
+    "profile_pic": "string",
+    "following_status": "string",
+    "private_profile": "boolean",
+    "following": "boolean",
+    "label": "string"
+   }
+  }
+ },
+ "/user/account": {
+  "status": 200,
+  "len": 781,
+  "shape": {
+   "id": "string",
+   "username": "string",
+   "email": "string",
+   "profile_pic": "string",
+   "is_strava_connected": "boolean",
+   "is_chatgpt_oauth_authorized": "boolean",
+   "country_code": "string",
+   "city": "string",
+   "likes_push_enabled": "boolean",
+   "follows_push_enabled": "boolean",
+   "comments_push_enabled": "boolean",
+   "comment_mention_push_enabled": "boolean",
+   "comment_discussion_push_enabled": "boolean",
+   "private_profile": "boolean",
+   "created_at": "string",
+   "last_workout_at": "string",
+   "accepted_terms_and_conditions": "boolean",
+   "is_coached": "boolean",
+   "is_a_coach": "boolean",
+   "sex": "string",
+   "birthday": "string",
+   "email_consent": "boolean",
+   "email_verified": "boolean",
+   "height_cm": "number",
+   "is_hevy_trainer_user": "boolean"
+  }
+ },
+ "/user_key_values": {
+  "status": 200,
+  "len": 154,
+  "shape": {
+   "hasDismissedDragAndDropRoutineTip": "boolean",
+   "UPDATED_AT": "string",
+   "SELECT_GYM_TOOLTIP_DISMISSED_KEY": "boolean",
+   "MonthlyReportPushEnabled": "boolean"
+  }
+ },
+ "/user_subscription": {
+  "status": 200,
+  "len": 153,
+  "shape": {
+   "is_pro": "boolean",
+   "active_subscription": {
+    "managing_store": "string",
+    "type": "string",
+    "grace_period_expires_date": "null",
+    "expires_date": "string"
+   }
+  }
+ },
+ "/user_workouts_paged": {
+  "status": 200,
+  "len": 18017,
+  "shape": {
+   "workouts": {
+    "array": 2,
+    "item": {
+     "id": "string",
+     "gym": "null",
+     "name": "string",
+     "index": "number",
+     "media": {
+      "array": 0,
+      "item": null
+     },
+     "user_id": "string",
+     "comments": {
+      "array": 0,
+      "item": null
+     },
+     "end_time": "number",
+     "short_id": "string",
+     "username": "string",
+     "verified": "boolean",
+     "exercises": {
+      "array": 3,
+      "item": {
+       "id": "string",
+       "url": "string",
+       "sets": "[…]",
+       "notes": "string",
+       "title": "string",
+       "ar_title": "string",
+       "ca_title": "string",
+       "de_title": "string",
+       "es_title": "string",
+       "fr_title": "string",
+       "hi_title": "string",
+       "it_title": "string",
+       "ja_title": "string",
+       "ko_title": "string",
+       "pl_title": "string",
+       "priority": "number",
+       "pt_title": "string",
+       "ru_title": "string",
+       "tr_title": "string",
+       "media_type": "string",
+       "pt_br_title": "string",
+       "superset_id": "null",
+       "zh_cn_title": "string",
+       "zh_tw_title": "string",
+       "muscle_group": "string",
+       "pinned_notes": "[…]",
+       "rest_seconds": "number",
+       "exercise_type": "string",
+       "other_muscles": "[…]",
+       "thumbnail_url": "string",
+       "equipment_category": "string",
+       "exercise_template_id": "string",
+       "volume_doubling_enabled": "boolean",
+       "custom_exercise_image_url": "null"
+      }
+     },
+     "created_at": "string",
+     "image_urls": {
+      "array": 0,
+      "item": null
+     },
+     "is_private": "boolean",
+     "like_count": "number",
+     "routine_id": "string",
+     "start_time": "number",
+     "updated_at": "string",
+     "apple_watch": "boolean",
+     "description": "string",
+     "like_images": {
+      "array": 0,
+      "item": null
+     },
+     "nth_workout": "number",
+     "wearos_watch": "boolean",
+     "comment_count": "number",
+     "profile_image": "string",
+     "is_trainer_workout": "boolean",
+     "estimated_volume_kg": "number",
+     "include_warmup_sets": "boolean",
+     "is_biometrics_public": "boolean",
+     "preview_workout_likes": {
+      "array": 0,
+      "item": null
+     },
+     "is_liked_by_user": "boolean"
+    }
+   }
+  }
+ },
+ "/v2/user_preferences": {
+  "status": 200,
+  "len": 312,
+  "shape": {
+   "username": "string",
+   "weight_unit": "string",
+   "distance_unit": "string",
+   "body_measurement_unit": "string",
+   "first_weekday": "string",
+   "superset_scrolling": "boolean",
+   "plate_calculator_enabled": "boolean",
+   "rpe_enabled": "boolean",
+   "inline_set_timer_enabled": "boolean",
+   "default_workout_visibility_public": "boolean",
+   "volume_includes_warmup_sets": "boolean"
+  }
+ },
+ "/workout_count": {
+  "status": 200,
+  "len": 19,
+  "shape": {
+   "workout_count": "number"
+  }
+ },
+ "/custom_exercise_templates": {
+  "status": 200,
+  "len": 698,
+  "shape": {
+   "array": 1,
+   "item": {
+    "id": "string",
+    "title": "string",
+    "priority": "number",
+    "is_custom": "boolean",
+    "is_archived": "boolean",
+    "exercise_type": "string",
+    "equipment_category": "string",
+    "muscle_group": "string",
+    "other_muscles": {
+     "array": 7,
+     "item": "string"
+    },
+    "custom_exercise_image_url": "string",
+    "thumbnail_url": "string",
+    "url": "string",
+    "media_type": "string"
+   }
+  }
+ },
+ "/exercise_template_units": {
+  "status": 200,
+  "len": 2,
+  "shape": {
+   "array": 0,
+   "item": null
+  }
+ },
+ "/routine_folders": {
+  "status": 200,
+  "len": 2,
+  "shape": {
+   "array": 0,
+   "item": null
+  }
+ },
+ "/routines_sync_batch": {
+  "status": 200,
+  "len": 82,
+  "shape": {
+   "updated": {
+    "array": 0,
+    "item": null
+   },
+   "deleted": {
+    "array": 0,
+    "item": null
+   },
+   "isMore": "boolean",
+   "updated_at": "string"
+  }
+ },
+ "/user_calendar_workouts/2026/9": {
+  "status": 200,
+  "len": 100,
+  "shape": {
+   "array": 1,
+   "item": {
+    "workout_short_id": "string",
+    "title": "string",
+    "start_time": "number",
+    "duration_seconds": "number"
+   }
+  }
+ },
+ "/user_workout_images/lewsherz/5": {
+  "status": 200,
+  "len": 2,
+  "shape": {
+   "array": 0,
+   "item": null
+  }
+ },
+ "/user_workout_metrics/duration/1781366400/1789030998": {
+  "status": 200,
+  "len": 361,
+  "shape": {
+   "array": 3,
+   "item": {
+    "workout_id": "string",
+    "type": "string",
+    "start_time": "number",
+    "duration_seconds": "number"
+   }
+  }
+ },
+ "/user_profile/lewsherz": {
+  "status": 200,
+  "len": 2471,
+  "shape": {
+   "username": "string",
+   "verified": "boolean",
+   "subscribed": "boolean",
+   "profile_pic": "string",
+   "workout_count": "number",
+   "is_blocked": "boolean",
+   "following_status": "string",
+   "is_followed_by_requester": "boolean",
+   "private_profile": "boolean",
+   "follower_count": "number",
+   "following_count": "number",
+   "routines": {
+    "array": 7,
+    "item": {
+     "id": "string",
+     "title": "string",
+     "short_id": "string",
+     "folder_id": "null"
+    }
+   },
+   "weekly_workout_durations": {
+    "array": 12,
+    "item": {
+     "week_start_date": "string",
+     "week_end_date": "string",
+     "total_seconds": "number"
+    }
+   },
+   "mutual_followers": {
+    "array": 0,
+    "item": null
+   }
+  }
+ },
+ "/workout/ZTNVLuJjSzM": {
+  "status": 200,
+  "len": 6608,
+  "shape": {
+   "id": "string",
+   "gym": "null",
+   "name": "string",
+   "index": "number",
+   "media": {
+    "array": 0,
+    "item": null
+   },
+   "user_id": "string",
+   "comments": {
+    "array": 0,
+    "item": null
+   },
+   "end_time": "number",
+   "short_id": "string",
+   "username": "string",
+   "verified": "boolean",
+   "exercises": {
+    "array": 3,
+    "item": {
+     "id": "string",
+     "url": "string",
+     "sets": {
+      "array": 3,
+      "item": {
+       "id": "string",
+       "prs": "[…]",
+       "rpe": "null",
+       "reps": "number",
+       "index": "number",
+       "indicator": "string",
+       "weight_kg": "number",
+       "completed_at": "string",
+       "custom_metric": "null",
+       "distance_meters": "null",
+       "geospatial_data": "null",
+       "personalRecords": "[…]",
+       "duration_seconds": "null"
+      }
+     },
+     "notes": "string",
+     "title": "string",
+     "ar_title": "string",
+     "ca_title": "string",
+     "de_title": "string",
+     "es_title": "string",
+     "fr_title": "string",
+     "hi_title": "string",
+     "it_title": "string",
+     "ja_title": "string",
+     "ko_title": "string",
+     "pl_title": "string",
+     "priority": "number",
+     "pt_title": "string",
+     "ru_title": "string",
+     "tr_title": "string",
+     "media_type": "string",
+     "pt_br_title": "string",
+     "superset_id": "null",
+     "zh_cn_title": "string",
+     "zh_tw_title": "string",
+     "muscle_group": "string",
+     "pinned_notes": {
+      "array": 0,
+      "item": null
+     },
+     "rest_seconds": "number",
+     "exercise_type": "string",
+     "other_muscles": {
+      "array": 2,
+      "item": "string"
+     },
+     "thumbnail_url": "string",
+     "equipment_category": "string",
+     "exercise_template_id": "string",
+     "volume_doubling_enabled": "boolean",
+     "custom_exercise_image_url": "null"
+    }
+   },
+   "created_at": "string",
+   "image_urls": {
+    "array": 0,
+    "item": null
+   },
+   "is_private": "boolean",
+   "like_count": "number",
+   "routine_id": "string",
+   "start_time": "number",
+   "updated_at": "string",
+   "apple_watch": "boolean",
+   "description": "string",
+   "like_images": {
+    "array": 0,
+    "item": null
+   },
+   "nth_workout": "number",
+   "wearos_watch": "boolean",
+   "comment_count": "number",
+   "profile_image": "string",
+   "is_trainer_workout": "boolean",
+   "estimated_volume_kg": "number",
+   "include_warmup_sets": "boolean",
+   "is_biometrics_public": "boolean",
+   "preview_workout_likes": {
+    "array": 0,
+    "item": null
+   },
+   "is_liked_by_user": "boolean"
+  }
+ },
+ "/routine_with_short_id/2oxdt9VDsv3": {
+  "status": 200,
+  "len": 7239,
+  "shape": {
+   "routine": {
+    "id": "string",
+    "title": "string",
+    "username": "string",
+    "profile_pic": "string",
+    "exercises": {
+     "array": 4,
+     "item": {
+      "id": "string",
+      "username": "string",
+      "exercise_template_id": "string",
+      "parent_exercise_template_id": "null",
+      "warmup_set_count": "number",
+      "normal_set_count": "number",
+      "title": "string",
+      "ar_title": "string",
+      "ca_title": "string",
+      "es_title": "string",
+      "de_title": "string",
+      "fr_title": "string",
+      "hi_title": "string",
+      "it_title": "string",
+      "pl_title": "string",
+      "pt_br_title": "string",
+      "pt_title": "string",
+      "ko_title": "string",
+      "ja_title": "string",
+      "tr_title": "string",
+      "ru_title": "string",
+      "zh_cn_title": "string",
+      "zh_tw_title": "string",
+      "muscle_group": "string",
+      "other_muscles": {
+       "array": 4,
+       "item": "string"
+      },
+      "exercise_type": "string",
+      "equipment_category": "string",
+      "sets": {
+       "array": 3,
+       "item": {
+        "index": "number",
+        "indicator": "string",
+        "weight_kg": "null",
+        "reps": "number",
+        "distance_meters": "null",
+        "duration_seconds": "null",
+        "custom_metric": "null",
+        "rpe": "null"
+       }
+      },
+      "notes": "null",
+      "url": "string",
+      "custom_exercise_image_url": "null",
+      "thumbnail_url": "string",
+      "media_type": "string",
+      "superset_id": "null",
+      "rest_seconds": "number",
+      "pinned_notes": {
+       "array": 0,
+       "item": null
+      }
+     }
+    },
+    "updated_at": "string",
+    "parent_routine_id": "null",
+    "index": "number",
+    "folder_id": "null",
+    "short_id": "string",
+    "program_id": "null",
+    "coach_id": "null",
+    "notes": "null",
+    "coach_force_rpe_enabled": "boolean",
+    "hevy_trainer_program_id": "null",
+    "created_at": "string"
+   }
+  }
+ }
+}

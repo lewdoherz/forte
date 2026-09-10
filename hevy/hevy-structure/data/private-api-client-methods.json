@@ -1,0 +1,769 @@
+[
+ {
+  "method": "login",
+  "verb": "POST",
+  "path": "login",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"login\",{emailOrUsername:e,password:a,gympassUserId:n,recaptchaToken:t}"
+ },
+ {
+  "method": "logout",
+  "verb": "DELETE",
+  "path": "/auth/session",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"/auth/session\""
+ },
+ {
+  "method": "authMigrate",
+  "verb": "POST",
+  "path": "auth/migrate",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"auth/migrate\""
+ },
+ {
+  "method": "signInWithGoogle",
+  "verb": "POST",
+  "path": "login_google_web",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"login_google_web\",{code:e,gympassUserId:a}"
+ },
+ {
+  "method": "signUpWithGoogle",
+  "verb": "POST",
+  "path": "sign_up_google_web",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"sign_up_google_web\",{code:e,gympassUserId:a}"
+ },
+ {
+  "method": "generatePasswordRecoveryEmail",
+  "verb": "POST",
+  "path": "recover_password",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"recover_password\",{email:e}"
+ },
+ {
+  "method": "generateDownloadLinkEmail",
+  "verb": "POST",
+  "path": "email_download_link",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"email_download_link\""
+ },
+ {
+  "method": "getAccount",
+  "verb": "GET",
+  "path": "user/account",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"user/account\""
+ },
+ {
+  "method": "updateAccount",
+  "verb": "PUT",
+  "path": "account",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"account\",{account:e}"
+ },
+ {
+  "method": "updatePassword",
+  "verb": "PUT",
+  "path": "update_password_with_password",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"update_password_with_password\",e"
+ },
+ {
+  "method": "updatePasswordWithToken",
+  "verb": "POST",
+  "path": "update_password",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"update_password\",e"
+ },
+ {
+  "method": "updateUsername",
+  "verb": "PUT",
+  "path": "username",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"username\",{username:e,isInitialOnboardingUsername:a}"
+ },
+ {
+  "method": "getPresignedUrl",
+  "verb": "POST",
+  "path": "presigned_url",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"presigned_url\",{file_name:e}"
+ },
+ {
+  "method": "getUserSubscription",
+  "verb": "GET",
+  "path": "user_subscription",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"user_subscription\""
+ },
+ {
+  "method": "getUserPreferences",
+  "verb": "GET",
+  "path": "v2/user_preferences",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"v2/user_preferences\""
+ },
+ {
+  "method": "updateUserPreferences",
+  "verb": "PUT",
+  "path": "user_preferences",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"user_preferences\",e"
+ },
+ {
+  "method": "getUserKeyValues",
+  "verb": "GET",
+  "path": "user_key_values",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"user_key_values\""
+ },
+ {
+  "method": "updateUserKeyValues",
+  "verb": "PUT",
+  "path": "user_key_values",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"user_key_values\",e"
+ },
+ {
+  "method": "getRoutinesSync",
+  "verb": "POST",
+  "path": "routines_sync_batch",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"routines_sync_batch\",e"
+ },
+ {
+  "method": "getRoutine",
+  "verb": "GET",
+  "path": "routine/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"routine/\".concat(e)"
+ },
+ {
+  "method": "getRoutineWithShortId",
+  "verb": "GET",
+  "path": "routine_with_short_id/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"routine_with_short_id/\".concat(e)"
+ },
+ {
+  "method": "postRoutine",
+  "verb": "POST",
+  "path": "routine",
+  "dynamic": [],
+  "queryParams": true,
+  "raw": "\"routine\",{routine:e},{params:{sendSyncEventToMobileApp:!0}}"
+ },
+ {
+  "method": "postRoutineCopy",
+  "verb": "POST",
+  "path": "routine_copy",
+  "dynamic": [],
+  "queryParams": true,
+  "raw": "\"routine_copy\",e,{params:{sendSyncEventToMobileApp:!0}}"
+ },
+ {
+  "method": "updateRoutine",
+  "verb": "PUT",
+  "path": "routine/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": true,
+  "raw": "\"routine/\".concat(e),{routine:a},{params:{sendSyncEventToMobileApp:!0}}"
+ },
+ {
+  "method": "deleteRoutine",
+  "verb": "DELETE",
+  "path": "routine/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": true,
+  "raw": "\"routine/\".concat(e),{params:{sendSyncEventToMobileApp:!0}}"
+ },
+ {
+  "method": "getRoutineFolders",
+  "verb": "GET",
+  "path": "routine_folders",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"routine_folders\""
+ },
+ {
+  "method": "postRoutineFolder",
+  "verb": "POST",
+  "path": "routine_folder",
+  "dynamic": [],
+  "queryParams": true,
+  "raw": "\"routine_folder\",{folder:e},{params:{sendSyncEventToMobileApp:!0}}"
+ },
+ {
+  "method": "updateRoutineFolder",
+  "verb": "PUT",
+  "path": "routine_folder",
+  "dynamic": [],
+  "queryParams": true,
+  "raw": "\"routine_folder\",e,{params:{sendSyncEventToMobileApp:!0}}"
+ },
+ {
+  "method": "deleteRoutineFolder",
+  "verb": "DELETE",
+  "path": "routine_folder/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": true,
+  "raw": "\"routine_folder/\".concat(e),{params:{sendSyncEventToMobileApp:!0}}"
+ },
+ {
+  "method": "updateRoutineLocations",
+  "verb": "PUT",
+  "path": "routine_locations",
+  "dynamic": [],
+  "queryParams": true,
+  "raw": "\"routine_locations\",{locations:e},{params:{sendSyncEventToMobileApp:!0}}"
+ },
+ {
+  "method": "updateRoutineFolderOrder",
+  "verb": "PUT",
+  "path": "routine_folder_order",
+  "dynamic": [],
+  "queryParams": true,
+  "raw": "\"routine_folder_order\",{reorders:e},{params:{sendSyncEventToMobileApp:!0}}"
+ },
+ {
+  "method": "getCustomExerciseTemplates",
+  "verb": "GET",
+  "path": "custom_exercise_templates",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"custom_exercise_templates\""
+ },
+ {
+  "method": "getExerciseTemplateUnits",
+  "verb": "GET",
+  "path": "exercise_template_units",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"exercise_template_units\""
+ },
+ {
+  "method": "postFeedback",
+  "verb": "POST",
+  "path": "v2/feedback",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"v2/feedback\",{feedback:e}"
+ },
+ {
+  "method": "getFeedPaged",
+  "verb": "GET",
+  "path": null,
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "e?\"feed_workouts_paged/\".concat(e):\"feed_workouts_paged\""
+ },
+ {
+  "method": "userSearch",
+  "verb": "GET",
+  "path": "users/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"users/\".concat(e)"
+ },
+ {
+  "method": "getRecommendedUsers",
+  "verb": "GET",
+  "path": "recommended_users",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"recommended_users\""
+ },
+ {
+  "method": "getFollowingStatuses",
+  "verb": "GET",
+  "path": "following_statuses",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"following_statuses\""
+ },
+ {
+  "method": "getFollowing",
+  "verb": "GET",
+  "path": "following/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"following/\".concat(e)"
+ },
+ {
+  "method": "getFollowCounts",
+  "verb": "GET",
+  "path": "follow_counts",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"follow_counts\""
+ },
+ {
+  "method": "followUser",
+  "verb": "POST",
+  "path": "follow",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"follow\",{username:e}"
+ },
+ {
+  "method": "unfollowUser",
+  "verb": "POST",
+  "path": "unfollow",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"unfollow\",{username:e}"
+ },
+ {
+  "method": "getFollowersPaged",
+  "verb": "GET",
+  "path": "followers_paged/",
+  "dynamic": [
+   "e,\"/\"",
+   "a"
+  ],
+  "queryParams": false,
+  "raw": "\"followers_paged/\".concat(e,\"/\").concat(a)"
+ },
+ {
+  "method": "searchFollowers",
+  "verb": "GET",
+  "path": "followers_search/",
+  "dynamic": [
+   "e,\"/\"",
+   "a"
+  ],
+  "queryParams": false,
+  "raw": "\"followers_search/\".concat(e,\"/\").concat(a)"
+ },
+ {
+  "method": "getUserProfile",
+  "verb": "GET",
+  "path": "user_profile/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"user_profile/\".concat(e)"
+ },
+ {
+  "method": "getUserPublicApiKey",
+  "verb": "GET",
+  "path": "user_public_api_key",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"user_public_api_key\""
+ },
+ {
+  "method": "createUserPublicApiKey",
+  "verb": "POST",
+  "path": "user_public_api_key",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"user_public_api_key\""
+ },
+ {
+  "method": "deleteUserPublicApiKey",
+  "verb": "DELETE",
+  "path": "user_public_api_key",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"user_public_api_key\""
+ },
+ {
+  "method": "getPublicUserProfile",
+  "verb": "GET",
+  "path": "public_user_profile/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"public_user_profile/\".concat(e)"
+ },
+ {
+  "method": "getUserWorkoutImages",
+  "verb": "GET",
+  "path": "/user_workout_images/",
+  "dynamic": [
+   "e,\"/\"",
+   "a"
+  ],
+  "queryParams": false,
+  "raw": "\"/user_workout_images/\".concat(e,\"/\").concat(a)"
+ },
+ {
+  "method": "getUserWorkoutMetrics",
+  "verb": "GET",
+  "path": "user_workout_metrics/",
+  "dynamic": [
+   "e,\"/\"",
+   "a,\"/\"",
+   "n"
+  ],
+  "queryParams": false,
+  "raw": "\"user_workout_metrics/\".concat(e,\"/\").concat(a,\"/\").concat(n)"
+ },
+ {
+  "method": "getUserCalendarWorkouts",
+  "verb": "GET",
+  "path": "user_calendar_workouts/",
+  "dynamic": [
+   "a,\"/\"",
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"user_calendar_workouts/\".concat(a,\"/\").concat(e)"
+ },
+ {
+  "method": "getWorkout",
+  "verb": "GET",
+  "path": "workout/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"workout/\".concat(e)"
+ },
+ {
+  "method": "getUserWorkoutsPaged",
+  "verb": "GET",
+  "path": "user_workouts_paged",
+  "dynamic": [],
+  "queryParams": true,
+  "raw": "\"user_workouts_paged\",{params:e}"
+ },
+ {
+  "method": "getWorkoutComments",
+  "verb": "GET",
+  "path": "workout_comments/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"workout_comments/\".concat(e)"
+ },
+ {
+  "method": "getWorkoutLikes",
+  "verb": "GET",
+  "path": "workout_likes/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"workout_likes/\".concat(e)"
+ },
+ {
+  "method": "postWorkoutComment",
+  "verb": "POST",
+  "path": "workout_comment",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"workout_comment\",{workoutId:e,comment:a}"
+ },
+ {
+  "method": "deleteWorkoutComment",
+  "verb": "DELETE",
+  "path": "workout_comment/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"workout_comment/\".concat(e)"
+ },
+ {
+  "method": "likeWorkout",
+  "verb": "POST",
+  "path": "workout/like/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"workout/like/\".concat(e)"
+ },
+ {
+  "method": "unlikeWorkout",
+  "verb": "POST",
+  "path": "workout/unlike/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"workout/unlike/\".concat(e)"
+ },
+ {
+  "method": "getWorkoutCount",
+  "verb": "GET",
+  "path": "workout_count",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"workout_count\""
+ },
+ {
+  "method": "getWorkoutsBatch",
+  "verb": "GET",
+  "path": "workouts_batch/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"workouts_batch/\".concat(e)"
+ },
+ {
+  "method": "postCustomExerciseTemplate",
+  "verb": "POST",
+  "path": "custom_exercise_template",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"custom_exercise_template\",{exercise:e}"
+ },
+ {
+  "method": "updateCustomExerciseTemplate",
+  "verb": "PUT",
+  "path": "/custom_exercise_template/",
+  "dynamic": [
+   "e.id"
+  ],
+  "queryParams": false,
+  "raw": "\"/custom_exercise_template/\".concat(e.id),{exercise:e}"
+ },
+ {
+  "method": "deleteCustomExerciseTemplate",
+  "verb": "DELETE",
+  "path": "/custom_exercise_template/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"/custom_exercise_template/\".concat(e)"
+ },
+ {
+  "method": "getUserExerciseSets",
+  "verb": "GET",
+  "path": "user_exercise_sets/",
+  "dynamic": [
+   "e,\"/\"",
+   "a"
+  ],
+  "queryParams": false,
+  "raw": "\"user_exercise_sets/\".concat(e,\"/\").concat(a)"
+ },
+ {
+  "method": "getUserExerciseHistory",
+  "verb": "GET",
+  "path": "user_exercise_history_paged",
+  "dynamic": [],
+  "queryParams": true,
+  "raw": "\"user_exercise_history_paged\",{params:e}"
+ },
+ {
+  "method": "getPaddlePrices",
+  "verb": "GET",
+  "path": "paddle_prices",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"paddle_prices\""
+ },
+ {
+  "method": "getPaddleUrls",
+  "verb": "GET",
+  "path": "user/paddle_urls",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"user/paddle_urls\""
+ },
+ {
+  "method": "changePaddlePlan",
+  "verb": "POST",
+  "path": "user/change_paddle_plan",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"user/change_paddle_plan\",e"
+ },
+ {
+  "method": "cancelPaddlePlan",
+  "verb": "DELETE",
+  "path": "user/paddle_plan",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"user/paddle_plan\""
+ },
+ {
+  "method": "getPaddlePromoCodeDetails",
+  "verb": "GET",
+  "path": "paddle_promo_code_details/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"paddle_promo_code_details/\".concat(e)"
+ },
+ {
+  "method": "getCoachInvites",
+  "verb": "GET",
+  "path": "client_invites",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"client_invites\""
+ },
+ {
+  "method": "getCoachInfoForInvite",
+  "verb": "GET",
+  "path": "/invite/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"/invite/\".concat(e)"
+ },
+ {
+  "method": "getCoachJoinFormMetadata",
+  "verb": "GET",
+  "path": "/coach/join_form_metadata/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"/coach/join_form_metadata/\".concat(e)"
+ },
+ {
+  "method": "getBecomeClient",
+  "verb": "GET",
+  "path": "/become_client/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"/become_client/\".concat(e)"
+ },
+ {
+  "method": "acceptCoachInvite",
+  "verb": "GET",
+  "path": "/accept_client_invite/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"/accept_client_invite/\".concat(e)"
+ },
+ {
+  "method": "acceptCoachInviteWithShortId",
+  "verb": "GET",
+  "path": "/accept_client_invite_with_short_id/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"/accept_client_invite_with_short_id/\".concat(e)"
+ },
+ {
+  "method": "getCoach",
+  "verb": "GET",
+  "path": "clients_coach",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"clients_coach\""
+ },
+ {
+  "method": "declineCoachInvite",
+  "verb": "DELETE",
+  "path": "/client_invites/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"/client_invites/\".concat(e)"
+ },
+ {
+  "method": "declineCoachInviteWithShortId",
+  "verb": "DELETE",
+  "path": "/client_invites_with_short_id/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"/client_invites_with_short_id/\".concat(e)"
+ },
+ {
+  "method": "deleteAccount",
+  "verb": "DELETE",
+  "path": "/user",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"/user\"),attachErrorHandler:c.attachErrorHandler,getShareableFolderById:e=>c.get(\"shareable_folder/\".concat(e)"
+ },
+ {
+  "method": "getHevyTrainerProgram",
+  "verb": "GET",
+  "path": "hevy_trainer/program",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"hevy_trainer/program\""
+ },
+ {
+  "method": "getOAuthAuthorise",
+  "verb": "GET",
+  "path": "oauth/code?client_id=",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"oauth/code?client_id=\".concat(e)"
+ },
+ {
+  "method": "getWebhookSubscription",
+  "verb": "GET",
+  "path": "webhook-subscription",
+  "dynamic": [],
+  "queryParams": false,
+  "raw": "\"webhook-subscription\""
+ },
+ {
+  "method": "getOAuthClient",
+  "verb": "GET",
+  "path": "oauth/client/",
+  "dynamic": [
+   "e"
+  ],
+  "queryParams": false,
+  "raw": "\"oauth/client/\".concat(e)"
+ }
+]
