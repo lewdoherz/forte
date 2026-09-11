@@ -126,9 +126,13 @@ const inUseRoutine = await createRoutine(db, alice, {
 
 await deleteCustomExercise(db, alice, inUse.id);
 
+// Archiving hides a row from browsing, not from reference: this exercise is
+// still cited by a routine, so its page has to keep resolving. Refusing here
+// would make that routine unsaveable, which is the failure worth catching — the
+// library query below covers the "removed from the list" half.
 check(
-  "deleting an in-use exercise removes it from the owner's library",
-  (await getVisibleExercise(db, inUse.id, alice)) === undefined,
+  "an archived exercise still resolves for an owner holding a reference to it",
+  (await getVisibleExercise(db, inUse.id, alice)) !== undefined,
 );
 check(
   "deleting an in-use exercise removes it from the owner's list",

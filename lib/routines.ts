@@ -136,7 +136,10 @@ async function assertExercisesVisible(
   const rows = await trx
     .selectFrom("exercise_template")
     .select("id")
-    .where("archived_at", "is", null)
+    // Deliberately NOT filtered on archived_at, unlike listExercises. This
+    // decides whether a reference may be kept, and a routine written before an
+    // exercise was archived still holds it — refusing here would make existing
+    // routines unsaveable, which is a worse failure than showing the row.
     .where((eb) => eb.or([eb("owner_id", "is", null), eb("owner_id", "=", userId)]))
     .where("id", "in", unique)
     .execute();

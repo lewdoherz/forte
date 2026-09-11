@@ -78,7 +78,9 @@ export function getVisibleExercise(db: Kysely<Database>, id: string, userId: str
     .selectFrom("exercise_template")
     .selectAll()
     .where("id", "=", id)
-    .where("archived_at", "is", null)
+    // Deliberately NOT filtered on archived_at. Archiving hides a row from
+    // browsing, not from reference: workouts and routines already point at
+    // archived exercises, and those links have to keep resolving.
     .where((eb) => eb.or([eb("owner_id", "is", null), eb("owner_id", "=", userId)]))
     .executeTakeFirst();
 }
