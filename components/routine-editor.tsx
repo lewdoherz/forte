@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { RoutineTree, SetType } from "@/schema/types";
+import type { ExerciseType, RoutineTree, SetType } from "@/schema/types";
 import { SET_TYPES } from "@/schema/types";
 import { normaliseSupersetKeys } from "@/lib/supersets";
 import { saveRoutine } from "@/lib/routine-actions";
@@ -18,7 +18,83 @@ const SET_TYPE_LABELS: Record<SetType, string> = {
   dropset: "Drop set",
 };
 
-type SetDraft = { set_type: SetType; reps: string; weight_kg: string };
+type SetDraft = {
+  set_type: SetType;
+  reps: string;
+  weight_kg: string;
+  duration_seconds: string;
+  distance_meters: string;
+};
+
+/** The per-set target values, keyed the same way the draft stores them. */
+type SetDraftValueKey = "reps" | "weight_kg" | "duration_seconds" | "distance_meters";
+
+/** A blank set: `normal` is what most sets are, and every target starts absent. */
+function emptySet(): SetDraft {
+  return { set_type: "normal", reps: "", weight_kg: "", duration_seconds: "", distance_meters: "" };
+}
+
+/**
+ * Which targets the editor collects for each exercise type, in the order the
+ * logger displays them. This mirrors the logger's own per-type signature
+ * (`SET_FIELDS_BY_TYPE` in lib/workout-stats.ts) so a `distance_duration` set is
+ * distance then duration and a `weight_reps` set is weight then reps — a set is
+ * never forced into a weight × reps shape it does not have. The logger's map
+ * also names floors and steps, but `routine_set` has no columns for them, so
+ * those two types contribute only the duration target they share.
+ */
+type SetTargetField = "weight" | "reps" | "duration" | "distance";
+
+const TARGET_FIELDS_BY_TYPE: Record<ExerciseType, readonly SetTargetField[]> = {
+  weight_reps: ["weight", "reps"],
+  bodyweight_reps: ["reps"],
+  bodyweight_weighted: ["weight", "reps"],
+  bodyweight_assisted: ["weight", "reps"],
+  reps_only: ["reps"],
+  duration: ["duration"],
+  weight_duration: ["weight", "duration"],
+  distance_duration: ["distance", "duration"],
+  short_distance_weight: ["distance", "weight"],
+  floors_duration: ["duration"],
+  steps_duration: ["duration"],
+};
+
+/**
+ * The form input for a target, reusing the logger's units and wording: kg,
+ * reps, seconds and metres, with weight the only decimal.
+ */
+const TARGET_FIELD_INPUTS: Record<
+  SetTargetField,
+  {
+    draftKey: SetDraftValueKey;
+    label: string;
+    placeholder: string;
+    inputMode: "numeric" | "decimal";
+    step?: string;
+  }
+> = {
+  weight: {
+    draftKey: "weight_kg",
+    label: "Weight in kilograms",
+    placeholder: "kg",
+    inputMode: "decimal",
+    step: "0.001",
+  },
+  reps: { draftKey: "reps", label: "Reps", placeholder: "reps", inputMode: "numeric" },
+  duration: {
+    draftKey: "duration_seconds",
+    label: "Duration in seconds",
+    placeholder: "s",
+    inputMode: "numeric",
+  },
+  distance: {
+    draftKey: "distance_meters",
+    label: "Distance in metres",
+    placeholder: "m",
+    inputMode: "numeric",
+  },
+};
+
 type ExerciseDraft = {
   template_id: string;
   superset_key: string | null;
@@ -29,11 +105,13 @@ type ExerciseDraft = {
 
 /**
  * The catalog slice the editor needs: what the picker renders, plus the muscle
- * roles the Summary reads. `secondary_muscles` is the extra the Library panel's
+ * roles the Summary reads and the exercise type that chooses the set targets.
+ * `secondary_muscles` and `exercise_type` are the extras the Library panel's
  * rows never need.
  */
 export interface RoutineEditorExercise extends PickerExercise {
   secondary_muscles: string[];
+  exercise_type: ExerciseType;
 }
 
 interface RoutineEditorProps {
@@ -65,18 +143,47 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
         set_type: s.set_type,
         reps: s.reps?.toString() ?? "",
         weight_kg: s.weight_kg ?? "",
+        duration_seconds: s.duration_seconds?.toString() ?? "",
+        distance_meters: s.distance_meters?.toString() ?? "",
       })),
     })),
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  // The exercise being dragged, and the row it is over. Both are draft state:
+  // no drag library may be added, so HTML5 drag events drive these directly.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
 
   const libraryById = useMemo(() => {
     const byId: Record<string, RoutineEditorExercise> = {};
     for (const entry of library) byId[entry.id] = entry;
     return byId;
   }, [library]);
+
+  /**
+   * Each exercise's type, which chooses its set target fields. The stored tree
+   * seeds the map first so an exercise the catalog no longer lists (it may have
+   * been archived since the routine was written) still gets the right inputs;
+   * the catalog's rows then override with the authoritative value.
+   */
+  const exerciseTypeById = useMemo(() => {
+    const byId: Record<string, ExerciseType> = {};
+    for (const e of initial?.exercises ?? []) byId[e.template_id] = e.template.exercise_type;
+    for (const entry of library) byId[entry.id] = entry.exercise_type;
+    return byId;
+  }, [library, initial]);
+
+  /**
+   * The target inputs to show for an exercise. An unknown id (only possible if
+   * the catalog lost the exercise entirely) shows the set-type selector alone,
+   * rather than guessing a shape that may not match.
+   */
+  function targetFieldsFor(templateId: string): readonly SetTargetField[] {
+    const type = exerciseTypeById[templateId];
+    return type ? TARGET_FIELDS_BY_TYPE[type] : [];
+  }
 
   const addedIds = new Set(exercises.map((e) => e.template_id));
 
@@ -108,7 +215,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
         superset_key: null,
         rest_seconds: "",
         notes: "",
-        sets: [{ set_type: "normal", reps: "", weight_kg: "" }],
+        sets: [emptySet()],
       },
     ]);
   }
@@ -134,6 +241,24 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
       if (target < 0 || target >= prev.length) return prev;
       const next = [...prev];
       [next[index], next[target]] = [next[target], next[index]];
+      return withNormalisedGroups(next);
+    });
+  }
+
+  /**
+   * Drops the dragged exercise into `to`'s slot. The arrow buttons above remain
+   * as the keyboard-accessible fallback; this is the pointer path, built on the
+   * platform's HTML5 drag events because no drag library exists and none may be
+   * added. Grouping is renormalised because a drag can split or join a superset
+   * exactly as a move can.
+   */
+  function reorderExercise(from: number, to: number) {
+    if (from === to) return;
+    setExercises((prev) => {
+      if (from < 0 || from >= prev.length || to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
       return withNormalisedGroups(next);
     });
   }
@@ -171,11 +296,24 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
     );
   }
 
-  function addSet(exIndex: number) {
+  /**
+   * Writes one target field of one set. Kept separate from `patchSet` so the
+   * field name stays a literal union rather than widening to `string`, which
+   * would let a typo in the field map pass typecheck.
+   */
+  function patchSetValue(exIndex: number, setIndex: number, key: SetDraftValueKey, value: string) {
     setExercises((prev) =>
       prev.map((e, i) =>
-        i === exIndex ? { ...e, sets: [...e.sets, { set_type: "normal", reps: "", weight_kg: "" }] } : e,
+        i === exIndex
+          ? { ...e, sets: e.sets.map((s, j) => (j === setIndex ? { ...s, [key]: value } : s)) }
+          : e,
       ),
+    );
+  }
+
+  function addSet(exIndex: number) {
+    setExercises((prev) =>
+      prev.map((e, i) => (i === exIndex ? { ...e, sets: [...e.sets, emptySet()] } : e)),
     );
   }
 
@@ -206,6 +344,8 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
           set_type: s.set_type,
           reps: s.reps.trim() === "" ? null : Number(s.reps),
           weight_kg: s.weight_kg.trim() || null,
+          duration_seconds: s.duration_seconds.trim() === "" ? null : Number(s.duration_seconds),
+          distance_meters: s.distance_meters.trim() === "" ? null : Number(s.distance_meters),
         })),
       })),
     };
@@ -267,9 +407,43 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
             ) : (
               <ol className="mt-2 space-y-3">
                 {exercises.map((ex, i) => (
-                  <li key={`${ex.template_id}-${i}`} className="rounded-lg border border-zinc-200 p-3">
+                  <li
+                    key={`${ex.template_id}-${i}`}
+                    onDragOver={(e) => {
+                      if (dragIndex === null) return;
+                      e.preventDefault();
+                      if (dropIndex !== i) setDropIndex(i);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragIndex !== null) reorderExercise(dragIndex, i);
+                      setDragIndex(null);
+                      setDropIndex(null);
+                    }}
+                    className={`rounded-lg border border-zinc-200 p-3 ${
+                      dragIndex === i ? "opacity-50" : ""
+                    } ${dropIndex === i && dragIndex !== i ? "ring-2 ring-zinc-400" : ""}`}
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex min-w-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          draggable
+                          onDragStart={(e) => {
+                            setDragIndex(i);
+                            e.dataTransfer.effectAllowed = "move";
+                            e.dataTransfer.setData("text/plain", String(i));
+                          }}
+                          onDragEnd={() => {
+                            setDragIndex(null);
+                            setDropIndex(null);
+                          }}
+                          aria-label="Drag to reorder exercise"
+                          title="Drag to reorder"
+                          className="flex h-9 w-7 shrink-0 cursor-grab items-center justify-center rounded text-zinc-400 hover:text-zinc-600 active:cursor-grabbing"
+                        >
+                          ⠿
+                        </button>
                         <span className="min-w-0 break-words font-medium">{i + 1}. {libraryById[ex.template_id]?.title ?? "Exercise"}</span>
                         {ex.superset_key ? (
                           <span className="shrink-0 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-900">
@@ -360,27 +534,23 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
                               <option key={t} value={t}>{SET_TYPE_LABELS[t]}</option>
                             ))}
                           </select>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min={0}
-                            placeholder="reps"
-                            aria-label="Reps"
-                            value={s.reps}
-                            onChange={(e) => patchSet(i, j, { reps: e.target.value })}
-                            className="h-10 w-20 rounded border border-zinc-300 px-2"
-                          />
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            min={0}
-                            step="0.001"
-                            placeholder="kg"
-                            aria-label="Weight in kilograms"
-                            value={s.weight_kg}
-                            onChange={(e) => patchSet(i, j, { weight_kg: e.target.value })}
-                            className="h-10 w-20 rounded border border-zinc-300 px-2"
-                          />
+                          {targetFieldsFor(ex.template_id).map((field) => {
+                            const input = TARGET_FIELD_INPUTS[field];
+                            return (
+                              <input
+                                key={field}
+                                type="number"
+                                inputMode={input.inputMode}
+                                min={0}
+                                step={input.step}
+                                placeholder={input.placeholder}
+                                aria-label={input.label}
+                                value={s[input.draftKey]}
+                                onChange={(e) => patchSetValue(i, j, input.draftKey, e.target.value)}
+                                className="h-10 w-20 rounded border border-zinc-300 px-2"
+                              />
+                            );
+                          })}
                           <button
                             type="button"
                             onClick={() => removeSet(i, j)}

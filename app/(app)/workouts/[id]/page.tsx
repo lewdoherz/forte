@@ -18,18 +18,20 @@ export default async function WorkoutPage({
   const workout = await getWorkoutTree(db, id, userId);
   if (!workout) notFound();
 
-  const profile = await getUserProfile(db, userId);
+  const [profile, { muscles }] = await Promise.all([
+    getUserProfile(db, userId),
+    getVocabularies(db),
+  ]);
   // The owner's zone, so times read the same here as on the history list.
   const timeZone = profile?.timezone ?? DEFAULT_TIME_ZONE;
 
   // A finished workout is a record, not a session to edit, so it gets the
-  // read-only detail instead of the logger. The exercise vocabulary is loaded
-  // only for the logger, which needs it for muscle names.
+  // read-only detail instead of the logger. Both views need the muscle
+  // vocabulary — the logger for its set lines, the detail for the distribution
+  // table's names and order — so it is loaded once, before the branch.
   if (workout.ended_at !== null) {
-    return <WorkoutDetail workout={workout} timeZone={timeZone} />;
+    return <WorkoutDetail workout={workout} timeZone={timeZone} muscles={muscles} />;
   }
-
-  const { muscles } = await getVocabularies(db);
 
   // The logger runs in the browser, so the vocabulary crosses the boundary as a
   // plain array — a Map would not survive it.

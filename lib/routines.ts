@@ -19,6 +19,11 @@ const routineSetInputSchema = z.object({
   set_type: z.enum(SET_TYPES),
   reps: z.number().int().min(0).nullish(),
   weight_kg: weightString.nullish(),
+  // A routine prescribes targets, not results. Only the fields the exercise
+  // type uses are supplied by the editor; the rest arrive as null. Seconds and
+  // metres are whole units, matching the integer columns.
+  duration_seconds: z.number().int().min(0).nullish(),
+  distance_meters: z.number().int().min(0).nullish(),
 });
 
 const routineExerciseInputSchema = z.object({
@@ -193,8 +198,8 @@ async function insertExercises(
           rep_range_start: null,
           rep_range_end: null,
           weight_kg: s.weight_kg ?? null,
-          duration_seconds: null,
-          distance_meters: null,
+          duration_seconds: s.duration_seconds ?? null,
+          distance_meters: s.distance_meters ?? null,
           custom_metric: null,
         })
         .execute();
@@ -292,6 +297,8 @@ export async function duplicateRoutine(db: Kysely<Database>, userId: string, id:
         set_type: set.set_type,
         reps: set.reps,
         weight_kg: set.weight_kg,
+        duration_seconds: set.duration_seconds,
+        distance_meters: set.distance_meters,
       })),
     })),
   });

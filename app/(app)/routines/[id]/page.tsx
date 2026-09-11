@@ -7,6 +7,7 @@ import { requireSession } from "@/lib/auth-session";
 import { startWorkoutFormAction } from "@/lib/workout-actions";
 import { ExerciseThumbnail } from "@/components/exercise-media";
 import { RoutineCardMenu } from "@/components/routine-card-menu";
+import { CopyRoutineLinkButton } from "@/components/copy-routine-link";
 import { RoutineSummaryBody } from "@/components/routine-summary-panel";
 
 /** "3 sets" / "1 set" — a row's prescribed set count, pluralised once. */
@@ -110,6 +111,7 @@ export default async function RoutineDetailPage({
               </Link>
               <RoutineCardMenu id={routine.id} afterDelete="navigate" />
             </div>
+            <CopyRoutineLinkButton />
           </section>
 
           <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">

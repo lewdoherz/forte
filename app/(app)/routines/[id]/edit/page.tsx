@@ -25,6 +25,7 @@ export default async function EditRoutinePage({
     title: e.title,
     primary_muscle: e.primary_muscle,
     secondary_muscles: e.secondary_muscles,
+    exercise_type: e.exercise_type,
   }));
 
   return (

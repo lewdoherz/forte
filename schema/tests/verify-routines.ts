@@ -116,6 +116,126 @@ check(
   updatedTree?.exercises.length === 1 && updatedTree.exercises[0].sets.length === 1,
 );
 
+// ---- set targets -----------------------------------------------------------
+// A routine prescribes whatever its exercise type uses. The editor sends only
+// the fields that type has, so a duration set carries seconds and a distance
+// set carries metres — never a forced weight × reps shape.
+const plank = sys.find((e) => e.title === "Plank");
+const running = sys.find((e) => e.title === "Running");
+check("duration and distance fixtures present", !!plank && !!running);
+
+const targets = await createRoutine(db, alice, {
+  title: "Cardio Targets",
+  notes: null,
+  exercises: [
+    {
+      template_id: plank!.id,
+      rest_seconds: null,
+      notes: null,
+      sets: [{ set_type: "normal", duration_seconds: 60, distance_meters: null, reps: null, weight_kg: null }],
+    },
+    {
+      template_id: running!.id,
+      rest_seconds: null,
+      notes: null,
+      sets: [
+        { set_type: "normal", duration_seconds: 900, distance_meters: 3000, reps: null, weight_kg: null },
+      ],
+    },
+  ],
+});
+const targetsTree = await getRoutineTree(db, targets.id, alice);
+check(
+  "duration target round-trips without reps or weight",
+  targetsTree?.exercises[0].sets[0].duration_seconds === 60 &&
+    targetsTree.exercises[0].sets[0].distance_meters === null &&
+    targetsTree.exercises[0].sets[0].reps === null &&
+    targetsTree.exercises[0].sets[0].weight_kg === null,
+);
+check(
+  "distance and duration targets round-trip together",
+  targetsTree?.exercises[1].sets[0].distance_meters === 3000 &&
+    targetsTree.exercises[1].sets[0].duration_seconds === 900,
+);
+
+// An update replaces the targets; it must not merge a stale value back in.
+await updateRoutine(db, alice, targets.id, {
+  title: "Cardio Targets v2",
+  notes: null,
+  exercises: [
+    {
+      template_id: plank!.id,
+      rest_seconds: null,
+      notes: null,
+      sets: [{ set_type: "normal", duration_seconds: 90, distance_meters: null, reps: null, weight_kg: null }],
+    },
+  ],
+});
+const targetsAfter = await getRoutineTree(db, targets.id, alice);
+check(
+  "update replaces a set's targets",
+  targetsAfter?.exercises.length === 1 &&
+    targetsAfter.exercises[0].sets[0].duration_seconds === 90 &&
+    targetsAfter.exercises[0].sets[0].distance_meters === null,
+);
+
+// A duplicate must carry the targets it was copied from, not just reps/weight.
+const targetsCopy = await duplicateRoutine(db, alice, targets.id);
+const targetsCopyTree = await getRoutineTree(db, targetsCopy.id, alice);
+check(
+  "duplicate carries a duration target",
+  targetsCopyTree?.exercises[0].sets[0].duration_seconds === 90,
+);
+await deleteRoutine(db, alice, targetsCopy.id);
+await deleteRoutine(db, alice, targets.id);
+
+// ---- reorder round-trip ----------------------------------------------------
+// The editor reorders the draft, then saves the whole tree. Positions are
+// renumbered from array order on save, so an update must persist the new order
+// with dense 0..n-1 positions, and every ordered read must agree with it.
+const reorder = await createRoutine(db, alice, {
+  title: "Reorder Day",
+  notes: null,
+  exercises: [
+    { template_id: bench!.id, rest_seconds: null, notes: null, sets: [] },
+    { template_id: squat!.id, rest_seconds: null, notes: null, sets: [] },
+    { template_id: aliceCustom.id, rest_seconds: null, notes: null, sets: [] },
+  ],
+});
+await updateRoutine(db, alice, reorder.id, {
+  title: "Reorder Day",
+  notes: null,
+  exercises: [
+    { template_id: aliceCustom.id, rest_seconds: null, notes: null, sets: [] },
+    { template_id: bench!.id, rest_seconds: null, notes: null, sets: [] },
+    { template_id: squat!.id, rest_seconds: null, notes: null, sets: [] },
+  ],
+});
+const reorderExpected = `${aliceCustom.id},${bench!.id},${squat!.id}`;
+const reorderTree = await getRoutineTree(db, reorder.id, alice);
+check(
+  "update persists the reordered exercise order",
+  reorderTree?.exercises.map((e) => e.template_id).join(",") === reorderExpected,
+);
+const positionRows = (
+  await query<{ position: number; template_id: string }>(
+    "select position, template_id from routine_exercise where routine_id = $1 order by position",
+    [reorder.id],
+  )
+).rows;
+check(
+  "reorder renumbers positions densely from zero",
+  positionRows.length === 3 &&
+    positionRows.every((row, index) => row.position === index) &&
+    positionRows.map((row) => row.template_id).join(",") === reorderExpected,
+);
+check(
+  "routine list preview follows the stored order",
+  (await listRoutines(db, alice)).find((r) => r.id === reorder.id)?.exercise_names.join(",") ===
+    "Alice Secret,Bench Press,Barbell Back Squat",
+);
+await deleteRoutine(db, alice, reorder.id);
+
 // ---- cross-user mutation protection ---------------------------------------
 await expectThrow("another user cannot update", () =>
   updateRoutine(db, bob, created.id, { title: "Hijack", notes: null, exercises: [] }),
@@ -174,6 +294,30 @@ check(
     title: "x",
     notes: null,
     exercises: [{ template_id: bench!.id, rest_seconds: null, notes: null, sets: [{ set_type: "normal", reps: -1, weight_kg: null }] }],
+  }).success,
+);
+check(
+  "negative duration rejected",
+  !routineInputSchema.safeParse({
+    title: "x",
+    notes: null,
+    exercises: [{ template_id: plank!.id, rest_seconds: null, notes: null, sets: [{ set_type: "normal", reps: null, weight_kg: null, duration_seconds: -1 }] }],
+  }).success,
+);
+check(
+  "negative distance rejected",
+  !routineInputSchema.safeParse({
+    title: "x",
+    notes: null,
+    exercises: [{ template_id: running!.id, rest_seconds: null, notes: null, sets: [{ set_type: "normal", reps: null, weight_kg: null, distance_meters: -5 }] }],
+  }).success,
+);
+check(
+  "fractional distance rejected",
+  !routineInputSchema.safeParse({
+    title: "x",
+    notes: null,
+    exercises: [{ template_id: running!.id, rest_seconds: null, notes: null, sets: [{ set_type: "normal", reps: null, weight_kg: null, distance_meters: 1.5 }] }],
   }).success,
 );
 
