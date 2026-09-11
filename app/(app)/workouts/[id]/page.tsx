@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { getWorkoutTree } from "@/lib/workouts";
-import { getVocabularies } from "@/lib/exercises";
+import { getVocabularies, listExercises } from "@/lib/exercises";
+import { getPreviousPerformances, type PreviousPerformance } from "@/lib/previous-performance";
 import { requireSessionUserId } from "@/lib/auth-session";
 import { WorkoutLogger } from "@/components/workout-logger";
 import { WorkoutDetail } from "@/components/workout-detail";
@@ -18,7 +19,7 @@ export default async function WorkoutPage({
   const workout = await getWorkoutTree(db, id, userId);
   if (!workout) notFound();
 
-  const [profile, { muscles }] = await Promise.all([
+  const [profile, { muscles, equipment }] = await Promise.all([
     getUserProfile(db, userId),
     getVocabularies(db),
   ]);
@@ -33,8 +34,24 @@ export default async function WorkoutPage({
     return <WorkoutDetail workout={workout} timeZone={timeZone} muscles={muscles} />;
   }
 
-  // The logger runs in the browser, so the vocabulary crosses the boundary as a
-  // plain array — a Map would not survive it.
+  // The logger's own data: the visible catalog the Add Exercise picker searches,
+  // and last time's values for the exercises the workout started with. An
+  // exercise added mid-workout is not in `previous` yet; the logger asks for it
+  // when the row is added.
+  const [exercises, performances] = await Promise.all([
+    listExercises(db, userId, {}),
+    getPreviousPerformances(
+      db,
+      userId,
+      workout.exercises.map((exercise) => exercise.template_id),
+    ),
+  ]);
+
+  // A Map does not need to cross the server/client boundary: the logger indexes
+  // by template id, which a plain record expresses directly.
+  const previous: Record<string, PreviousPerformance> = {};
+  for (const [templateId, performance] of performances) previous[templateId] = performance;
+
   return (
     <WorkoutLogger
       initial={workout}
@@ -44,6 +61,18 @@ export default async function WorkoutPage({
         code: muscle.code,
         display_name: muscle.display_name,
       }))}
+      equipment={equipment.map((entry) => ({
+        code: entry.code,
+        display_name: entry.display_name,
+      }))}
+      library={exercises.map((exercise) => ({
+        id: exercise.id,
+        slug: exercise.slug,
+        title: exercise.title,
+        primary_muscle: exercise.primary_muscle,
+        exercise_type: exercise.exercise_type,
+      }))}
+      previous={previous}
     />
   );
 }

@@ -1,13 +1,21 @@
 import {
+  MAX_SYNC_EXERCISES,
   MAX_SYNC_SETS,
   getWorkoutTree,
   startWorkout,
+  syncWorkoutDocument,
   syncWorkoutInputSchema,
-  syncWorkoutSets,
 } from "../../lib/workouts";
-import { planSetReconciliation, sameClientValues, type SyncSet } from "../../lib/workout-sync";
+import {
+  planExerciseReconciliation,
+  planSetReconciliation,
+  sameClientValues,
+  sameExerciseValues,
+  type SyncExercise,
+  type SyncSet,
+} from "../../lib/workout-sync";
 import { createRoutine } from "../../lib/routines";
-import type { WorkoutSet } from "../../schema/types";
+import type { WorkoutExercise, WorkoutExerciseTree, WorkoutSet, WorkoutTree } from "../../schema/types";
 import { createTestDatabase } from "./harness";
 
 let failed = 0;
@@ -181,6 +189,80 @@ const u4 = crypto.randomUUID();
 }
 
 // ---------------------------------------------------------------------------
+// planExerciseReconciliation — the same diff for the exercise list
+// ---------------------------------------------------------------------------
+
+/** A stored exercise row, for exercising the pure diff without a database. */
+function exerciseRow(id: string, overrides: Partial<WorkoutExercise> = {}): WorkoutExercise {
+  return {
+    id,
+    workout_id: "00000000-0000-0000-0000-000000000000",
+    template_id: "00000000-0000-0000-0000-000000000001",
+    position: 0,
+    superset_key: null,
+    rest_seconds: null,
+    notes: null,
+    created_at: new Date(0),
+    updated_at: new Date(0),
+    ...overrides,
+  };
+}
+
+/** A desired exercise, for exercising the pure diff without a database. */
+function syncExercise(id: string, overrides: Partial<SyncExercise> = {}): SyncExercise {
+  return {
+    id,
+    template_id: "00000000-0000-0000-0000-000000000001",
+    position: 0,
+    superset_key: null,
+    rest_seconds: null,
+    notes: null,
+    ...overrides,
+  };
+}
+
+{
+  const r = planExerciseReconciliation([syncExercise(u1), syncExercise(u2)], []);
+  check(
+    "exercise plan: all-new document inserts every exercise",
+    r.insert.length === 2 && r.insert[0].id === u1 && r.remove.length === 0,
+  );
+}
+
+{
+  const r = planExerciseReconciliation([], [exerciseRow(u1), exerciseRow(u2)]);
+  check(
+    "exercise plan: an empty document removes every stored exercise",
+    r.remove.length === 2 && r.insert.length === 0,
+  );
+}
+
+{
+  const rows = [exerciseRow(u1, { position: 0 }), exerciseRow(u2, { position: 1 })];
+  const desired = [
+    syncExercise(u1, { position: 1 }),
+    syncExercise(u2, { position: 0 }),
+    syncExercise(u4),
+  ];
+  const r = planExerciseReconciliation(desired, rows);
+  check(
+    "exercise plan: a reorder updates both present rows and inserts the new id",
+    r.insert.length === 1 && r.insert[0].id === u4 && r.update.length === 2 && r.remove.length === 0,
+  );
+}
+
+{
+  const stored = exerciseRow(u1, { position: 2, rest_seconds: 90, notes: "tempo" });
+  const same = syncExercise(u1, { position: 2, rest_seconds: 90, notes: "tempo" });
+  const changed = syncExercise(u1, { position: 2, rest_seconds: 120, notes: "tempo" });
+  check("sameExerciseValues: unchanged rows count as unchanged", sameExerciseValues(same, stored));
+  check(
+    "sameExerciseValues: a changed rest target counts as a change",
+    !sameExerciseValues(changed, stored),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Database fixtures
 // ---------------------------------------------------------------------------
 
@@ -272,6 +354,47 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
   };
 }
 
+/** The stored exercise as the client would send it back. */
+function toSyncExercise(exercise: WorkoutExerciseTree): SyncExercise {
+  return {
+    id: exercise.id,
+    template_id: exercise.template_id,
+    position: exercise.position,
+    superset_key: exercise.superset_key,
+    rest_seconds: exercise.rest_seconds,
+    notes: exercise.notes,
+  };
+}
+
+/**
+ * A complete document for `tree`: its stored exercises plus the desired sets.
+ * Every call that means "sync this workout" goes through here, so no caller can
+ * accidentally omit the exercise list the document requires.
+ */
+function doc(tree: WorkoutTree, sets: SyncSet[], endedAt: string | null = null) {
+  return { workoutId: tree.id, endedAt, exercises: tree.exercises.map(toSyncExercise), sets };
+}
+
+/** The exercise columns the client sends, for comparing stored state. */
+interface StoredExercise {
+  id: string;
+  template_id: string;
+  position: number;
+  superset_key: string | null;
+  rest_seconds: number | null;
+  notes: string | null;
+}
+
+/** Every stored exercise of one workout, in position order. */
+function exercisesOf(workoutId: string): Promise<StoredExercise[]> {
+  return db
+    .selectFrom("workout_exercise")
+    .selectAll()
+    .where("workout_id", "=", workoutId)
+    .orderBy("position", "asc")
+    .execute();
+}
+
 // ---------------------------------------------------------------------------
 // Idempotency — the property the whole design rests on
 // ---------------------------------------------------------------------------
@@ -283,14 +406,14 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
     toSync(s, i === 0 ? { reps: 7, weight_kg: "102.5", completed_at: new Date().toISOString() } : {}),
   );
 
-  await syncWorkoutSets(db, alice, { workoutId: tree.id, endedAt: null, sets: desired });
+  await syncWorkoutDocument(db, alice, doc(tree, desired));
   const afterFirst = await snapshot(tree.id);
   check(
     "sync applied the document",
     (await setsOf(tree.id)).some((s) => s.id === firstSet.id && s.reps === 7 && s.completed_at !== null),
   );
 
-  await syncWorkoutSets(db, alice, { workoutId: tree.id, endedAt: null, sets: desired });
+  await syncWorkoutDocument(db, alice, doc(tree, desired));
   check("replaying the same document changes no row", (await snapshot(tree.id)) === afterFirst);
 }
 
@@ -314,7 +437,7 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
     }),
   ];
 
-  await syncWorkoutSets(db, alice, { workoutId: tree.id, endedAt: null, sets: desired });
+  await syncWorkoutDocument(db, alice, doc(tree, desired));
   const rows = await setsOf(tree.id);
   check("a set removed locally is deleted", !rows.some((s) => s.id === removedSet.id));
   check("a changed set is updated", rows.some((s) => s.id === changedSet.id && s.reps === 8));
@@ -347,7 +470,7 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
   );
   const desired = tree.exercises[0].sets.map((s) => toSync(s, s.id === target.id ? { reps: 11 } : {}));
 
-  await syncWorkoutSets(db, alice, { workoutId: tree.id, endedAt: null, sets: desired });
+  await syncWorkoutDocument(db, alice, doc(tree, desired));
   const row = (await setsOf(tree.id)).find((s) => s.id === target.id);
   if (!row) bail("target set still exists");
   check("sync updates the field the client owns", row.reps === 11);
@@ -372,17 +495,19 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
   const bobSetId = bobTree.exercises[0].sets[0].id;
 
   const foreignWorkout = await errorMessage(() =>
-    syncWorkoutSets(db, alice, { workoutId: bobTree.id, endedAt: null, sets: [] }),
+    syncWorkoutDocument(db, alice, doc(bobTree, [])),
   );
   check("another user's workout cannot be synced", foreignWorkout === "not_found");
   check("another user's workout is unchanged", (await snapshot(bobTree.id)) === bobBefore);
 
   const foreignExercise = await errorMessage(() =>
-    syncWorkoutSets(db, alice, {
-      workoutId: aliceTree.id,
-      endedAt: null,
-      sets: [syncSet(crypto.randomUUID(), { workout_exercise_id: bobExerciseId })],
-    }),
+    syncWorkoutDocument(
+      db,
+      alice,
+      doc(aliceTree, [
+        syncSet(crypto.randomUUID(), { workout_exercise_id: bobExerciseId }),
+      ]),
+    ),
   );
   check("another user's workout_exercise cannot be referenced", foreignExercise === "not_found");
   check(
@@ -395,7 +520,7 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
     syncSet(bobSetId, { workout_exercise_id: aliceTree.exercises[0].id, position: 9 }),
   ];
   const foreignSet = await errorMessage(() =>
-    syncWorkoutSets(db, alice, { workoutId: aliceTree.id, endedAt: null, sets: overlapping }),
+    syncWorkoutDocument(db, alice, doc(aliceTree, overlapping)),
   );
   check("another user's set id cannot be claimed", foreignSet === "not_found");
   check(
@@ -406,16 +531,22 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
   // Existence probing: a foreign id and an id that does not exist must produce
   // the same error, or the endpoint answers "did this uuid exist?".
   const absentWorkout = await errorMessage(() =>
-    syncWorkoutSets(db, alice, { workoutId: crypto.randomUUID(), endedAt: null, sets: [] }),
+    syncWorkoutDocument(db, alice, {
+      workoutId: crypto.randomUUID(),
+      endedAt: null,
+      exercises: [],
+      sets: [],
+    }),
   );
   check(
     "a foreign workout is indistinguishable from a missing one",
     foreignWorkout === absentWorkout && foreignWorkout === "not_found",
   );
   const absentExercise = await errorMessage(() =>
-    syncWorkoutSets(db, alice, {
+    syncWorkoutDocument(db, alice, {
       workoutId: aliceTree.id,
       endedAt: null,
+      exercises: [],
       sets: [syncSet(crypto.randomUUID(), { workout_exercise_id: crypto.randomUUID() })],
     }),
   );
@@ -434,14 +565,14 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
   const desired = tree.exercises[0].sets.map((s) => toSync(s));
   const endedAt = new Date(Date.now() + 1000).toISOString();
 
-  await syncWorkoutSets(db, alice, { workoutId: tree.id, endedAt, sets: desired });
+  await syncWorkoutDocument(db, alice, doc(tree, desired, endedAt));
   check("endedAt stamps ended_at", (await endedAtOf(tree.id)) === endedAt);
 
-  await syncWorkoutSets(db, alice, { workoutId: tree.id, endedAt, sets: desired });
+  await syncWorkoutDocument(db, alice, doc(tree, desired, endedAt));
   check("a replayed finish does not move ended_at", (await endedAtOf(tree.id)) === endedAt);
 
   const refused = await errorMessage(() =>
-    syncWorkoutSets(db, alice, { workoutId: tree.id, endedAt: null, sets: desired }),
+    syncWorkoutDocument(db, alice, doc(tree, desired)),
   );
   check("a finished workout refuses further reconciliation", refused === "not_active");
 }
@@ -450,21 +581,17 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
   const tree = await freshAliceWorkout();
   const beforeStart = new Date(new Date(tree.started_at).getTime() - 60_000).toISOString();
   const tooEarly = await errorMessage(() =>
-    syncWorkoutSets(db, alice, { workoutId: tree.id, endedAt: beforeStart, sets: [] }),
+    syncWorkoutDocument(db, alice, doc(tree, [], beforeStart)),
   );
   check("an endedAt before started_at is rejected", tooEarly === "invalid_ended_at");
   check("a rejected finish leaves ended_at null", (await endedAtOf(tree.id)) === null);
 
   const malformed = await errorMessage(() =>
-    syncWorkoutSets(db, alice, { workoutId: tree.id, endedAt: "not-a-timestamp", sets: [] }),
+    syncWorkoutDocument(db, alice, doc(tree, [], "not-a-timestamp")),
   );
   check("a malformed endedAt is rejected", malformed === "invalid_ended_at");
 
-  const finished = await syncWorkoutSets(db, alice, {
-    workoutId: tree.id,
-    endedAt: new Date().toISOString(),
-    sets: [],
-  });
+  const finished = await syncWorkoutDocument(db, alice, doc(tree, [], new Date().toISOString()));
   check("the finish itself succeeds", finished === undefined && (await endedAtOf(tree.id)) !== null);
 }
 
@@ -478,6 +605,16 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
   const base = {
     workoutId,
     endedAt: null as string | null,
+    exercises: [
+      {
+        id: exerciseId,
+        template_id: crypto.randomUUID(),
+        position: 0,
+        superset_key: null,
+        rest_seconds: 90,
+        notes: null,
+      },
+    ],
     sets: [
       {
         id: crypto.randomUUID(),
@@ -524,6 +661,27 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
       sets: [{ ...base.sets[0], id: crypto.randomUUID() }, base.sets[0]],
     }).success,
   );
+  check(
+    "sync schema rejects two exercises sharing a position",
+    !syncWorkoutInputSchema.safeParse({
+      ...base,
+      exercises: [base.exercises[0], { ...base.exercises[0], id: crypto.randomUUID() }],
+    }).success,
+  );
+  check(
+    "sync schema rejects a repeated exercise id",
+    !syncWorkoutInputSchema.safeParse({
+      ...base,
+      exercises: [base.exercises[0], { ...base.exercises[0], position: 1 }],
+    }).success,
+  );
+  check(
+    "sync schema rejects a negative rest target",
+    !syncWorkoutInputSchema.safeParse({
+      ...base,
+      exercises: [{ ...base.exercises[0], rest_seconds: -1 }],
+    }).success,
+  );
   const oversized = {
     ...base,
     sets: Array.from({ length: MAX_SYNC_SETS + 1 }, (_, i) => ({
@@ -532,7 +690,161 @@ function toSync(set: WorkoutSet, overrides: Partial<SyncSet> = {}): SyncSet {
       position: i,
     })),
   };
-  check("sync schema caps the document size", !syncWorkoutInputSchema.safeParse(oversized).success);
+  check("sync schema caps the set document size", !syncWorkoutInputSchema.safeParse(oversized).success);
+  const tooManyExercises = {
+    ...base,
+    exercises: Array.from({ length: MAX_SYNC_EXERCISES + 1 }, (_, i) => ({
+      ...base.exercises[0],
+      id: crypto.randomUUID(),
+      position: i,
+    })),
+  };
+  check(
+    "sync schema caps the exercise document size",
+    !syncWorkoutInputSchema.safeParse(tooManyExercises).success,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Exercise reconciliation — add, remove, reorder
+// ---------------------------------------------------------------------------
+
+{
+  // Two exercises, so a reorder has something to swap and a removal leaves one.
+  const routine = await createRoutine(db, alice, {
+    title: `Alice ${crypto.randomUUID().slice(0, 8)}`,
+    notes: null,
+    exercises: [
+      {
+        template_id: benchTemplate.id,
+        superset_key: null,
+        rest_seconds: null,
+        notes: null,
+        sets: [{ set_type: "normal", reps: 5, weight_kg: "100" }],
+      },
+      {
+        template_id: benchTemplate.id,
+        superset_key: null,
+        rest_seconds: null,
+        notes: null,
+        sets: [{ set_type: "normal", reps: 5, weight_kg: "90" }],
+      },
+    ],
+  });
+  const started = await startWorkout(db, alice, routine.id);
+  const tree = await getWorkoutTree(db, started.id, alice);
+  if (!tree) bail("alice exercise-reconcile tree exists");
+
+  const [first, second] = tree.exercises;
+
+  // Add: a third exercise and one set under it, exactly as the logger sends it.
+  const addedId = crypto.randomUUID();
+  const addedSetId = crypto.randomUUID();
+  await syncWorkoutDocument(db, alice, {
+    workoutId: tree.id,
+    endedAt: null,
+    exercises: [
+      toSyncExercise(first),
+      toSyncExercise(second),
+      { id: addedId, template_id: benchTemplate.id, position: 2, superset_key: null, rest_seconds: null, notes: null },
+    ],
+    sets: [
+      ...first.sets.map((s) => toSync(s)),
+      ...second.sets.map((s) => toSync(s)),
+      syncSet(addedSetId, { workout_exercise_id: addedId, position: 0, reps: 3, weight_kg: "50" }),
+    ],
+  });
+  let exercises = await exercisesOf(tree.id);
+  check(
+    "an exercise added mid-workout is inserted under its client id",
+    exercises.length === 3 && exercises.some((e) => e.id === addedId && e.position === 2),
+  );
+  check(
+    "the added exercise's set is stored",
+    (await setsOf(tree.id)).some((s) => s.id === addedSetId && Number(s.weight_kg) === 50),
+  );
+
+  // Reorder: swap the first two positions, keeping the document otherwise.
+  await syncWorkoutDocument(db, alice, {
+    workoutId: tree.id,
+    endedAt: null,
+    exercises: [
+      { ...toSyncExercise(first), position: 1 },
+      { ...toSyncExercise(second), position: 0 },
+      { id: addedId, template_id: benchTemplate.id, position: 2, superset_key: null, rest_seconds: null, notes: null },
+    ],
+    sets: [],
+  });
+  exercises = await exercisesOf(tree.id);
+  check(
+    "reordering updates positions to the document's order",
+    exercises.length === 3 && exercises[0].id === second.id && exercises[1].id === first.id,
+  );
+  check("a reorder removes the sets it no longer lists", (await setsOf(tree.id)).length === 0);
+
+  // Remove: dropping the second exercise takes its (already removed) sets with
+  // it; the remaining document is the first exercise and the added one.
+  await syncWorkoutDocument(db, alice, {
+    workoutId: tree.id,
+    endedAt: null,
+    exercises: [
+      { ...toSyncExercise(first), position: 0 },
+      { id: addedId, template_id: benchTemplate.id, position: 1, superset_key: null, rest_seconds: null, notes: null },
+    ],
+    sets: [],
+  });
+  exercises = await exercisesOf(tree.id);
+  check(
+    "an exercise removed from the document is deleted",
+    exercises.length === 2 && !exercises.some((e) => e.id === second.id),
+  );
+  check(
+    "the remaining exercises keep the document's order",
+    exercises[0].id === first.id && exercises[1].id === addedId,
+  );
+
+  // Identity guard: a document renaming an existing exercise's template is
+  // rejected rather than silently rewritten.
+  const renamed = await errorMessage(() =>
+    syncWorkoutDocument(db, alice, {
+      workoutId: tree.id,
+      endedAt: null,
+      exercises: [
+        { ...toSyncExercise(first), template_id: crypto.randomUUID() },
+        { id: addedId, template_id: benchTemplate.id, position: 1, superset_key: null, rest_seconds: null, notes: null },
+      ],
+      sets: [],
+    }),
+  );
+  check("a document that renames an exercise is rejected", renamed === "not_found");
+
+  // A template the caller cannot see (another user's custom exercise) cannot be
+  // attached, matching every other catalog read.
+  const bobCustom = await db
+    .insertInto("exercise_template")
+    .values({
+      slug: `bob-custom-${crypto.randomUUID().slice(0, 8)}`,
+      title: "Bob's Secret",
+      exercise_type: "weight_reps",
+      primary_muscle: benchTemplate.primary_muscle,
+      secondary_muscles: [],
+      equipment: benchTemplate.equipment,
+      is_custom: true,
+      owner_id: bob,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  const foreignTemplate = await errorMessage(() =>
+    syncWorkoutDocument(db, alice, {
+      workoutId: tree.id,
+      endedAt: null,
+      exercises: [
+        { id: first.id, template_id: bobCustom.id, position: 0, superset_key: null, rest_seconds: null, notes: null },
+      ],
+      sets: [],
+    }),
+  );
+  check("another user's template cannot be attached", foreignTemplate === "not_found");
 }
 
 await close();

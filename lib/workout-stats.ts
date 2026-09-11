@@ -108,7 +108,19 @@ const SET_FIELDS_BY_TYPE: Record<ExerciseType, readonly SetField[]> = {
 
 type SetField = "weight" | "reps" | "duration" | "distance" | "floors" | "steps";
 
-function fieldText(field: SetField, set: WorkoutSet): string | null {
+/**
+ * The recorded fields the formatter reads, as a structural minimum rather than
+ * the full `WorkoutSet`: the logger's previous-performance column renders a
+ * projection of a historical set (lib/previous-performance.ts) through this same
+ * function, so the per-type switch exists exactly once. A `WorkoutSet`
+ * satisfies it unchanged.
+ */
+export type FormattableSet = Pick<
+  WorkoutSet,
+  "weight_kg" | "reps" | "duration_seconds" | "distance_meters" | "rpe" | "metrics"
+>;
+
+function fieldText(field: SetField, set: FormattableSet): string | null {
   switch (field) {
     case "weight":
       return set.weight_kg == null ? null : `${trimNumber(set.weight_kg)} kg`;
@@ -135,7 +147,7 @@ function fieldText(field: SetField, set: WorkoutSet): string | null {
  * type whose fields are all empty renders an em dash — the same convention the
  * logger's own set line uses.
  */
-export function formatSetValues(set: WorkoutSet, exerciseType: ExerciseType): string {
+export function formatSetValues(set: FormattableSet, exerciseType: ExerciseType): string {
   const parts = SET_FIELDS_BY_TYPE[exerciseType]
     .map((field) => fieldText(field, set))
     .filter((text): text is string => text !== null);

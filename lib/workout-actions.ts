@@ -6,13 +6,23 @@ import { db } from "./db";
 import { requireSessionUserId } from "./auth-session";
 import { reportFailure } from "./log";
 import {
+  discardWorkout,
   listWorkouts,
+  startEmptyWorkout,
   startWorkout,
+  syncWorkoutDocument,
   syncWorkoutInputSchema,
-  syncWorkoutSets,
 } from "./workouts";
+import { getPreviousPerformances, type PreviousPerformance } from "./previous-performance";
 import { enrichWorkoutPage, type WorkoutCardPage } from "./workout-history";
 import type { WorkoutSyncInput } from "./workout-sync";
+
+/**
+ * The shape of a value that reaches SQL as a `::uuid` cast. Kept loose on
+ * purpose: a malformed id is simply not found, and the database is the
+ * authority on what is a uuid.
+ */
+const uuidPattern = /^[0-9a-f-]{36}$/;
 
 function message(e: unknown, fallback: string): string {
   if (!(e instanceof Error)) return fallback;
@@ -48,7 +58,7 @@ function reportActionFailure(action: string, error: unknown): void {
 export async function startWorkoutFormAction(formData: FormData): Promise<void> {
   const userId = await requireSessionUserId();
   const routineId = String(formData.get("routineId") ?? "");
-  if (!/^[0-9a-f-]{36}$/.test(routineId)) return;
+  if (!uuidPattern.test(routineId)) return;
 
   let id: string;
   try {
@@ -59,6 +69,55 @@ export async function startWorkoutFormAction(formData: FormData): Promise<void> 
   }
   revalidatePath("/workouts");
   redirect(`/workouts/${id}`);
+}
+
+/**
+ * Starts a workout with no exercises. Nothing is snapshotted from a routine, so
+ * the document begins empty; the logger's Add Exercise builds it from there.
+ */
+export async function startEmptyWorkoutFormAction(): Promise<void> {
+  const userId = await requireSessionUserId();
+  const workout = await startEmptyWorkout(db, userId);
+  revalidatePath("/workouts");
+  redirect(`/workouts/${workout.id}`);
+}
+
+/**
+ * The previous performance for one exercise, fetched when an exercise is added
+ * mid-workout: the page could only preload the exercises it started with, and
+ * the added one's history is unknown until asked for. A data-returning action
+ * because the answer feeds the logger's local state rather than navigating.
+ */
+export async function previousPerformanceAction(
+  templateId: string,
+): Promise<PreviousPerformance | null> {
+  const userId = await requireSessionUserId();
+  // The id reaches SQL as a `::uuid` cast, so anything else is refused without
+  // a query rather than thrown from the driver.
+  if (!uuidPattern.test(templateId)) return null;
+  const performances = await getPreviousPerformances(db, userId, [templateId]);
+  return performances.get(templateId) ?? null;
+}
+
+/**
+ * Discards an active workout outright. A data-returning action rather than a
+ * form action so the logging screen can clear its local copy of the document
+ * before navigating away — a leftover pending record would keep a workout that
+ * no longer exists.
+ */
+export async function discardWorkoutAction(
+  workoutId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const userId = await requireSessionUserId();
+  if (!uuidPattern.test(workoutId)) return { error: "That workout could not be found." };
+  try {
+    await discardWorkout(db, userId, workoutId);
+  } catch (e) {
+    reportActionFailure("discardWorkout", e);
+    return { error: message(e, "Could not discard this workout.") };
+  }
+  revalidatePath("/workouts");
+  return { ok: true };
 }
 
 /**
@@ -129,7 +188,7 @@ export async function syncWorkoutStateAction(
     };
   }
   try {
-    await syncWorkoutSets(db, userId, parsed.data);
+    await syncWorkoutDocument(db, userId, parsed.data);
   } catch (e) {
     reportActionFailure("syncWorkoutState", e);
     return {

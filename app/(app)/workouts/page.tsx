@@ -4,6 +4,7 @@ import { listLoggedExercises, listWorkouts } from "@/lib/workouts";
 import { enrichWorkoutPage } from "@/lib/workout-history";
 import { getUserProfile } from "@/lib/users";
 import { requireSessionUserId } from "@/lib/auth-session";
+import { startEmptyWorkoutFormAction } from "@/lib/workout-actions";
 import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 import { WorkoutCard } from "@/components/workout-card";
 import { WorkoutHistory } from "@/components/workout-history";
@@ -35,7 +36,19 @@ export default async function WorkoutsPage({
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="text-2xl font-semibold">Workouts</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Workouts</h1>
+        {/* A session need not start from a routine: this opens the same logger
+            with an empty exercise list. */}
+        <form action={startEmptyWorkoutFormAction}>
+          <button
+            type="submit"
+            className="h-11 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white"
+          >
+            Start empty workout
+          </button>
+        </form>
+      </div>
 
       {active.length > 0 ? (
         <section className="mt-6">

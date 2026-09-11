@@ -1,4 +1,4 @@
-import type { WorkoutTree } from "@/schema/types";
+import type { LoggedWorkout } from "@/lib/workout-sync";
 
 /**
  * Offline store for the active workout document.
@@ -30,8 +30,8 @@ const SYNCED_KEY = "last_synced_at";
 const STORE_NAMES = [WORKOUTS, PENDING, META];
 
 export interface OfflineStore {
-  readWorkout(workoutId: string): Promise<WorkoutTree | undefined>;
-  writeWorkout(workout: WorkoutTree): Promise<void>;
+  readWorkout(workoutId: string): Promise<LoggedWorkout | undefined>;
+  writeWorkout(workout: LoggedWorkout): Promise<void>;
   deleteWorkout(workoutId: string): Promise<void>;
   markPending(workoutId: string): Promise<void>;
   clearPending(workoutId: string): Promise<void>;
@@ -202,7 +202,7 @@ function createStore(db: IDBDatabase): OfflineStore {
   return {
     readWorkout: (workoutId) =>
       read([WORKOUTS], (tx) =>
-        fromRequest<WorkoutTree | undefined>(tx.objectStore(WORKOUTS).get(workoutId)),
+        fromRequest<LoggedWorkout | undefined>(tx.objectStore(WORKOUTS).get(workoutId)),
       ),
 
     writeWorkout: (workout) =>

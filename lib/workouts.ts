@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { sql, type Kysely } from "kysely";
 import type { Database } from "./db";
-import { planSetReconciliation, sameClientValues, type WorkoutSyncInput } from "./workout-sync";
+import {
+  planExerciseReconciliation,
+  planSetReconciliation,
+  sameClientValues,
+  sameExerciseValues,
+  type WorkoutSyncInput,
+} from "./workout-sync";
 import { SET_TYPES, type WorkoutSet, type WorkoutTree } from "@/schema/types";
 
 const weightString = z
@@ -33,6 +39,20 @@ export const finishWorkoutInputSchema = z.object({ workoutId: z.string().uuid() 
  */
 export const MAX_SYNC_SETS = 300;
 
+/** Same bound for exercises, which number far fewer than sets in practice. */
+export const MAX_SYNC_EXERCISES = 100;
+
+const syncExerciseInputSchema = z.object({
+  id: z.string().uuid(),
+  template_id: z.string().uuid(),
+  position: z.number().int().min(0).max(10_000),
+  superset_key: z.string().max(64).nullable(),
+  // One day is far beyond any real rest target; the bound keeps a malformed
+  // document from storing a value the schema would reject anyway.
+  rest_seconds: z.number().int().min(0).max(86_400).nullable(),
+  notes: z.string().max(2_000).nullable(),
+});
+
 const syncSetInputSchema = z.object({
   id: z.string().uuid(),
   workout_exercise_id: z.string().uuid(),
@@ -53,6 +73,19 @@ const syncSetInputSchema = z.object({
 export const syncWorkoutInputSchema = z.object({
   workoutId: z.string().uuid(),
   endedAt: z.string().datetime().nullable(),
+  exercises: z
+    .array(syncExerciseInputSchema)
+    .max(MAX_SYNC_EXERCISES)
+    // Both refines reject a document the database would reject anyway, but as
+    // a clean validation error rather than a constraint violation.
+    .refine(
+      (exercises) => new Set(exercises.map((e) => e.id)).size === exercises.length,
+      "Duplicate exercise id",
+    )
+    .refine(
+      (exercises) => new Set(exercises.map((e) => e.position)).size === exercises.length,
+      "Two exercises share a position",
+    ),
   sets: z
     .array(syncSetInputSchema)
     .max(MAX_SYNC_SETS)
@@ -156,6 +189,27 @@ export async function startWorkout(db: Kysely<Database>, userId: string, routine
 
     return { id: workout.id, created: true };
   });
+}
+
+/**
+ * Starts a workout with no routine and no exercises. The screen it opens is the
+ * same logger a routine-started workout uses; the only difference is that the
+ * user builds the exercise list there. `routine_id` stays null, so the record
+ * has no routine provenance and editing any routine later cannot touch it.
+ */
+export function startEmptyWorkout(db: Kysely<Database>, userId: string) {
+  return db
+    .insertInto("workout")
+    .values({
+      owner_id: userId,
+      routine_id: null,
+      title: "Workout",
+      notes: null,
+      started_at: new Date(),
+      ended_at: null,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
 }
 
 export async function getWorkoutTree(
@@ -361,21 +415,49 @@ export async function finishWorkout(db: Kysely<Database>, userId: string, workou
 }
 
 /**
- * Makes the database match a client's complete set list for one workout.
+ * Discards an active workout outright, leaving no completed record.
+ *
+ * Distinct from `finishWorkout`, which stamps `ended_at` so the session becomes
+ * history. The delete is predicated on the workout still being active and owned
+ * (not just on a preceding read), so a workout finished elsewhere is refused
+ * rather than deleted; the cascade removes its exercises and sets.
+ */
+export async function discardWorkout(db: Kysely<Database>, userId: string, workoutId: string) {
+  const workout = await db
+    .selectFrom("workout")
+    .select(["id", "owner_id", "ended_at"])
+    .where("id", "=", workoutId)
+    .executeTakeFirst();
+  if (!workout) throw new Error("not_found");
+  if (workout.owner_id !== userId) throw new Error("not_authorized");
+  if (workout.ended_at !== null) throw new Error("already_finished");
+
+  await db
+    .deleteFrom("workout")
+    .where("id", "=", workoutId)
+    .where("owner_id", "=", userId)
+    .where("ended_at", "is", null)
+    .execute();
+}
+
+/**
+ * Makes the database match a client's complete document for one workout.
  *
  * The client owns the active workout's state (last write wins, see
- * docs/offline-logging.md), so this replaces sets rather than merging: present
- * sets are updated, absent ones deleted, new ones inserted under their
- * client-supplied id. Applying the same document twice performs no writes the
- * second time.
+ * docs/offline-logging.md), so this replaces the exercise and set lists rather
+ * than merging: present rows are updated, absent ones deleted, new ones
+ * inserted under their client-supplied id. Exercises are reconciled first, so a
+ * newly added exercise exists before its sets reference it and a removed one
+ * takes its sets with it. Applying the same document twice performs no writes
+ * the second time.
  */
-export async function syncWorkoutSets(
+export async function syncWorkoutDocument(
   db: Kysely<Database>,
   userId: string,
   input: WorkoutSyncInput,
 ): Promise<void> {
   // A malformed end time is rejected before any work, so the error does not
-  // depend on the set writes that follow.
+  // depend on the rows that follow.
   if (input.endedAt !== null && Number.isNaN(new Date(input.endedAt).getTime())) {
     throw new Error("invalid_ended_at");
   }
@@ -398,50 +480,136 @@ export async function syncWorkoutSets(
     if (workout.ended_at !== null) {
       // A finished workout refuses further reconciliation. The one exception is
       // replaying the sync that finished it: the document the client holds when
-      // it finishes still contains the full set list, and refusing it would
+      // it finishes still contains the full list, and refusing it would
       // make finishing non-idempotent. `ended_at` is already set, so this is a
       // no-op rather than a second write.
       if (input.endedAt === null) throw new Error("not_active");
       return;
     }
 
-    // The exercises of THIS workout, read under the same lock. Every payload
-    // exercise id is checked against this set, so a document naming another
-    // user's workout_exercise cannot attach a set to it. `ownedActiveExerciseIds`
-    // is then applied to each write as a second, unraceable guard.
-    const exercises = await trx
+    // This workout's rows, read under the same lock. Every payload id is either
+    // one of these or a new client-generated one; an id belonging to another
+    // workout is reported like a missing row, so this path cannot probe for
+    // foreign rows. `ownedActiveExerciseIds` is then applied to each set write
+    // as a second, unraceable guard.
+    const existingExercises = await trx
       .selectFrom("workout_exercise")
-      .select("id")
+      .selectAll()
       .where("workout_id", "=", workout.id)
       .execute();
-    const ownedIds = new Set(exercises.map((e) => e.id));
-    for (const set of input.sets) {
-      if (!ownedIds.has(set.workout_exercise_id)) throw new Error("not_found");
-    }
+    const exerciseById = new Map(existingExercises.map((e) => [e.id, e]));
 
-    const existing = await trx
+    const existingSets = await trx
       .selectFrom("workout_set as ws")
       .innerJoin("workout_exercise as we", "we.id", "ws.workout_exercise_id")
       .selectAll("ws")
       .where("we.workout_id", "=", workout.id)
       .execute();
 
+    // `template_id` is identity, not a value: a document that renames an
+    // existing exercise is corrupt or hostile, not an edit.
+    for (const exercise of input.exercises) {
+      const current = exerciseById.get(exercise.id);
+      if (current && current.template_id !== exercise.template_id) throw new Error("not_found");
+    }
+
+    // Every referenced template must still be visible to the caller (global or
+    // their own), exactly as `getWorkoutTree` and the exercise picker enforce.
+    const templateIds = [...new Set(input.exercises.map((e) => e.template_id))];
+    if (templateIds.length) {
+      const visible = await trx
+        .selectFrom("exercise_template")
+        .select("id")
+        .where("id", "in", templateIds)
+        .where((eb) => eb.or([eb("owner_id", "is", null), eb("owner_id", "=", userId)]))
+        .execute();
+      if (visible.length !== templateIds.length) throw new Error("not_found");
+    }
+
+    // Every set must belong to an exercise named in the document. With the
+    // exercise list complete, a set naming anything else is stale or hostile.
+    const desiredExerciseIds = new Set(input.exercises.map((e) => e.id));
+    for (const set of input.sets) {
+      if (!desiredExerciseIds.has(set.workout_exercise_id)) throw new Error("not_found");
+    }
+
+    // A new exercise id that already exists belongs to a different workout —
+    // this workout's rows are in `existingExercises` — and reaching the insert
+    // would fail on the primary key, confirming to a probe that the id exists.
+    // Check first and reject with the same error a missing row would produce.
+    const newExerciseIds = input.exercises
+      .filter((e) => !exerciseById.has(e.id))
+      .map((e) => e.id);
+    if (newExerciseIds.length) {
+      const clash = await trx
+        .selectFrom("workout_exercise")
+        .select("id")
+        .where("id", "in", newExerciseIds)
+        .executeTakeFirst();
+      if (clash) throw new Error("not_found");
+    }
+
     // A set cannot move between exercises — the logging screen has no such
     // action — so a document that remaps an existing id is corrupt or hostile.
     // Rejecting keeps the write predicates below exact.
-    const existingById = new Map(existing.map((s) => [s.id, s]));
+    const existingSetById = new Map(existingSets.map((s) => [s.id, s]));
     for (const set of input.sets) {
-      const current = existingById.get(set.id);
+      const current = existingSetById.get(set.id);
       if (current && current.workout_exercise_id !== set.workout_exercise_id) {
         throw new Error("not_found");
       }
     }
 
-    const plan = planSetReconciliation(input.sets, existing);
+    const exercisePlan = planExerciseReconciliation(input.exercises, existingExercises);
+
+    // Removed first: a removed exercise's sets cascade with it. The position
+    // keys are deferrable, so only the final state has to be unique, not the
+    // order the writes happen in.
+    if (exercisePlan.remove.length) {
+      await trx
+        .deleteFrom("workout_exercise")
+        .where("id", "in", exercisePlan.remove)
+        .where("workout_id", "=", workout.id)
+        .execute();
+    }
+
+    for (const exercise of exercisePlan.update) {
+      const current = exerciseById.get(exercise.id);
+      if (current && sameExerciseValues(exercise, current)) continue;
+
+      await trx
+        .updateTable("workout_exercise")
+        .set({
+          position: exercise.position,
+          superset_key: exercise.superset_key,
+          rest_seconds: exercise.rest_seconds,
+          notes: exercise.notes,
+        })
+        .where("id", "=", exercise.id)
+        .where("workout_id", "=", workout.id)
+        .execute();
+    }
+
+    for (const exercise of exercisePlan.insert) {
+      await trx
+        .insertInto("workout_exercise")
+        .values({
+          id: exercise.id,
+          workout_id: workout.id,
+          template_id: exercise.template_id,
+          position: exercise.position,
+          superset_key: exercise.superset_key,
+          rest_seconds: exercise.rest_seconds,
+          notes: exercise.notes,
+        })
+        .execute();
+    }
+
+    const plan = planSetReconciliation(input.sets, existingSets);
 
     // A new set id that already exists belongs to a different workout — this
-    // workout's rows are in `existing` — and reaching the insert would fail on
-    // the primary key, confirming to a probe that the id exists. Check first
+    // workout's rows are in `existingSets` — and reaching the insert would fail
+    // on the primary key, confirming to a probe that the id exists. Check first
     // and reject with the same error a missing row would produce.
     if (plan.insert.length) {
       const clash = await trx
@@ -461,7 +629,7 @@ export async function syncWorkoutSets(
     }
 
     for (const set of plan.update) {
-      const current = existingById.get(set.id);
+      const current = existingSetById.get(set.id);
       // `update` lists every present row; an UPDATE rewrites `updated_at`
       // through a trigger even when nothing differs, so only rows that actually
       // carry a changed client value are written. This is what makes a replayed
