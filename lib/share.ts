@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { sql, type Kysely } from "kysely";
 import type { Database } from "./db";
-import type { SetType } from "@/schema/types";
+import type { ExerciseType, SetMetrics, SetType } from "@/schema/types";
 
 /**
  * Share links for routines.
@@ -120,17 +120,41 @@ export async function revokeRoutineShareLinks(
   `.execute(db);
 }
 
+/** One planned set of a shared routine, projected to its prescribed targets. */
+export interface SharedRoutineSet {
+  setType: SetType;
+  /**
+   * The targets a set can prescribe. The projection is deliberately flat rather
+   * than a per-type union: which of these a given exercise type actually uses is
+   * decided by the canonical `SET_FIELDS_BY_TYPE` in `lib/workout-stats.ts`, and
+   * keeping one shape here means the view never re-encodes that mapping. A field
+   * the type does not prescribe is null, so the payload carries no value the
+   * type does not use.
+   */
+  /** Kilograms, as stored: `numeric` arrives as a precision-preserving string. */
+  weightKg: string | null;
+  reps: number | null;
+  durationSeconds: number | null;
+  distanceMeters: number | null;
+  /** `routine_set.metrics`, narrowed to the sidecar counts the types prescribe. */
+  floors: number | null;
+  steps: number | null;
+}
+
 /** One planned exercise of a shared routine, with only the display fields. */
 export interface SharedRoutineExercise {
-  id: string;
   supersetKey: string | null;
   restSeconds: number | null;
   slug: string;
   title: string;
+  /** The exercise's type, which decides its prescribed targets and heading. */
+  exerciseType: ExerciseType;
   primaryMuscle: string;
   secondaryMuscles: string[];
   /** Set types in stored order; the summary counts working sets from these. */
   setTypes: SetType[];
+  /** The ordered prescription, one entry per planned set. */
+  sets: SharedRoutineSet[];
 }
 
 /**
@@ -138,11 +162,14 @@ export interface SharedRoutineExercise {
  *
  * Deliberately narrow: the owner is reduced to a display name (never the email
  * or any other account field), and each exercise to the catalog fields the
- * thumbnail and the muscle calculations use. Reps, weights and per-exercise
- * notes are not part of what the routine view shows, so they are not fetched.
+ * thumbnail and the muscle calculations use plus its prescribed targets. No
+ * routine, exercise or set id is carried: server components are serialised into
+ * the page's inlined React payload, so an id used only as a list key still ends
+ * up in the page source, and the capability is the token rather than any id.
+ * A routine's own notes are shown; a per-exercise note is not, because the
+ * read-only view has never shown one.
  */
 export interface SharedRoutine {
-  id: string;
   title: string;
   notes: string | null;
   /**
@@ -163,11 +190,13 @@ interface ShareTargetRow {
 }
 
 interface ExerciseRow {
-  id: string;
+  /** Internal join key only; never part of the public payload. */
+  routine_exercise_id: string;
   superset_key: string | null;
   rest_seconds: number | null;
   slug: string;
   title: string;
+  exercise_type: ExerciseType;
   primary_muscle: string;
   secondary_muscles: string[];
 }
@@ -175,6 +204,11 @@ interface ExerciseRow {
 interface SetRow {
   routine_exercise_id: string;
   set_type: SetType;
+  weight_kg: string | null;
+  reps: number | null;
+  duration_seconds: number | null;
+  distance_meters: number | null;
+  metrics: SetMetrics;
 }
 
 /**
@@ -205,8 +239,8 @@ export async function resolveRoutineShare(
 
   const exercises = (
     await sql<ExerciseRow>`
-      select re.id, re.superset_key, re.rest_seconds,
-             t.slug, t.title, t.primary_muscle, t.secondary_muscles
+      select re.id as routine_exercise_id, re.superset_key, re.rest_seconds,
+             t.slug, t.title, t.exercise_type, t.primary_muscle, t.secondary_muscles
       from routine_exercise re
       join exercise_template t on t.id = re.template_id
       where re.routine_id = ${target.routine_id}
@@ -214,37 +248,57 @@ export async function resolveRoutineShare(
     `.execute(db)
   ).rows;
 
+  // Ordered by the exercise's position and then the set's, so grouping below
+  // preserves both orders rather than relying on how exercise UUIDs sort.
   const sets = (
     await sql<SetRow>`
-      select rs.routine_exercise_id, rs.set_type
+      select rs.routine_exercise_id, rs.set_type,
+             rs.weight_kg, rs.reps, rs.duration_seconds, rs.distance_meters, rs.metrics
       from routine_set rs
       join routine_exercise re on re.id = rs.routine_exercise_id
       where re.routine_id = ${target.routine_id}
-      order by rs.routine_exercise_id, rs.position
+      order by re.position, rs.position
     `.execute(db)
   ).rows;
 
-  const setTypesByExercise = new Map<string, SetType[]>();
+  const setsByExercise = new Map<string, SharedRoutineSet[]>();
   for (const set of sets) {
-    const list = setTypesByExercise.get(set.routine_exercise_id);
-    if (list) list.push(set.set_type);
-    else setTypesByExercise.set(set.routine_exercise_id, [set.set_type]);
+    // `metrics` is read through the typed `SetMetrics` row rather than by
+    // parsing json here, and each sidecar count is narrowed to a number so a
+    // stray value can never reach the view.
+    const projected: SharedRoutineSet = {
+      setType: set.set_type,
+      weightKg: set.weight_kg,
+      reps: set.reps,
+      durationSeconds: set.duration_seconds,
+      distanceMeters: set.distance_meters,
+      floors: typeof set.metrics.floors === "number" ? set.metrics.floors : null,
+      steps: typeof set.metrics.steps === "number" ? set.metrics.steps : null,
+    };
+    const list = setsByExercise.get(set.routine_exercise_id);
+    if (list) list.push(projected);
+    else setsByExercise.set(set.routine_exercise_id, [projected]);
   }
 
   return {
-    id: target.routine_id,
     title: target.title,
     notes: target.notes,
     ownerName: target.display_name?.trim() || target.username || null,
-    exercises: exercises.map((exercise) => ({
-      id: exercise.id,
-      supersetKey: exercise.superset_key,
-      restSeconds: exercise.rest_seconds,
-      slug: exercise.slug,
-      title: exercise.title,
-      primaryMuscle: exercise.primary_muscle,
-      secondaryMuscles: exercise.secondary_muscles,
-      setTypes: setTypesByExercise.get(exercise.id) ?? [],
-    })),
+    exercises: exercises.map((exercise) => {
+      const plannedSets = setsByExercise.get(exercise.routine_exercise_id) ?? [];
+      return {
+        supersetKey: exercise.superset_key,
+        restSeconds: exercise.rest_seconds,
+        slug: exercise.slug,
+        title: exercise.title,
+        exerciseType: exercise.exercise_type,
+        primaryMuscle: exercise.primary_muscle,
+        secondaryMuscles: exercise.secondary_muscles,
+        // Derived from the ordered sets so the summary and the prescription can
+        // never disagree about which sets exist or in what order.
+        setTypes: plannedSets.map((set) => set.setType),
+        sets: plannedSets,
+      };
+    }),
   };
 }
