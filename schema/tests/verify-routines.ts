@@ -93,6 +93,11 @@ check(
 check("another user cannot read the routine", (await getRoutineTree(db, created.id, bob)) === undefined);
 const aliceList = await listRoutines(db, alice);
 check("list shows own routine", aliceList.some((r) => r.id === created.id));
+check(
+  "list returns exercise names in routine order",
+  aliceList.find((r) => r.id === created.id)?.exercise_names.join(",") ===
+    "Bench Press,Barbell Back Squat",
+);
 const bobList = await listRoutines(db, bob);
 check("list excludes another user's routine", !bobList.some((r) => r.id === created.id));
 

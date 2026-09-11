@@ -9,26 +9,28 @@ import { muscleDistribution, type MuscleExercise } from "@/lib/muscle-distributi
 import { routineSummary, type SummaryExercise } from "@/lib/routine-summary";
 
 /**
- * The summary of the routine currently in the editor.
+ * The summary of a routine: metrics, body heatmaps and the distribution table.
  *
  * It is a pure view of the props: every number and layer is recomputed from the
- * unsaved draft each render, with no summary state of its own, so editing an
- * exercise updates the panel without a save — and there is nothing to persist or
- * invalidate.
+ * exercises each render, with no summary state of its own. That is what lets the
+ * editor show an unsaved draft — and the read-only routine page reuse it as-is
+ * for a saved prescription, with nothing to persist or invalidate.
  *
  * Two aggregations sit side by side, deliberately: the heatmap is role-weighted
  * (`distribution.roles`) while the table is set-weighted (`distribution.sets`).
  * They come from `lib/muscle-distribution.ts` and must not be merged.
+ *
+ * `RoutineSummaryBody` is the chrome-free content so a caller can place it in a
+ * card; `RoutineSummaryPanel` wraps that same content in the modal the editor
+ * opens, so the two cannot drift.
  */
-export function RoutineSummaryPanel({
+export function RoutineSummaryBody({
   exercises,
   muscles,
-  onClose,
 }: {
   exercises: readonly (MuscleExercise & SummaryExercise)[];
   /** Muscle vocabulary, in display order; doubles as the code -> name lookup. */
   muscles: readonly VocabularyEntry[];
-  onClose: () => void;
 }) {
   const summary = useMemo(() => routineSummary(exercises), [exercises]);
   const distribution = useMemo(() => muscleDistribution(exercises), [exercises]);
@@ -58,7 +60,7 @@ export function RoutineSummaryPanel({
   }, [distribution, muscles]);
 
   return (
-    <Modal title="Routine summary" onClose={onClose} panelClassName="max-w-2xl">
+    <>
       <dl className="mt-4 grid grid-cols-3 gap-3 text-center">
         <div className="rounded-lg border border-zinc-200 p-3">
           <dt className="text-xs text-zinc-500">Exercises</dt>
@@ -103,6 +105,27 @@ export function RoutineSummaryPanel({
           </ul>
         )}
       </div>
+    </>
+  );
+}
+
+/**
+ * The editor's Summary dialog: the body above in the shared modal chrome, so
+ * the editor keeps its existing open/close contract.
+ */
+export function RoutineSummaryPanel({
+  exercises,
+  muscles,
+  onClose,
+}: {
+  exercises: readonly (MuscleExercise & SummaryExercise)[];
+  /** Muscle vocabulary, in display order; doubles as the code -> name lookup. */
+  muscles: readonly VocabularyEntry[];
+  onClose: () => void;
+}) {
+  return (
+    <Modal title="Routine summary" onClose={onClose} panelClassName="max-w-2xl">
+      <RoutineSummaryBody exercises={exercises} muscles={muscles} />
     </Modal>
   );
 }

@@ -8,6 +8,7 @@ import { normaliseSupersetKeys } from "@/lib/supersets";
 import { saveRoutine } from "@/lib/routine-actions";
 import type { VocabularyEntry } from "@/components/exercise-filter-form";
 import { ExercisePicker, type PickerExercise } from "@/components/exercise-picker";
+import { RoutineSummaryCard } from "@/components/routine-summary-card";
 import { RoutineSummaryPanel } from "@/components/routine-summary-panel";
 
 const SET_TYPE_LABELS: Record<SetType, string> = {
@@ -42,6 +43,14 @@ interface RoutineEditorProps {
   initial?: RoutineTree;
 }
 
+/**
+ * The Create/Edit screen's body, shared by both routes.
+ *
+ * The draft lives here — title, notes, exercises — so Create and Edit are one
+ * implementation with different seeds, and the Summary can be derived from the
+ * unsaved draft rather than from anything the server has stored. A routine is a
+ * template, so nothing here displays completed-workout values.
+ */
 export function RoutineEditor({ library, muscles, equipment, initial }: RoutineEditorProps) {
   const router = useRouter();
   const [title, setTitle] = useState(initial?.title ?? "");
@@ -214,208 +223,218 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
   }
 
   return (
-    <div className="mt-6 space-y-6">
+    <div className="mt-6">
       {error ? (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="mb-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </p>
       ) : null}
 
-      <label className="block space-y-1">
-        <span className="text-sm font-medium">Name</span>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-          maxLength={120}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-        />
-      </label>
+      {/* Two columns from `lg`: the draft on the left, and on the right the compact
+          Summary above the exercise Library. The Summary is deliberately the first
+          thing in the right column, matching the reference's hierarchy. `minmax(0,1fr)`
+          lets a long exercise name wrap rather than widen the left track past the
+          page, and below `lg` the tracks stack into the single mobile column. */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+        <div className="min-w-0 space-y-6">
+          <label className="block space-y-1">
+            <span className="text-sm font-medium">Name</span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+              maxLength={120}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            />
+          </label>
 
-      <label className="block space-y-1">
-        <span className="text-sm font-medium">Notes (optional)</span>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={2}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-        />
-      </label>
+          <label className="block space-y-1">
+            <span className="text-sm font-medium">Notes (optional)</span>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            />
+          </label>
 
-      <div>
-        <h2 className="text-sm font-medium">Exercises</h2>
-        {exercises.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-500">Add an exercise below to get started.</p>
-        ) : (
-          <ol className="mt-2 space-y-3">
-            {exercises.map((ex, i) => (
-              <li key={`${ex.template_id}-${i}`} className="rounded-lg border border-zinc-200 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="min-w-0 break-words font-medium">{i + 1}. {libraryById[ex.template_id]?.title ?? "Exercise"}</span>
-                    {ex.superset_key ? (
-                      <span className="shrink-0 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-900">
-                        SS
+          <div>
+            <h2 className="text-sm font-medium">Exercises</h2>
+            {exercises.length === 0 ? (
+              <p className="mt-2 text-sm text-zinc-500">
+                Add an exercise from the Library to get started.
+              </p>
+            ) : (
+              <ol className="mt-2 space-y-3">
+                {exercises.map((ex, i) => (
+                  <li key={`${ex.template_id}-${i}`} className="rounded-lg border border-zinc-200 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="min-w-0 break-words font-medium">{i + 1}. {libraryById[ex.template_id]?.title ?? "Exercise"}</span>
+                        {ex.superset_key ? (
+                          <span className="shrink-0 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-900">
+                            SS
+                          </span>
+                        ) : null}
                       </span>
-                    ) : null}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {ex.superset_key ? (
-                      <button
-                        type="button"
-                        onClick={() => ungroup(i)}
-                        aria-label="Remove from superset"
-                        className="flex h-9 items-center rounded border border-sky-300 px-2 text-xs text-sky-900"
-                      >
-                        Ungroup
-                      </button>
-                    ) : i < exercises.length - 1 ? (
-                      <button
-                        type="button"
-                        onClick={() => groupWithNext(i)}
-                        aria-label="Superset with the next exercise"
-                        className="flex h-9 items-center rounded border px-2 text-xs"
-                      >
-                        +SS
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => moveExercise(i, -1)}
-                      disabled={i === 0}
-                      aria-label="Move exercise up"
-                      className="flex h-9 w-9 items-center justify-center rounded border text-sm disabled:opacity-40"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveExercise(i, 1)}
-                      disabled={i === exercises.length - 1}
-                      aria-label="Move exercise down"
-                      className="flex h-9 w-9 items-center justify-center rounded border text-sm disabled:opacity-40"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeExercise(i)}
-                      aria-label="Remove exercise"
-                      className="flex h-9 w-9 items-center justify-center rounded border border-red-200 text-sm text-red-700"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
+                      <div className="flex items-center gap-1">
+                        {ex.superset_key ? (
+                          <button
+                            type="button"
+                            onClick={() => ungroup(i)}
+                            aria-label="Remove from superset"
+                            className="flex h-9 items-center rounded border border-sky-300 px-2 text-xs text-sky-900"
+                          >
+                            Ungroup
+                          </button>
+                        ) : i < exercises.length - 1 ? (
+                          <button
+                            type="button"
+                            onClick={() => groupWithNext(i)}
+                            aria-label="Superset with the next exercise"
+                            className="flex h-9 items-center rounded border px-2 text-xs"
+                          >
+                            +SS
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => moveExercise(i, -1)}
+                          disabled={i === 0}
+                          aria-label="Move exercise up"
+                          className="flex h-9 w-9 items-center justify-center rounded border text-sm disabled:opacity-40"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveExercise(i, 1)}
+                          disabled={i === exercises.length - 1}
+                          aria-label="Move exercise down"
+                          className="flex h-9 w-9 items-center justify-center rounded border text-sm disabled:opacity-40"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeExercise(i)}
+                          aria-label="Remove exercise"
+                          className="flex h-9 w-9 items-center justify-center rounded border border-red-200 text-sm text-red-700"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
 
-                <div className="mt-2 flex flex-wrap gap-3">
-                  <label className="flex items-center gap-1 text-xs text-zinc-600">
-                    Rest (s)
-                    <input
-                      type="number"
-                      min={0}
-                      value={ex.rest_seconds}
-                      onChange={(e) => patchExercise(i, { rest_seconds: e.target.value })}
-                      className="w-20 rounded border border-zinc-300 px-2 py-1 text-sm"
-                    />
-                  </label>
-                  <label className="flex flex-1 items-center gap-1 text-xs text-zinc-600">
-                    Notes
-                    <input
-                      value={ex.notes}
-                      onChange={(e) => patchExercise(i, { notes: e.target.value })}
-                      className="min-w-32 flex-1 rounded border border-zinc-300 px-2 py-1 text-sm"
-                    />
-                  </label>
-                </div>
+                    <div className="mt-2 flex flex-wrap gap-3">
+                      <label className="flex items-center gap-1 text-xs text-zinc-600">
+                        Rest (s)
+                        <input
+                          type="number"
+                          min={0}
+                          value={ex.rest_seconds}
+                          onChange={(e) => patchExercise(i, { rest_seconds: e.target.value })}
+                          className="w-20 rounded border border-zinc-300 px-2 py-1 text-sm"
+                        />
+                      </label>
+                      <label className="flex flex-1 items-center gap-1 text-xs text-zinc-600">
+                        Notes
+                        <input
+                          value={ex.notes}
+                          onChange={(e) => patchExercise(i, { notes: e.target.value })}
+                          className="min-w-32 flex-1 rounded border border-zinc-300 px-2 py-1 text-sm"
+                        />
+                      </label>
+                    </div>
 
-                <div className="mt-2 space-y-1">
-                  {ex.sets.map((s, j) => (
-                    <div key={j} className="flex flex-wrap items-center gap-2 text-sm">
-                      <select
-                        value={s.set_type}
-                        onChange={(e) => patchSet(i, j, { set_type: e.target.value as SetType })}
-                        aria-label="Set type"
-                        className="h-10 rounded border border-zinc-300 px-2"
-                      >
-                        {SET_TYPES.map((t) => (
-                          <option key={t} value={t}>{SET_TYPE_LABELS[t]}</option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min={0}
-                        placeholder="reps"
-                        aria-label="Reps"
-                        value={s.reps}
-                        onChange={(e) => patchSet(i, j, { reps: e.target.value })}
-                        className="h-10 w-20 rounded border border-zinc-300 px-2"
-                      />
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        step="0.001"
-                        placeholder="kg"
-                        aria-label="Weight in kilograms"
-                        value={s.weight_kg}
-                        onChange={(e) => patchSet(i, j, { weight_kg: e.target.value })}
-                        className="h-10 w-20 rounded border border-zinc-300 px-2"
-                      />
+                    <div className="mt-2 space-y-1">
+                      {ex.sets.map((s, j) => (
+                        <div key={j} className="flex flex-wrap items-center gap-2 text-sm">
+                          <select
+                            value={s.set_type}
+                            onChange={(e) => patchSet(i, j, { set_type: e.target.value as SetType })}
+                            aria-label="Set type"
+                            className="h-10 rounded border border-zinc-300 px-2"
+                          >
+                            {SET_TYPES.map((t) => (
+                              <option key={t} value={t}>{SET_TYPE_LABELS[t]}</option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            placeholder="reps"
+                            aria-label="Reps"
+                            value={s.reps}
+                            onChange={(e) => patchSet(i, j, { reps: e.target.value })}
+                            className="h-10 w-20 rounded border border-zinc-300 px-2"
+                          />
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            step="0.001"
+                            placeholder="kg"
+                            aria-label="Weight in kilograms"
+                            value={s.weight_kg}
+                            onChange={(e) => patchSet(i, j, { weight_kg: e.target.value })}
+                            className="h-10 w-20 rounded border border-zinc-300 px-2"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeSet(i, j)}
+                            aria-label="Remove set"
+                            className="flex h-10 items-center rounded px-2 text-xs text-red-600 hover:bg-red-50"
+                          >
+                            remove
+                          </button>
+                        </div>
+                      ))}
                       <button
                         type="button"
-                        onClick={() => removeSet(i, j)}
-                        aria-label="Remove set"
-                        className="flex h-10 items-center rounded px-2 text-xs text-red-600 hover:bg-red-50"
+                        onClick={() => addSet(i)}
+                        className="flex h-10 items-center rounded border border-dashed border-zinc-300 px-3 text-sm text-zinc-600 hover:bg-zinc-50"
                       >
-                        remove
+                        + Add set
                       </button>
                     </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => addSet(i)}
-                    className="flex h-10 items-center rounded border border-dashed border-zinc-300 px-3 text-sm text-zinc-600 hover:bg-zinc-50"
-                  >
-                    + Add set
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
 
-      <div>
-        <h2 className="text-sm font-medium">Add exercise</h2>
-        <div className="mt-2">
-          <ExercisePicker
-            exercises={library}
-            muscles={muscles}
-            equipment={equipment}
-            excludeIds={addedIds}
-            onSelect={addExercise}
-          />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving}
+              className="h-11 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {saving ? "Saving…" : initial ? "Save changes" : "Create routine"}
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving}
-          className="h-11 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-60"
-        >
-          {saving ? "Saving…" : initial ? "Save changes" : "Create routine"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setSummaryOpen(true)}
-          className="flex h-11 items-center rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-100"
-        >
-          Summary
-        </button>
+        {/* The right column. Summary first, Library second — the reference's order.
+            `min-w-0` lets the track shrink below the picker's intrinsic width on a
+            phone; without it the filter selects set a min-content floor and the
+            page scrolls sideways. */}
+        <aside className="min-w-0 space-y-6">
+          <RoutineSummaryCard exercises={summaryExercises} onOpen={() => setSummaryOpen(true)} />
+
+          <section className="space-y-2">
+            <h2 className="text-sm font-medium">Library</h2>
+            <ExercisePicker
+              exercises={library}
+              muscles={muscles}
+              equipment={equipment}
+              excludeIds={addedIds}
+              onSelect={addExercise}
+            />
+          </section>
+        </aside>
       </div>
 
       {summaryOpen ? (

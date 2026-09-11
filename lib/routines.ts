@@ -42,6 +42,8 @@ export type RoutineInput = z.infer<typeof routineInputSchema>;
 
 export interface RoutineListItem extends Routine {
   exercise_count: number;
+  /** Exercise titles in routine order, for the card's one-line preview. */
+  exercise_names: string[];
 }
 
 /** The user's routines with an exercise count, ordered by title. */
@@ -53,6 +55,19 @@ export function listRoutines(db: Kysely<Database>, userId: string) {
       sql<number>`(select count(*)::int from routine_exercise where routine_id = r.id)`.as(
         "exercise_count",
       ),
+    )
+    // The list card previews the routine by its exercise names, so the names
+    // are aggregated here in `position` order — one query for every routine,
+    // never one per card. `array(...)` yields an empty array (not null) for a
+    // routine with no exercises.
+    .select(
+      sql<string[]>`array(
+        select t.title
+        from routine_exercise re
+        join exercise_template t on t.id = re.template_id
+        where re.routine_id = r.id
+        order by re.position
+      )`.as("exercise_names"),
     )
     .where("r.owner_id", "=", userId)
     .orderBy("r.title", "asc")

@@ -3,17 +3,37 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { duplicateRoutine } from "@/lib/routine-actions";
-import { confirmDeleteRoutine } from "@/components/delete-routine-button";
+import { deleteRoutine, duplicateRoutine } from "@/lib/routine-actions";
 
 /**
- * A routine card's overflow menu: Edit, Duplicate, Delete.
+ * Confirms and deletes a routine, returning whether it happened.
+ *
+ * It lives beside the menu that owns it so an irreversible action has exactly
+ * one wording everywhere it appears.
+ */
+async function confirmDeleteRoutine(id: string): Promise<boolean> {
+  if (!confirm("Delete this routine? This cannot be undone.")) return false;
+  const result = await deleteRoutine(id);
+  return !result.error;
+}
+
+/**
+ * A routine's overflow menu: Edit, Duplicate, Delete.
  *
  * Duplicate round-trips through the server action and then refreshes, so the new
- * card appears without a full navigation. Delete delegates to the shared
- * confirmation in `delete-routine-button.tsx`.
+ * card appears without a full navigation.
+ *
+ * `afterDelete` decides where the caller lands afterwards: a card refreshes in
+ * place, while the detail page must leave the routine it just deleted — a
+ * refresh there would render the deleted routine's not-found page.
  */
-export function RoutineCardMenu({ id }: { id: string }) {
+export function RoutineCardMenu({
+  id,
+  afterDelete = "refresh",
+}: {
+  id: string;
+  afterDelete?: "refresh" | "navigate";
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -82,7 +102,9 @@ export function RoutineCardMenu({ id }: { id: string }) {
             type="button"
             onClick={async () => {
               setOpen(false);
-              if (await confirmDeleteRoutine(id)) router.refresh();
+              if (!(await confirmDeleteRoutine(id))) return;
+              if (afterDelete === "navigate") router.push("/routines");
+              else router.refresh();
             }}
             className="block w-full px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
           >

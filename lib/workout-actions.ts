@@ -10,8 +10,8 @@ import {
   startWorkout,
   syncWorkoutInputSchema,
   syncWorkoutSets,
-  type WorkoutPage,
 } from "./workouts";
+import { enrichWorkoutPage, type WorkoutCardPage } from "./workout-history";
 import type { WorkoutSyncInput } from "./workout-sync";
 
 function message(e: unknown, fallback: string): string {
@@ -73,9 +73,9 @@ export async function startWorkoutFormAction(formData: FormData): Promise<void> 
 export async function loadWorkoutPageAction(
   cursor: string | null,
   exerciseId: string | null,
-): Promise<WorkoutPage> {
+): Promise<WorkoutCardPage> {
   const userId = await requireSessionUserId();
-  return listWorkouts(db, userId, { cursor, exerciseId });
+  return enrichWorkoutPage(db, userId, await listWorkouts(db, userId, { cursor, exerciseId }));
 }
 
 /**

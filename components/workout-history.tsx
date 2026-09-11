@@ -1,11 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { loadWorkoutPageAction } from "@/lib/workout-actions";
-import { formatDuration } from "@/lib/format";
-import { formatDateTimeInTimeZone } from "@/lib/timezone";
-import type { WorkoutSummary } from "@/lib/workouts";
+import { WorkoutCard, type WorkoutCardData } from "@/components/workout-card";
 
 /**
  * The completed-workout list, newest first.
@@ -15,9 +12,10 @@ import type { WorkoutSummary } from "@/lib/workouts";
  * would lose the reader's place. The parent keys this component on the filter, so
  * changing the filter starts a fresh list instead of appending to the old one.
  *
- * Times are formatted in the owner's stored zone rather than the ambient one.
- * That is the correct display, and it also makes the markup identical on the
- * server and in the browser, so hydration has nothing to disagree about.
+ * The card data (duration, volume, exercise previews) is built on the server and
+ * arrives ready to render; this component only owns the paging state. Times are
+ * formatted inside the card in the owner's stored zone rather than the ambient
+ * one, which keeps the markup identical on the server and in the browser.
  */
 export function WorkoutHistory({
   initial,
@@ -25,7 +23,7 @@ export function WorkoutHistory({
   exerciseId,
   timeZone,
 }: {
-  initial: WorkoutSummary[];
+  initial: WorkoutCardData[];
   initialCursor: string | null;
   exerciseId: string | null;
   timeZone: string;
@@ -56,26 +54,11 @@ export function WorkoutHistory({
   return (
     <>
       <ul className="mt-2 space-y-2">
-        {items.map((w) => {
-          const seconds = w.ended_at
-            ? Math.floor((w.ended_at.getTime() - w.started_at.getTime()) / 1000)
-            : 0;
-          return (
-            <li key={w.id}>
-              <Link
-                href={`/workouts/${w.id}`}
-                className="block rounded-xl border border-zinc-200 bg-white p-4 shadow-sm hover:border-zinc-400"
-              >
-                <div className="break-words font-medium">{w.title}</div>
-                <div className="mt-1 text-sm text-zinc-500">
-                  {formatDateTimeInTimeZone(w.started_at, timeZone)} · {formatDuration(seconds)} ·{" "}
-                  {w.exercise_count} {w.exercise_count === 1 ? "exercise" : "exercises"} ·{" "}
-                  {w.completed_set_count}/{w.set_count} sets
-                </div>
-              </Link>
-            </li>
-          );
-        })}
+        {items.map((w) => (
+          <li key={w.id}>
+            <WorkoutCard card={w} timeZone={timeZone} />
+          </li>
+        ))}
       </ul>
 
       {error ? (

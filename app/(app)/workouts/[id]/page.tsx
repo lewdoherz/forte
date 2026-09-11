@@ -4,6 +4,7 @@ import { getWorkoutTree } from "@/lib/workouts";
 import { getVocabularies } from "@/lib/exercises";
 import { requireSessionUserId } from "@/lib/auth-session";
 import { WorkoutLogger } from "@/components/workout-logger";
+import { WorkoutDetail } from "@/components/workout-detail";
 import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 import { getUserProfile } from "@/lib/users";
 
@@ -17,9 +18,18 @@ export default async function WorkoutPage({
   const workout = await getWorkoutTree(db, id, userId);
   if (!workout) notFound();
 
-  const [{ muscles }, profile] = await Promise.all([getVocabularies(db), getUserProfile(db, userId)]);
+  const profile = await getUserProfile(db, userId);
   // The owner's zone, so times read the same here as on the history list.
   const timeZone = profile?.timezone ?? DEFAULT_TIME_ZONE;
+
+  // A finished workout is a record, not a session to edit, so it gets the
+  // read-only detail instead of the logger. The exercise vocabulary is loaded
+  // only for the logger, which needs it for muscle names.
+  if (workout.ended_at !== null) {
+    return <WorkoutDetail workout={workout} timeZone={timeZone} />;
+  }
+
+  const { muscles } = await getVocabularies(db);
 
   // The logger runs in the browser, so the vocabulary crosses the boundary as a
   // plain array — a Map would not survive it.

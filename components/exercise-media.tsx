@@ -16,7 +16,20 @@ const THUMBNAIL_PREFIX = "/exercise-media/thumbnails";
  * server error per thumbnail, and the optimizer buys nothing for a fixed-size
  * local image.
  */
-export function ExerciseThumbnail({ slug }: { slug: string }) {
+/** Two rendered sizes: the full library row, and the compact history card. */
+const THUMBNAIL_SIZES = {
+  sm: { box: "h-10 w-10 rounded-lg", pixels: 40 },
+  md: { box: "h-20 w-20 rounded-xl", pixels: 80 },
+} as const;
+
+export function ExerciseThumbnail({
+  slug,
+  size = "md",
+}: {
+  slug: string;
+  size?: keyof typeof THUMBNAIL_SIZES;
+}) {
+  const box = THUMBNAIL_SIZES[size];
   const ref = useRef<HTMLImageElement>(null);
   const [status, setStatus] = useState<"pending" | "loaded" | "failed">("pending");
 
@@ -39,11 +52,11 @@ export function ExerciseThumbnail({ slug }: { slug: string }) {
       // Decorative: the exercise title sits beside it, so repeating it here would
       // only make a screen reader say it twice.
       alt=""
-      width={80}
-      height={80}
+      width={box.pixels}
+      height={box.pixels}
       onLoad={() => setStatus("loaded")}
       onError={() => setStatus("failed")}
-      className={`h-20 w-20 shrink-0 rounded-xl border border-zinc-200 bg-white object-cover ${
+      className={`${box.box} shrink-0 border border-zinc-200 bg-white object-cover ${
         status === "loaded" ? "" : "invisible"
       }`}
     />

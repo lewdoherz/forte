@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { listLoggedExercises, listWorkouts } from "@/lib/workouts";
+import { enrichWorkoutPage } from "@/lib/workout-history";
 import { getUserProfile } from "@/lib/users";
 import { requireSessionUserId } from "@/lib/auth-session";
-import { DEFAULT_TIME_ZONE, formatDateTimeInTimeZone } from "@/lib/timezone";
+import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
+import { WorkoutCard } from "@/components/workout-card";
 import { WorkoutHistory } from "@/components/workout-history";
 
 export default async function WorkoutsPage({
@@ -24,9 +26,10 @@ export default async function WorkoutsPage({
   // query as a uuid that cannot be cast.
   const selected = exercises.find((e) => e.id === exercise) ?? null;
 
-  const { active, completed, nextCursor } = await listWorkouts(db, userId, {
-    exerciseId: selected?.id ?? null,
-  });
+  const page = await listWorkouts(db, userId, { exerciseId: selected?.id ?? null });
+  // One batch loads the duration, volume and exercise previews for the whole
+  // page, for the active card and the completed cards alike.
+  const { active, completed, nextCursor } = await enrichWorkoutPage(db, userId, page);
 
   const timeZone = profile?.timezone ?? DEFAULT_TIME_ZONE;
 
@@ -39,24 +42,8 @@ export default async function WorkoutsPage({
           <h2 className="text-sm font-medium text-zinc-500">Active</h2>
           <ul className="mt-2 space-y-2">
             {active.map((w) => (
-              <li
-                key={w.id}
-                className="flex items-center justify-between gap-4 rounded-xl border border-amber-300 bg-amber-50 p-4"
-              >
-                <div className="min-w-0">
-                  <Link href={`/workouts/${w.id}`} className="break-words font-medium hover:underline">
-                    {w.title}
-                  </Link>
-                  <div className="text-sm text-zinc-600">
-                    In progress · started {formatDateTimeInTimeZone(w.started_at, timeZone)}
-                  </div>
-                </div>
-                <Link
-                  href={`/workouts/${w.id}`}
-                  className="flex h-10 shrink-0 items-center rounded-md bg-zinc-900 px-4 text-sm font-medium text-white"
-                >
-                  Resume
-                </Link>
+              <li key={w.id}>
+                <WorkoutCard card={w} timeZone={timeZone} active />
               </li>
             ))}
           </ul>
