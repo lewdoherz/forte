@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, type ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { Modal } from "@/components/modal";
 
 /**
  * A dialog's dismissal strategy, stated by the route that rendered it.
@@ -40,41 +41,9 @@ export function ExerciseFormModal({
     else router.push(fallbackHref);
   }, [dismiss, fallbackHref, router]);
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") close();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [close]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-zinc-900/40 p-4 sm:items-center"
-      onClick={(event) => {
-        // Only a click on the backdrop itself closes; a click inside the dialog
-        // bubbles up with a different target.
-        if (event.target === event.currentTarget) close();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="w-full max-w-xl rounded-xl border border-zinc-200 bg-white p-5 shadow-xl"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="text-lg font-semibold">{title}</h1>
-          <button
-            type="button"
-            onClick={close}
-            className="rounded-md px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100"
-          >
-            Close
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <Modal title={title} onClose={close}>
+      {children}
+    </Modal>
   );
 }

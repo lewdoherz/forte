@@ -244,3 +244,40 @@ export async function deleteRoutine(db: Kysely<Database>, userId: string, id: st
 
   await db.deleteFrom("routine").where("id", "=", id).execute();
 }
+
+/** The reference app's suffix for a duplicated routine. */
+const COPY_SUFFIX = " (copy)";
+
+/**
+ * Copies a routine with an independent exercise/set tree.
+ *
+ * The copy is written through `createRoutine`, so it gets its own
+ * `routine_exercise` and `routine_set` rows — there is no mutable state shared
+ * with the source. The only shared reference is the `exercise_template`, which is
+ * an immutable catalog row and is meant to be shared. Superset grouping is
+ * re-normalised on insert, a no-op for an already-normalised tree.
+ */
+export async function duplicateRoutine(db: Kysely<Database>, userId: string, id: string) {
+  const tree = await getRoutineTree(db, id, userId);
+  if (!tree) throw new Error("not_found");
+
+  // Keep the name inside the 120-character limit the input schema enforces, so a
+  // routine already at the cap still duplicates.
+  const base = tree.title.slice(0, 120 - COPY_SUFFIX.length);
+
+  return createRoutine(db, userId, {
+    title: `${base}${COPY_SUFFIX}`,
+    notes: tree.notes,
+    exercises: tree.exercises.map((exercise) => ({
+      template_id: exercise.template_id,
+      superset_key: exercise.superset_key,
+      rest_seconds: exercise.rest_seconds,
+      notes: exercise.notes,
+      sets: exercise.sets.map((set) => ({
+        set_type: set.set_type,
+        reps: set.reps,
+        weight_kg: set.weight_kg,
+      })),
+    })),
+  });
+}

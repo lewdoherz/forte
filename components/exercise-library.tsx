@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ExerciseThumbnail } from "@/components/exercise-media";
+import {
+  ExerciseFilterForm,
+  type ExerciseFilterValues,
+  type VocabularyEntry,
+} from "@/components/exercise-filter-form";
 import { listExercisesAction } from "@/lib/exercise-actions";
 import type { LibraryExercise } from "@/lib/exercise-library";
-
-interface VocabularyEntry {
-  code: string;
-  display_name: string;
-}
 
 /**
  * The exercises master-detail shell.
@@ -130,16 +130,11 @@ function ExerciseLibraryPanel({
   const filterSuffix = filterQuery.toString();
   const hrefFor = (id: string) => `/exercises/${id}${filterSuffix ? `?${filterSuffix}` : ""}`;
 
-  function applyFilters(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
+  function applyFilters(next: ExerciseFilterValues) {
     const params = new URLSearchParams();
-    const nextQ = String(data.get("q") ?? "").trim();
-    const nextMuscle = String(data.get("muscle") ?? "");
-    const nextEquipment = String(data.get("equipment") ?? "");
-    if (nextQ) params.set("q", nextQ);
-    if (nextMuscle) params.set("muscle", nextMuscle);
-    if (nextEquipment) params.set("equipment", nextEquipment);
+    if (next.q) params.set("q", next.q);
+    if (next.muscle) params.set("muscle", next.muscle);
+    if (next.equipment) params.set("equipment", next.equipment);
     const query = params.toString();
     // `replace` rather than `push`: filters are not a place to walk back
     // through. `scroll: false` keeps the reader where they are.
@@ -158,75 +153,16 @@ function ExerciseLibraryPanel({
         </Link>
       </div>
 
-      <form
-        method="get"
-        action="/exercises"
-        onSubmit={applyFilters}
+      <ExerciseFilterForm
         // Keyed on the committed filters so Clear (and any external URL change)
         // resets the uncontrolled inputs to the URL's values.
         key={`${q}|${muscle}|${equipmentCode}`}
-        className="space-y-2 border-b border-zinc-200 p-4"
-      >
-        <label className="block">
-          <span className="sr-only">Search Exercises</span>
-          <input
-            name="q"
-            type="search"
-            defaultValue={q}
-            placeholder="Search Exercises"
-            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-          />
-        </label>
-        <div className="flex gap-2">
-          <label className="min-w-0 flex-1">
-            <span className="sr-only">Equipment</span>
-            <select
-              name="equipment"
-              defaultValue={equipmentCode}
-              className="w-full rounded-md border border-zinc-300 px-2 py-2 text-sm"
-            >
-              <option value="">All Equipment</option>
-              {equipment.map((entry) => (
-                <option key={entry.code} value={entry.code}>
-                  {entry.display_name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="min-w-0 flex-1">
-            <span className="sr-only">Muscle</span>
-            <select
-              name="muscle"
-              defaultValue={muscle}
-              className="w-full rounded-md border border-zinc-300 px-2 py-2 text-sm"
-            >
-              <option value="">All Muscles</option>
-              {muscles.map((entry) => (
-                <option key={entry.code} value={entry.code}>
-                  {entry.display_name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <button
-            type="submit"
-            className="h-9 rounded-md border border-zinc-300 px-3 text-xs font-medium hover:bg-zinc-100"
-          >
-            Search
-          </button>
-          {hasFilters ? (
-            <button
-              type="button"
-              onClick={() => router.replace("/exercises", { scroll: false })}
-              className="text-xs text-zinc-500 underline"
-            >
-              Clear
-            </button>
-          ) : null}
-        </div>
-      </form>
+        muscles={muscles}
+        equipment={equipment}
+        values={{ q, muscle, equipment: equipmentCode }}
+        onSubmit={applyFilters}
+        onClear={() => router.replace("/exercises", { scroll: false })}
+      />
 
       <div className={`sm:min-h-0 sm:flex-1 sm:overflow-y-auto ${pending ? "opacity-60" : ""}`}>
         {exercises === null ? (

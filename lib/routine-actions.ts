@@ -8,6 +8,7 @@ import { requireSessionUserId } from "./auth-session";
 import {
   createRoutine,
   deleteRoutine as deleteRoutineById,
+  duplicateRoutine as duplicateRoutineById,
   routineInputSchema,
   updateRoutine,
   type RoutineInput,
@@ -16,7 +17,7 @@ import {
 export type RoutineActionState = { error?: string; id?: string };
 
 /** Sentinel failures that are normal traffic rather than incidents. */
-const EXPECTED_FAILURES = ["not_authorized", "invalid_exercise"] as const;
+const EXPECTED_FAILURES = ["not_authorized", "invalid_exercise", "not_found"] as const;
 
 export async function saveRoutine(input: RoutineInput): Promise<RoutineActionState> {
   const userId = await requireSessionUserId();
@@ -44,6 +45,23 @@ export async function saveRoutine(input: RoutineInput): Promise<RoutineActionSta
     }
     reportFailure("saveRoutine", e, EXPECTED_FAILURES);
     return { error: "Could not save the routine." };
+  }
+}
+
+export async function duplicateRoutine(id: string): Promise<RoutineActionState> {
+  const userId = await requireSessionUserId();
+  const parsedId = z.string().uuid().safeParse(id);
+  if (!parsedId.success) return { error: "Invalid routine." };
+  try {
+    const copy = await duplicateRoutineById(db, userId, parsedId.data);
+    revalidatePath("/routines");
+    return { id: copy.id };
+  } catch (e) {
+    if (e instanceof Error && e.message === "not_found") {
+      return { error: "That routine no longer exists." };
+    }
+    reportFailure("duplicateRoutine", e, EXPECTED_FAILURES);
+    return { error: "Could not duplicate the routine." };
   }
 }
 

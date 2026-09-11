@@ -1,6 +1,7 @@
 import {
   createRoutine,
   deleteRoutine,
+  duplicateRoutine,
   getRoutineTree,
   listRoutines,
   routineInputSchema,
@@ -246,6 +247,72 @@ check(
     ],
   }).success,
 );
+
+// ---- duplicate -------------------------------------------------------------
+// A copy must be an INDEPENDENT tree. The proof is at the database: mutate the
+// copy, then read the source back. If they shared a routine_exercise or
+// routine_set row, the source would change too.
+const source = await createRoutine(db, alice, {
+  title: "Leg Day",
+  notes: "hamstrings focus",
+  exercises: [
+    {
+      template_id: bench!.id,
+      superset_key: null,
+      rest_seconds: 120,
+      notes: "pause at the bottom",
+      sets: [{ set_type: "normal", reps: 8, weight_kg: "80" }],
+    },
+  ],
+});
+const copy = await duplicateRoutine(db, alice, source.id);
+check("duplicate returns a distinct routine", copy.id !== source.id);
+check("duplicate names the copy", copy.title === "Leg Day (copy)");
+
+const copyTree = await getRoutineTree(db, copy.id, alice);
+check(
+  "duplicate copies exercises and sets",
+  copyTree?.exercises.length === 1 &&
+    copyTree.exercises[0].template_id === bench!.id &&
+    copyTree.exercises[0].sets.length === 1 &&
+    copyTree.exercises[0].sets[0].set_type === "normal" &&
+    copyTree.exercises[0].sets[0].reps === 8 &&
+    Number(copyTree.exercises[0].sets[0].weight_kg) === 80,
+);
+check(
+  "duplicate copies routine and exercise metadata",
+  copyTree?.notes === "hamstrings focus" &&
+    copyTree.exercises[0].rest_seconds === 120 &&
+    copyTree.exercises[0].notes === "pause at the bottom",
+);
+
+await updateRoutine(db, alice, copy.id, {
+  title: "Leg Day (copy) v2",
+  notes: null,
+  exercises: [
+    {
+      template_id: squat!.id,
+      superset_key: null,
+      rest_seconds: null,
+      notes: null,
+      sets: [{ set_type: "failure", reps: 5, weight_kg: "100" }],
+    },
+  ],
+});
+const sourceAfter = await getRoutineTree(db, source.id, alice);
+check(
+  "mutating the copy leaves the source unchanged",
+  sourceAfter?.title === "Leg Day" &&
+    sourceAfter.notes === "hamstrings focus" &&
+    sourceAfter.exercises.length === 1 &&
+    sourceAfter.exercises[0].template_id === bench!.id &&
+    sourceAfter.exercises[0].sets.length === 1 &&
+    Number(sourceAfter.exercises[0].sets[0].weight_kg) === 80,
+);
+
+await deleteRoutine(db, alice, copy.id);
+check("deleting the copy leaves the source", (await getRoutineTree(db, source.id, alice)) !== undefined);
+await deleteRoutine(db, alice, source.id);
 
 // ---- delete own routine ----------------------------------------------------
 await deleteRoutine(db, alice, created.id);

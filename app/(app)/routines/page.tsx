@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { listRoutines } from "@/lib/routines";
 import { requireSessionUserId } from "@/lib/auth-session";
+import { RoutineCardMenu } from "@/components/routine-card-menu";
 
 export default async function RoutinesPage() {
   const userId = await requireSessionUserId();
@@ -36,12 +37,7 @@ export default async function RoutinesPage() {
                   {r.exercise_count} {r.exercise_count === 1 ? "exercise" : "exercises"}
                 </div>
               </div>
-              <Link
-                href={`/routines/${r.id}/edit`}
-                className="flex h-10 shrink-0 items-center rounded-md border border-zinc-300 px-3 text-sm font-medium hover:bg-zinc-100"
-              >
-                Edit
-              </Link>
+              <RoutineCardMenu id={r.id} />
             </li>
           ))}
         </ul>

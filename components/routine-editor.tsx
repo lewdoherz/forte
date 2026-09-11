@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RoutineTree, SetType } from "@/schema/types";
 import { SET_TYPES } from "@/schema/types";
 import { normaliseSupersetKeys } from "@/lib/supersets";
 import { saveRoutine } from "@/lib/routine-actions";
+import type { VocabularyEntry } from "@/components/exercise-filter-form";
+import { ExercisePicker, type PickerExercise } from "@/components/exercise-picker";
+import { RoutineSummaryPanel } from "@/components/routine-summary-panel";
 
 const SET_TYPE_LABELS: Record<SetType, string> = {
   warmup: "Warm-up",
@@ -23,12 +26,23 @@ type ExerciseDraft = {
   sets: SetDraft[];
 };
 
+/**
+ * The catalog slice the editor needs: what the picker renders, plus the muscle
+ * roles the Summary reads. `secondary_muscles` is the extra the Library panel's
+ * rows never need.
+ */
+export interface RoutineEditorExercise extends PickerExercise {
+  secondary_muscles: string[];
+}
+
 interface RoutineEditorProps {
-  library: { id: string; title: string; primary_muscle: string }[];
+  library: RoutineEditorExercise[];
+  muscles: VocabularyEntry[];
+  equipment: VocabularyEntry[];
   initial?: RoutineTree;
 }
 
-export function RoutineEditor({ library, initial }: RoutineEditorProps) {
+export function RoutineEditor({ library, muscles, equipment, initial }: RoutineEditorProps) {
   const router = useRouter();
   const [title, setTitle] = useState(initial?.title ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
@@ -45,14 +59,35 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
       })),
     })),
   );
-  const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
 
-  const titleById = new Map(library.map((e) => [e.id, e.title]));
+  const libraryById = useMemo(() => {
+    const byId: Record<string, RoutineEditorExercise> = {};
+    for (const entry of library) byId[entry.id] = entry;
+    return byId;
+  }, [library]);
+
   const addedIds = new Set(exercises.map((e) => e.template_id));
-  const results = library.filter(
-    (e) => !addedIds.has(e.id) && e.title.toLowerCase().includes(query.trim().toLowerCase()),
+
+  /**
+   * The Summary's input, derived from the draft. Memoised so typing in the Name
+   * field does not recompute it: it only changes when the exercise list does.
+   * The editor deliberately does not store any summary value.
+   */
+  const summaryExercises = useMemo(
+    () =>
+      exercises.map((ex) => {
+        const entry = libraryById[ex.template_id];
+        return {
+          primaryMuscle: entry?.primary_muscle ?? "",
+          secondaryMuscles: entry?.secondary_muscles ?? [],
+          sets: ex.sets.map((s) => ({ setType: s.set_type })),
+          restSeconds: ex.rest_seconds.trim() === "" ? null : Number(ex.rest_seconds),
+        };
+      }),
+    [exercises, libraryById],
   );
 
   function addExercise(id: string) {
@@ -67,7 +102,6 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
         sets: [{ set_type: "normal", reps: "", weight_kg: "" }],
       },
     ]);
-    setQuery("");
   }
 
   /**
@@ -218,7 +252,7 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
               <li key={`${ex.template_id}-${i}`} className="rounded-lg border border-zinc-200 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="min-w-0 break-words font-medium">{i + 1}. {titleById.get(ex.template_id) ?? "Exercise"}</span>
+                    <span className="min-w-0 break-words font-medium">{i + 1}. {libraryById[ex.template_id]?.title ?? "Exercise"}</span>
                     {ex.superset_key ? (
                       <span className="shrink-0 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-900">
                         SS
@@ -355,30 +389,15 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
 
       <div>
         <h2 className="text-sm font-medium">Add exercise</h2>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search exercises…"
-          className="mt-2 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-        />
-        {query.trim() !== "" && results.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-500">No matching exercises.</p>
-        ) : (
-          <ul className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded-md border border-zinc-200 p-2">
-            {results.map((e) => (
-              <li key={e.id} className="flex items-center justify-between text-sm">
-                <span>{e.title}</span>
-                <button
-                  type="button"
-                  onClick={() => addExercise(e.id)}
-                  className="flex h-9 shrink-0 items-center rounded border border-zinc-300 px-3 text-xs hover:bg-zinc-100"
-                >
-                  Add
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <div className="mt-2">
+          <ExercisePicker
+            exercises={library}
+            muscles={muscles}
+            equipment={equipment}
+            excludeIds={addedIds}
+            onSelect={addExercise}
+          />
+        </div>
       </div>
 
       <div className="flex items-center gap-3">
@@ -390,7 +409,22 @@ export function RoutineEditor({ library, initial }: RoutineEditorProps) {
         >
           {saving ? "Saving…" : initial ? "Save changes" : "Create routine"}
         </button>
+        <button
+          type="button"
+          onClick={() => setSummaryOpen(true)}
+          className="flex h-11 items-center rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-100"
+        >
+          Summary
+        </button>
       </div>
+
+      {summaryOpen ? (
+        <RoutineSummaryPanel
+          exercises={summaryExercises}
+          muscles={muscles}
+          onClose={() => setSummaryOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
