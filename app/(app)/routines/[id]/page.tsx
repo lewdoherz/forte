@@ -111,7 +111,7 @@ export default async function RoutineDetailPage({
               </Link>
               <RoutineCardMenu id={routine.id} afterDelete="navigate" />
             </div>
-            <CopyRoutineLinkButton />
+            <CopyRoutineLinkButton routineId={routine.id} />
           </section>
 
           <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">

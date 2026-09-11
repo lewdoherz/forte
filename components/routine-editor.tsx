@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ExerciseType, RoutineTree, SetType } from "@/schema/types";
 import { SET_TYPES } from "@/schema/types";
@@ -24,14 +24,45 @@ type SetDraft = {
   weight_kg: string;
   duration_seconds: string;
   distance_meters: string;
+  // Sidecar metrics, drafted as strings like every other target. They live in
+  // `metrics` on save rather than in their own columns.
+  floors: string;
+  steps: string;
 };
 
 /** The per-set target values, keyed the same way the draft stores them. */
-type SetDraftValueKey = "reps" | "weight_kg" | "duration_seconds" | "distance_meters";
+type SetDraftValueKey =
+  | "reps"
+  | "weight_kg"
+  | "duration_seconds"
+  | "distance_meters"
+  | "floors"
+  | "steps";
 
 /** A blank set: `normal` is what most sets are, and every target starts absent. */
 function emptySet(): SetDraft {
-  return { set_type: "normal", reps: "", weight_kg: "", duration_seconds: "", distance_meters: "" };
+  return {
+    set_type: "normal",
+    reps: "",
+    weight_kg: "",
+    duration_seconds: "",
+    distance_meters: "",
+    floors: "",
+    steps: "",
+  };
+}
+
+/**
+ * The sidecar metrics a set carries, dropping targets the user left blank. An
+ * empty object is deliberate: it is what `routine_set.metrics` defaults to, so a
+ * type that uses no sidecar metric round-trips as an empty SetMetrics rather
+ * than as null.
+ */
+function setMetricsFromDraft(s: SetDraft): { steps?: number; floors?: number } {
+  const metrics: { steps?: number; floors?: number } = {};
+  if (s.steps.trim() !== "") metrics.steps = Number(s.steps);
+  if (s.floors.trim() !== "") metrics.floors = Number(s.floors);
+  return metrics;
 }
 
 /**
@@ -39,11 +70,11 @@ function emptySet(): SetDraft {
  * logger displays them. This mirrors the logger's own per-type signature
  * (`SET_FIELDS_BY_TYPE` in lib/workout-stats.ts) so a `distance_duration` set is
  * distance then duration and a `weight_reps` set is weight then reps — a set is
- * never forced into a weight × reps shape it does not have. The logger's map
- * also names floors and steps, but `routine_set` has no columns for them, so
- * those two types contribute only the duration target they share.
+ * never forced into a weight × reps shape it does not have. Floors and steps are
+ * sidecar metrics on `routine_set.metrics`, exactly as they are on the
+ * completed-workout side, so every supported type now has a target.
  */
-type SetTargetField = "weight" | "reps" | "duration" | "distance";
+type SetTargetField = "weight" | "reps" | "duration" | "distance" | "floors" | "steps";
 
 const TARGET_FIELDS_BY_TYPE: Record<ExerciseType, readonly SetTargetField[]> = {
   weight_reps: ["weight", "reps"],
@@ -55,8 +86,8 @@ const TARGET_FIELDS_BY_TYPE: Record<ExerciseType, readonly SetTargetField[]> = {
   weight_duration: ["weight", "duration"],
   distance_duration: ["distance", "duration"],
   short_distance_weight: ["distance", "weight"],
-  floors_duration: ["duration"],
-  steps_duration: ["duration"],
+  floors_duration: ["floors", "duration"],
+  steps_duration: ["steps", "duration"],
 };
 
 /**
@@ -93,15 +124,34 @@ const TARGET_FIELD_INPUTS: Record<
     placeholder: "m",
     inputMode: "numeric",
   },
+  floors: { draftKey: "floors", label: "Floors", placeholder: "floors", inputMode: "numeric" },
+  steps: { draftKey: "steps", label: "Steps", placeholder: "steps", inputMode: "numeric" },
 };
 
 type ExerciseDraft = {
+  /**
+   * Stable draft-local id. React keys and the drag hit-test both need an
+   * identity that survives a reorder, which the array index cannot provide —
+   * an index key would remount the dragged row and drop its pointer capture.
+   */
+  id: string;
   template_id: string;
   superset_key: string | null;
   rest_seconds: string;
   notes: string;
   sets: SetDraft[];
 };
+
+/**
+ * Grouping is recomputed after every structural change, because a superset is
+ * only valid while its members are CONSECUTIVE — moving an exercise can split a
+ * group, and the stored form must match what is shown. The same rule runs on
+ * save, so display and persistence cannot drift.
+ */
+function withNormalisedGroups(next: ExerciseDraft[]): ExerciseDraft[] {
+  const keys = normaliseSupersetKeys(next);
+  return next.map((ex, i) => (ex.superset_key === keys[i] ? ex : { ...ex, superset_key: keys[i] }));
+}
 
 /**
  * The catalog slice the editor needs: what the picker renders, plus the muscle
@@ -135,6 +185,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [exercises, setExercises] = useState<ExerciseDraft[]>(() =>
     (initial?.exercises ?? []).map((e) => ({
+      id: crypto.randomUUID(),
       template_id: e.template_id,
       superset_key: e.superset_key,
       rest_seconds: e.rest_seconds?.toString() ?? "",
@@ -145,16 +196,26 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
         weight_kg: s.weight_kg ?? "",
         duration_seconds: s.duration_seconds?.toString() ?? "",
         distance_meters: s.distance_meters?.toString() ?? "",
+        floors: s.metrics.floors?.toString() ?? "",
+        steps: s.metrics.steps?.toString() ?? "",
       })),
     })),
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
-  // The exercise being dragged, and the row it is over. Both are draft state:
-  // no drag library may be added, so HTML5 drag events drive these directly.
+  /**
+   * The exercise being dragged, for styling only. The live index is also held in
+   * a ref, because a pointermove burst can arrive before React re-renders and
+   * the handler must move the row from where it actually is, not from the index
+   * of the last render.
+   */
   const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const dragIndexRef = useRef<number | null>(null);
+  /** Row count and draft order captured at pointerdown, for hit-testing/revert. */
+  const dragCountRef = useRef(0);
+  const dragSnapshotRef = useRef<ExerciseDraft[] | null>(null);
+  const rowRefs = useRef<(HTMLLIElement | null)[]>([]);
 
   const libraryById = useMemo(() => {
     const byId: Record<string, RoutineEditorExercise> = {};
@@ -211,6 +272,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
     setExercises((prev) => [
       ...prev,
       {
+        id: crypto.randomUUID(),
         template_id: id,
         superset_key: null,
         rest_seconds: "",
@@ -218,17 +280,6 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
         sets: [emptySet()],
       },
     ]);
-  }
-
-  /**
-   * Grouping is recomputed after every structural change, because a superset is
-   * only valid while its members are CONSECUTIVE — moving an exercise can split
-   * a group, and the stored form must match what is shown. The same rule runs on
-   * save, so display and persistence cannot drift.
-   */
-  function withNormalisedGroups(next: ExerciseDraft[]): ExerciseDraft[] {
-    const keys = normaliseSupersetKeys(next);
-    return next.map((ex, i) => (ex.superset_key === keys[i] ? ex : { ...ex, superset_key: keys[i] }));
   }
 
   function removeExercise(index: number) {
@@ -246,13 +297,14 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
   }
 
   /**
-   * Drops the dragged exercise into `to`'s slot. The arrow buttons above remain
-   * as the keyboard-accessible fallback; this is the pointer path, built on the
-   * platform's HTML5 drag events because no drag library exists and none may be
-   * added. Grouping is renormalised because a drag can split or join a superset
-   * exactly as a move can.
+   * Moves the dragged exercise into `to`'s slot. The arrow buttons above remain
+   * the keyboard-accessible fallback; this is the pointer path, built on native
+   * Pointer Events because no drag library exists and none may be added.
+   * Grouping is renormalised because a drag can split or join a superset exactly
+   * as a move can. Stable identity so the drag effect does not re-subscribe on
+   * every render.
    */
-  function reorderExercise(from: number, to: number) {
+  const reorderExercise = useCallback((from: number, to: number) => {
     if (from === to) return;
     setExercises((prev) => {
       if (from < 0 || from >= prev.length || to < 0 || to >= prev.length) return prev;
@@ -261,7 +313,84 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
       next.splice(to, 0, moved);
       return withNormalisedGroups(next);
     });
+  }, []);
+
+  /**
+   * The row a pointer at `clientY` would land on: the count of rows whose
+   * vertical midpoint the pointer has passed. Read straight from the DOM, so the
+   * hit-test stays correct as rows move under the pointer. Clamped to the last
+   * row, since a drag past either end means "top"/"bottom" rather than nothing.
+   */
+  const dropTargetFor = useCallback((clientY: number, count: number): number => {
+    let target = 0;
+    for (let k = 0; k < count; k++) {
+      const row = rowRefs.current[k];
+      if (!row) continue;
+      const rect = row.getBoundingClientRect();
+      if (clientY > rect.top + rect.height / 2) target = k + 1;
+    }
+    return Math.min(target, count - 1);
+  }, []);
+
+  /** Ends a drag: commits the live order, or restores the pre-drag order. */
+  const endDrag = useCallback((revert: boolean) => {
+    if (revert && dragSnapshotRef.current) setExercises(dragSnapshotRef.current);
+    dragIndexRef.current = null;
+    dragCountRef.current = 0;
+    dragSnapshotRef.current = null;
+    setDragIndex(null);
+  }, []);
+
+  function onHandlePointerDown(index: number, e: React.PointerEvent<HTMLButtonElement>) {
+    // Primary button/pointer only: a secondary click is a context action, and a
+    // second touch is not this drag. preventDefault stops the browser from
+    // beginning a text selection or a native drag of the glyph.
+    if (!e.isPrimary || e.button !== 0) return;
+    e.preventDefault();
+    dragIndexRef.current = index;
+    dragCountRef.current = exercises.length;
+    dragSnapshotRef.current = exercises;
+    setDragIndex(index);
   }
+
+  /**
+   * The drag runs on window-level listeners rather than pointer capture. A live
+   * reorder moves the captured row in the DOM, and Chrome releases pointer
+   * capture the moment the captured element moves — which silently aborted the
+   * drag. Window listeners are independent of where the row ends up, so they
+   * survive every reorder. Escape aborts: restore the order captured at
+   * pointerdown.
+   */
+  useEffect(() => {
+    if (dragIndex === null) return;
+
+    const onPointerMove = (e: PointerEvent) => {
+      const from = dragIndexRef.current;
+      if (from === null) return;
+      const target = dropTargetFor(e.clientY, dragCountRef.current);
+      if (target === from) return;
+      reorderExercise(from, target);
+      dragIndexRef.current = target;
+      setDragIndex(target);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") endDrag(true);
+    };
+    // A cancelled pointer never produces a pointerup, so both finish the drag;
+    // only cancellation reverts.
+    const finishDrag = (e: PointerEvent) => endDrag(e.type === "pointercancel");
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", finishDrag);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [dragIndex, dropTargetFor, endDrag, reorderExercise]);
 
   function groupWithNext(index: number) {
     setExercises((prev) => {
@@ -346,6 +475,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
           weight_kg: s.weight_kg.trim() || null,
           duration_seconds: s.duration_seconds.trim() === "" ? null : Number(s.duration_seconds),
           distance_meters: s.distance_meters.trim() === "" ? null : Number(s.distance_meters),
+          metrics: setMetricsFromDraft(s),
         })),
       })),
     };
@@ -408,39 +538,22 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
               <ol className="mt-2 space-y-3">
                 {exercises.map((ex, i) => (
                   <li
-                    key={`${ex.template_id}-${i}`}
-                    onDragOver={(e) => {
-                      if (dragIndex === null) return;
-                      e.preventDefault();
-                      if (dropIndex !== i) setDropIndex(i);
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (dragIndex !== null) reorderExercise(dragIndex, i);
-                      setDragIndex(null);
-                      setDropIndex(null);
+                    key={ex.id}
+                    ref={(el) => {
+                      rowRefs.current[i] = el;
                     }}
                     className={`rounded-lg border border-zinc-200 p-3 ${
                       dragIndex === i ? "opacity-50" : ""
-                    } ${dropIndex === i && dragIndex !== i ? "ring-2 ring-zinc-400" : ""}`}
+                    }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex min-w-0 items-center gap-1.5">
                         <button
                           type="button"
-                          draggable
-                          onDragStart={(e) => {
-                            setDragIndex(i);
-                            e.dataTransfer.effectAllowed = "move";
-                            e.dataTransfer.setData("text/plain", String(i));
-                          }}
-                          onDragEnd={() => {
-                            setDragIndex(null);
-                            setDropIndex(null);
-                          }}
+                          onPointerDown={(e) => onHandlePointerDown(i, e)}
                           aria-label="Drag to reorder exercise"
                           title="Drag to reorder"
-                          className="flex h-9 w-7 shrink-0 cursor-grab items-center justify-center rounded text-zinc-400 hover:text-zinc-600 active:cursor-grabbing"
+                          className="flex h-9 w-7 shrink-0 touch-none cursor-grab items-center justify-center rounded text-zinc-400 hover:text-zinc-600 active:cursor-grabbing"
                         >
                           ⠿
                         </button>

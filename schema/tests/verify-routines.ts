@@ -8,6 +8,7 @@ import {
   updateRoutine,
 } from "../../lib/routines";
 import { createCustomExercise } from "../../lib/exercises";
+import { EXERCISE_TYPES, type ExerciseType } from "../../schema/types";
 import { createTestDatabase } from "./harness";
 
 let failed = 0;
@@ -189,6 +190,185 @@ check(
 await deleteRoutine(db, alice, targetsCopy.id);
 await deleteRoutine(db, alice, targets.id);
 
+// ---- every supported type --------------------------------------------------
+// A routine must be able to prescribe all eleven exercise types. The editor
+// sends the fields the type uses and null for the rest, and floors/steps ride
+// in `metrics` — the same shape the completed-workout side stores.
+interface TypeTargetCase {
+  reps?: number;
+  weight_kg?: string;
+  duration_seconds?: number;
+  distance_meters?: number;
+  steps?: number;
+  floors?: number;
+}
+
+const PER_TYPE_TARGETS: Record<ExerciseType, TypeTargetCase> = {
+  weight_reps: { reps: 8, weight_kg: "60" },
+  bodyweight_reps: { reps: 12 },
+  bodyweight_weighted: { reps: 10, weight_kg: "20" },
+  bodyweight_assisted: { reps: 10, weight_kg: "15" },
+  reps_only: { reps: 15 },
+  duration: { duration_seconds: 120 },
+  weight_duration: { weight_kg: "40", duration_seconds: 90 },
+  distance_duration: { distance_meters: 500, duration_seconds: 180 },
+  short_distance_weight: { distance_meters: 100, weight_kg: "25" },
+  floors_duration: { floors: 5, duration_seconds: 300 },
+  steps_duration: { steps: 100, duration_seconds: 240 },
+};
+
+/** One planned set for a type, carrying only that type's target fields. */
+function setForType(type: ExerciseType) {
+  const t = PER_TYPE_TARGETS[type];
+  return {
+    set_type: "normal" as const,
+    reps: t.reps ?? null,
+    weight_kg: t.weight_kg ?? null,
+    duration_seconds: t.duration_seconds ?? null,
+    distance_meters: t.distance_meters ?? null,
+    metrics:
+      t.steps !== undefined ? { steps: t.steps } : t.floors !== undefined ? { floors: t.floors } : {},
+  };
+}
+
+// `reps_only` and a few others have no global catalog row, so the fixture is a
+// custom exercise of that type — the type itself is what the editor keys on.
+const typeFixtures: { type: ExerciseType; template_id: string }[] = [];
+for (const type of EXERCISE_TYPES) {
+  const global = sys.find((e) => e.exercise_type === type);
+  if (global) {
+    typeFixtures.push({ type, template_id: global.id });
+    continue;
+  }
+  const custom = await createCustomExercise(db, alice, {
+    title: `Alice ${type}`,
+    exercise_type: type,
+    primary_muscle: "chest",
+    secondary_muscles: [],
+    equipment: "barbell",
+  });
+  typeFixtures.push({ type, template_id: custom.id });
+}
+check("every exercise type has a fixture", typeFixtures.length === EXERCISE_TYPES.length);
+
+const everyType = await createRoutine(db, alice, {
+  title: "Every Type",
+  notes: null,
+  exercises: typeFixtures.map((f) => ({
+    template_id: f.template_id,
+    rest_seconds: null,
+    notes: null,
+    sets: [setForType(f.type)],
+  })),
+});
+const everyTypeTree = await getRoutineTree(db, everyType.id, alice);
+
+for (const [index, f] of typeFixtures.entries()) {
+  const set = everyTypeTree?.exercises[index]?.sets[0];
+  const t = PER_TYPE_TARGETS[f.type];
+  const ok =
+    !!set &&
+    (t.reps === undefined ? set.reps === null : set.reps === t.reps) &&
+    (t.weight_kg === undefined ? set.weight_kg === null : Number(set.weight_kg) === Number(t.weight_kg)) &&
+    (t.duration_seconds === undefined
+      ? set.duration_seconds === null
+      : set.duration_seconds === t.duration_seconds) &&
+    (t.distance_meters === undefined
+      ? set.distance_meters === null
+      : set.distance_meters === t.distance_meters) &&
+    (t.steps === undefined ? set.metrics.steps === undefined : set.metrics.steps === t.steps) &&
+    (t.floors === undefined ? set.metrics.floors === undefined : set.metrics.floors === t.floors);
+  check(
+    `${f.type} round-trips its target fields`,
+    ok,
+    set ? JSON.stringify({ ...set, metrics: set.metrics }) : "no set",
+  );
+}
+
+// A type with no sidecar metric stores an empty object, not null, so the
+// completed side always reads a well-formed SetMetrics.
+const firstEveryTypeSet = everyTypeTree?.exercises[0]?.sets[0];
+check(
+  "a non-metric type stores an empty metrics object",
+  !!firstEveryTypeSet &&
+    firstEveryTypeSet.metrics !== null &&
+    Object.keys(firstEveryTypeSet.metrics).length === 0,
+);
+
+// A duplicate is written through createRoutine; it must carry metrics too.
+const everyTypeCopy = await duplicateRoutine(db, alice, everyType.id);
+const everyTypeCopyTree = await getRoutineTree(db, everyTypeCopy.id, alice);
+const floorsIndex = typeFixtures.findIndex((f) => f.type === "floors_duration");
+const stepsIndex = typeFixtures.findIndex((f) => f.type === "steps_duration");
+check(
+  "duplicate carries a floors target",
+  everyTypeCopyTree?.exercises[floorsIndex].sets[0].metrics.floors === 5,
+);
+check(
+  "duplicate carries a steps target",
+  everyTypeCopyTree?.exercises[stepsIndex].sets[0].metrics.steps === 100,
+);
+await deleteRoutine(db, alice, everyTypeCopy.id);
+
+// An update replaces metrics; it must not merge a stale value back in.
+await updateRoutine(db, alice, everyType.id, {
+  title: "Every Type v2",
+  notes: null,
+  exercises: [
+    {
+      template_id: typeFixtures[floorsIndex].template_id,
+      rest_seconds: null,
+      notes: null,
+      sets: [
+        {
+          set_type: "normal",
+          reps: null,
+          weight_kg: null,
+          duration_seconds: 300,
+          distance_meters: null,
+          metrics: { floors: 8 },
+        },
+      ],
+    },
+  ],
+});
+const everyTypeAfter = await getRoutineTree(db, everyType.id, alice);
+check(
+  "update replaces a set's metrics",
+  everyTypeAfter?.exercises.length === 1 &&
+    everyTypeAfter.exercises[0].sets[0].metrics.floors === 8 &&
+    everyTypeAfter.exercises[0].sets[0].metrics.steps === undefined,
+);
+await deleteRoutine(db, alice, everyType.id);
+
+// ---- pre-0014 data ---------------------------------------------------------
+// Rows written before the migration have no metrics; the column default must
+// make them read as an empty SetMetrics rather than null or a missing column.
+const legacyRoutineId = (
+  await query<{ id: string }>(`insert into routine (owner_id, title) values ($1, 'Legacy') returning id`, [
+    alice,
+  ])
+).rows[0].id;
+const legacyExerciseId = (
+  await query<{ id: string }>(
+    `insert into routine_exercise (routine_id, template_id, position) values ($1, $2, 0) returning id`,
+    [legacyRoutineId, squat!.id],
+  )
+).rows[0].id;
+await query(
+  `insert into routine_set (routine_exercise_id, position, set_type, reps) values ($1, 0, 'normal', 8)`,
+  [legacyExerciseId],
+);
+const legacyTree = await getRoutineTree(db, legacyRoutineId, alice);
+check(
+  "a pre-0014 row reads an empty metrics object",
+  !!legacyTree &&
+    legacyTree.exercises[0].sets[0].reps === 8 &&
+    legacyTree.exercises[0].sets[0].metrics !== null &&
+    Object.keys(legacyTree.exercises[0].sets[0].metrics).length === 0,
+);
+await deleteRoutine(db, alice, legacyRoutineId);
+
 // ---- reorder round-trip ----------------------------------------------------
 // The editor reorders the draft, then saves the whole tree. Positions are
 // renumbered from array order on save, so an update must persist the new order
@@ -318,6 +498,22 @@ check(
     title: "x",
     notes: null,
     exercises: [{ template_id: running!.id, rest_seconds: null, notes: null, sets: [{ set_type: "normal", reps: null, weight_kg: null, distance_meters: 1.5 }] }],
+  }).success,
+);
+check(
+  "negative steps rejected",
+  !routineInputSchema.safeParse({
+    title: "x",
+    notes: null,
+    exercises: [{ template_id: bench!.id, rest_seconds: null, notes: null, sets: [{ set_type: "normal", metrics: { steps: -1 } }] }],
+  }).success,
+);
+check(
+  "fractional floors rejected",
+  !routineInputSchema.safeParse({
+    title: "x",
+    notes: null,
+    exercises: [{ template_id: bench!.id, rest_seconds: null, notes: null, sets: [{ set_type: "normal", metrics: { floors: 2.5 } }] }],
   }).success,
 );
 

@@ -24,6 +24,17 @@ const routineSetInputSchema = z.object({
   // metres are whole units, matching the integer columns.
   duration_seconds: z.number().int().min(0).nullish(),
   distance_meters: z.number().int().min(0).nullish(),
+  // Sidecar metrics for the types that count something other than reps, weight,
+  // seconds or metres — currently floors and steps. The same `SetMetrics` the
+  // completed side stores, so `floors_duration` and `steps_duration` are
+  // prescribable. Optional: a type that uses none sends an empty object.
+  metrics: z
+    .object({
+      geospatial: z.unknown().nullish(),
+      steps: z.number().int().min(0).nullish(),
+      floors: z.number().int().min(0).nullish(),
+    })
+    .nullish(),
 });
 
 const routineExerciseInputSchema = z.object({
@@ -201,6 +212,7 @@ async function insertExercises(
           duration_seconds: s.duration_seconds ?? null,
           distance_meters: s.distance_meters ?? null,
           custom_metric: null,
+          metrics: s.metrics ?? {},
         })
         .execute();
     }
@@ -299,6 +311,7 @@ export async function duplicateRoutine(db: Kysely<Database>, userId: string, id:
         weight_kg: set.weight_kg,
         duration_seconds: set.duration_seconds,
         distance_meters: set.distance_meters,
+        metrics: set.metrics,
       })),
     })),
   });

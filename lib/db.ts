@@ -82,6 +82,7 @@ export interface Database {
     duration_seconds: number | null;
     distance_meters: number | null;
     custom_metric: string | null;
+    metrics: Generated<JsonObject>;
     created_at: Generated<Date>;
     updated_at: Generated<Date>;
   };

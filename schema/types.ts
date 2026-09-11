@@ -252,6 +252,8 @@ export interface RoutineSet extends Timestamped {
   duration_seconds: number | null;
   distance_meters: number | null;
   custom_metric: Numeric | null;
+  /** Prescribed sidecar metrics (steps, floors); mirrors workout_set.metrics. */
+  metrics: SetMetrics;
 }
 
 export type NewRoutineSet = New<
@@ -264,6 +266,7 @@ export type NewRoutineSet = New<
   | 'duration_seconds'
   | 'distance_meters'
   | 'custom_metric'
+  | 'metrics'
 >;
 
 // ---------------------------------------------------------------------------
@@ -297,7 +300,12 @@ export type NewWorkoutExercise = New<
   'superset_key' | 'rest_seconds' | 'notes'
 >;
 
-/** Extensible per-set metrics. Widening this is a data change, not a migration. */
+/**
+ * Extensible per-set metrics, shared by the prescription (`routine_set`) and
+ * the result (`workout_set`) so a planned floors/steps target and the value it
+ * produced are the same shape. Widening this is a data change, not a migration:
+ * both columns are jsonb.
+ */
 export interface SetMetrics extends JsonObject {
   /** e.g. an encoded GPS track for distance_* exercise types. */
   geospatial?: unknown;
