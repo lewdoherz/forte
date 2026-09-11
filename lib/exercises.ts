@@ -2,7 +2,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { Kysely } from "kysely";
 import type { Database } from "./db";
-import { EXERCISE_TYPES, type ExerciseType } from "@/schema/types";
+import { DURATION_RECORD_DIRECTIONS, EXERCISE_TYPES, type ExerciseType } from "@/schema/types";
 
 export const EXERCISE_TYPE_LABELS: Record<ExerciseType, string> = {
   weight_reps: "Weight × Reps",
@@ -33,6 +33,11 @@ export const exerciseInputSchema = z.object({
   media_url: z
     .union([z.literal(""), z.string().trim().max(2048).url("Image must be a valid URL")])
     .optional(),
+  // Which duration is a record (0015). Optional, so an exercise type that has
+  // no duration (weight_reps, steps_duration, ...) never has to send it and no
+  // existing caller has to start sending it. Absent resolves to 'higher' at the
+  // write site below, next to the column's own default.
+  duration_record_direction: z.enum(DURATION_RECORD_DIRECTIONS).optional(),
 });
 
 export type ExerciseInput = z.infer<typeof exerciseInputSchema>;
@@ -118,6 +123,7 @@ export async function createCustomExercise(
       equipment: input.equipment,
       media_url: input.media_url || null,
       how_to: input.how_to || null,
+      duration_record_direction: input.duration_record_direction ?? "higher",
       is_custom: true,
       owner_id: userId,
     })
@@ -150,6 +156,7 @@ export async function updateCustomExercise(
       equipment: input.equipment,
       media_url: input.media_url || null,
       how_to: input.how_to || null,
+      duration_record_direction: input.duration_record_direction ?? "higher",
     })
     .where("id", "=", id)
     .where("is_custom", "=", true)

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getWorkoutTree } from "@/lib/workouts";
 import { getVocabularies, listExercises } from "@/lib/exercises";
 import { getPreviousPerformances, type PreviousPerformance } from "@/lib/previous-performance";
+import { getWorkoutRecords } from "@/lib/records-history";
 import { requireSessionUserId } from "@/lib/auth-session";
 import { WorkoutLogger } from "@/components/workout-logger";
 import { WorkoutDetail } from "@/components/workout-detail";
@@ -31,7 +32,17 @@ export default async function WorkoutPage({
   // vocabulary — the logger for its set lines, the detail for the distribution
   // table's names and order — so it is loaded once, before the branch.
   if (workout.ended_at !== null) {
-    return <WorkoutDetail workout={workout} timeZone={timeZone} muscles={muscles} />;
+    // Earned records are derived from history strictly before this workout, so
+    // they are read here rather than stored on the workout row.
+    const records = await getWorkoutRecords(db, userId, workout.id);
+    return (
+      <WorkoutDetail
+        workout={workout}
+        timeZone={timeZone}
+        muscles={muscles}
+        records={records}
+      />
+    );
   }
 
   // The logger's own data: the visible catalog the Add Exercise picker searches,

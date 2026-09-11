@@ -46,6 +46,11 @@ export interface Database {
     is_custom: boolean;
     owner_id: string | null;
     archived_at: Date | null;
+    // Added by 0015. The column carries a 'higher' default, so an insert may
+    // omit it; `Generated` is what keeps the DB default from becoming a
+    // required value on every fixture. Like `how_to` above, this map is
+    // separate from the row type, so the column must be declared in both.
+    duration_record_direction: Generated<ExerciseTemplate["duration_record_direction"]>;
     created_at: Generated<Date>;
     updated_at: Generated<Date>;
   };

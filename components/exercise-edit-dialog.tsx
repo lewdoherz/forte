@@ -46,6 +46,7 @@ export async function ExerciseEditDialog({
           equipment: exercise.equipment,
           media_url: exercise.media_url,
           how_to: exercise.how_to,
+          duration_record_direction: exercise.duration_record_direction,
         }}
       />
     </ExerciseFormModal>

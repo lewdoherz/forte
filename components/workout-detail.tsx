@@ -4,6 +4,8 @@ import { ExerciseThumbnail } from "@/components/exercise-media";
 import type { VocabularyEntry } from "@/components/exercise-filter-form";
 import { WorkoutSummary } from "@/components/workout-summary";
 import { formatDuration } from "@/lib/format";
+import { RECORD_CATEGORY_LABELS } from "@/lib/records";
+import type { EarnedRecord } from "@/lib/records-history";
 import { formatDateTimeInTimeZone } from "@/lib/timezone";
 import { formatSetValues, formatVolumeKg, summarizeWorkout } from "@/lib/workout-stats";
 
@@ -31,22 +33,52 @@ export function WorkoutDetail({
   workout,
   timeZone,
   muscles,
+  records,
 }: {
   workout: WorkoutTree;
   /** The owner's zone, so the performed date reads consistently with the history list. */
   timeZone: string;
   /** Muscle vocabulary, in display order; the distribution table's names and order. */
   muscles: readonly VocabularyEntry[];
+  /**
+   * Records this workout earned, already ordered by the workout's exercise
+   * order then canonical category order. Read by the page from the derived
+   * history; never stored on the workout.
+   */
+  records: readonly EarnedRecord[];
 }) {
   const stats = summarizeWorkout(workout);
+
+  // Grouped by template because a record belongs to the exercise, not to a
+  // particular set: the baseline module already collapses a workout's best
+  // candidates to one (exercise, category) pair, and the badge list below is
+  // rendered once per exercise rather than once per set.
+  const recordsByTemplate = new Map<string, EarnedRecord[]>();
+  for (const record of records) {
+    const earned = recordsByTemplate.get(record.templateId);
+    if (earned) earned.push(record);
+    else recordsByTemplate.set(record.templateId, [record]);
+  }
+
   // Only exercises actually performed appear: an exercise whose sets were all
-  // skipped is part of the plan, not of the record.
+  // skipped is part of the plan, not of the record. The finish `.map` then
+  // attaches records by template; a template repeated in one workout shows its
+  // badges on its first performed block only, so the same record is never
+  // counted twice on the page.
+  const seenTemplates = new Set<string>();
   const exercises = workout.exercises
     .map((exercise) => ({
       exercise,
       sets: exercise.sets.filter((set) => set.completed_at != null),
     }))
-    .filter((entry) => entry.sets.length > 0);
+    .filter((entry) => entry.sets.length > 0)
+    .map((entry) => {
+      const earned = seenTemplates.has(entry.exercise.template_id)
+        ? []
+        : (recordsByTemplate.get(entry.exercise.template_id) ?? []);
+      seenTemplates.add(entry.exercise.template_id);
+      return { ...entry, earned };
+    });
 
   // The same shape the routine summary feeds to `muscleDistribution`, but built
   // from this workout's COMPLETED sets — never from a routine's prescription.
@@ -92,7 +124,7 @@ export function WorkoutDetail({
       ) : (
         <>
           <ol className="mt-6 space-y-4">
-            {exercises.map(({ exercise, sets }) => (
+            {exercises.map(({ exercise, sets, earned }) => (
               <li
                 key={exercise.id}
                 className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
@@ -106,6 +138,25 @@ export function WorkoutDetail({
                     </div>
                   </div>
                 </div>
+
+                {/* Above the sets, and one badge per category: the record was
+                    earned by the exercise's best set, not by this or that set,
+                    so it is not repeated down the list. The wording comes from
+                    the records module, so no two views name a category
+                    differently. */}
+                {earned.length > 0 ? (
+                  <ul className="mt-2 flex flex-wrap gap-1.5">
+                    {earned.map((record) => (
+                      <li
+                        key={record.category}
+                        className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
+                      >
+                        <span aria-hidden>🏅</span>
+                        {RECORD_CATEGORY_LABELS[record.category]}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
 
                 <ol className="mt-3 space-y-1.5 border-t border-zinc-100 pt-3">
                   {sets.map((set, index) => (

@@ -1,5 +1,6 @@
 import type { Kysely } from "kysely";
 import type { Database } from "./db";
+import { getWorkoutRecordCounts } from "./records-history";
 import { summarizeWorkout } from "./workout-stats";
 import type { WorkoutPage, WorkoutSummary } from "./workouts";
 import type { WorkoutCardData, WorkoutCardExercise } from "@/components/workout-card";
@@ -99,6 +100,18 @@ export async function enrichWorkoutCards(
     }
   }
 
+  // Records are a property of finished history, so only completed workouts are
+  // asked about; the active one stays null and its card omits the metric. One
+  // statement covers the whole page, keyed by workout id, exactly like the
+  // volume above.
+  const completedIds = summaries
+    .filter((summary) => summary.ended_at != null)
+    .map((summary) => summary.id);
+  const recordCounts =
+    completedIds.length > 0
+      ? await getWorkoutRecordCounts(db, userId, completedIds)
+      : new Map<string, number>();
+
   return summaries.map((summary) => {
     const exercises = byWorkout.get(summary.id)?.exercises ?? [];
     const stats = summarizeWorkout({
@@ -118,6 +131,10 @@ export async function enrichWorkoutCards(
       durationSeconds: stats.durationSeconds,
       volumeKg: stats.volumeKg,
       exerciseCount: summary.exercise_count,
+      // `?? null` rather than `?? 0`: if the count is somehow absent the card
+      // omits it, which is honest, instead of reporting a zero that was never
+      // calculated.
+      recordCount: summary.ended_at == null ? null : (recordCounts.get(summary.id) ?? null),
       exercises: preview,
     };
   });

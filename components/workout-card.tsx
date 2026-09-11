@@ -26,6 +26,14 @@ export interface WorkoutCardData {
   durationSeconds: number;
   volumeKg: number;
   exerciseCount: number;
+  /**
+   * The earned records in this workout: distinct (exercise, category) pairs
+   * whose best candidate strictly beat the pre-workout baseline. `null` when
+   * the count was not calculated — an in-progress workout has no finished
+   * performance to judge — so the card omits the metric rather than showing a
+   * zero it did not verify.
+   */
+  recordCount: number | null;
   exercises: WorkoutCardExercise[];
 }
 
@@ -84,6 +92,18 @@ export function WorkoutCard({
           <dt className="text-zinc-500">Volume</dt>
           <dd className="font-medium tabular-nums">{formatVolumeKg(card.volumeKg)}</dd>
         </div>
+        {/* Omitted, not zeroed, when the count is unavailable: an in-progress
+            workout has no record yet, and a fabricated "0" would read as a
+            checked-and-empty result. A verified zero renders as a plain 0; the
+            medal marks the workouts that actually earned something. */}
+        {card.recordCount === null ? null : (
+          <div className="flex items-baseline gap-1.5">
+            <dt className="text-zinc-500">Records</dt>
+            <dd className="font-medium tabular-nums">
+              {card.recordCount > 0 ? `🏅 ${card.recordCount}` : "0"}
+            </dd>
+          </div>
+        )}
       </dl>
 
       {preview.length > 0 ? (

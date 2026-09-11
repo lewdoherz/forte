@@ -38,11 +38,14 @@ export async function listExercisesAction(
   return rows.map(toLibraryExercise);
 }
 
-/** Reads the optional custom-exercise extras, mapping an absent field to undefined. */
+/** Reads the form's optional fields, mapping an absent control to undefined. */
 function optionalFields(formData: FormData) {
   return {
     media_url: formData.get("media_url") ?? undefined,
     how_to: formData.get("how_to") ?? undefined,
+    // Only a duration exercise renders this control; when it is absent the
+    // value stays undefined and create/update persist the 'higher' default.
+    duration_record_direction: formData.get("duration_record_direction") ?? undefined,
   };
 }
 

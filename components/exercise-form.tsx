@@ -1,7 +1,11 @@
 "use client";
 
 import { useActionState } from "react";
-import type { ExerciseType } from "@/schema/types";
+import {
+  DURATION_RECORD_DIRECTIONS,
+  type DurationRecordDirection,
+  type ExerciseType,
+} from "@/schema/types";
 import { EXERCISE_TYPE_LABELS } from "@/lib/exercises";
 import type { ExerciseActionState } from "@/lib/exercise-actions";
 
@@ -9,6 +13,17 @@ type FormAction = (
   prev: ExerciseActionState | null,
   formData: FormData,
 ) => Promise<ExerciseActionState>;
+
+/**
+ * The stored `duration_record_direction` values in the reader's words. "Higher"
+ * and "lower" are the persisted vocabulary; a duration improves by getting
+ * longer, so the labels say that instead of revealing the encoding.
+ */
+const DURATION_DIRECTION_LABELS: Record<DurationRecordDirection, string> = {
+  higher: "Longer is better",
+  lower: "Shorter is better",
+  none: "No duration record",
+};
 
 interface ExerciseFormProps {
   action: FormAction;
@@ -23,6 +38,7 @@ interface ExerciseFormProps {
     equipment: string;
     media_url: string | null;
     how_to: string | null;
+    duration_record_direction: DurationRecordDirection;
   };
 }
 
@@ -89,6 +105,29 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
             </option>
           ))}
         </select>
+      </label>
+
+      {/* One field, directly under the type it qualifies: the direction only
+          changes what a `duration` exercise counts as a record. The select is
+          always submitted, so create and update write the same explicit value
+          and the input schema's default is only a backstop. */}
+      <label className="block space-y-1">
+        <span className="text-sm font-medium">Duration record</span>
+        <select
+          name="duration_record_direction"
+          defaultValue={initial?.duration_record_direction ?? "higher"}
+          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+        >
+          {DURATION_RECORD_DIRECTIONS.map((direction) => (
+            <option key={direction} value={direction}>
+              {DURATION_DIRECTION_LABELS[direction]}
+            </option>
+          ))}
+        </select>
+        <span className="block text-xs text-zinc-500">
+          Which timed performance counts as a record. Only affects exercises measured by
+          duration.
+        </span>
       </label>
 
       <label className="block space-y-1">

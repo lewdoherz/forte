@@ -51,6 +51,14 @@ export const EXERCISE_TYPES = [
 ] as const;
 export type ExerciseType = (typeof EXERCISE_TYPES)[number];
 
+// Which direction counts as a record for a timed exercise (0015). 'higher'
+// means longer, 'lower' means shorter, 'none' opts the exercise out of duration
+// records. Only `duration` reads this: every other type decides direction per
+// category (weight_reps is heavier and higher-rep, bodyweight_assisted is
+// lower-assistance), so a single direction on the exercise would be wrong.
+export const DURATION_RECORD_DIRECTIONS = ['higher', 'lower', 'none'] as const;
+export type DurationRecordDirection = (typeof DURATION_RECORD_DIRECTIONS)[number];
+
 // ---------------------------------------------------------------------------
 // Column-type helpers
 // ---------------------------------------------------------------------------
@@ -198,11 +206,19 @@ export interface ExerciseTemplate extends Timestamped {
   is_custom: boolean;
   owner_id: Uuid | null; // null = global catalog
   archived_at: Date | null;
+  /** Which duration is a record (0015). Only meaningful for exercise_type duration. */
+  duration_record_direction: DurationRecordDirection;
 }
 
 export type NewExerciseTemplate = New<
   ExerciseTemplate,
-  'secondary_muscles' | 'media_url' | 'how_to' | 'is_custom' | 'owner_id' | 'archived_at'
+  | 'secondary_muscles'
+  | 'media_url'
+  | 'how_to'
+  | 'is_custom'
+  | 'owner_id'
+  | 'archived_at'
+  | 'duration_record_direction'
 >;
 
 // ---------------------------------------------------------------------------
