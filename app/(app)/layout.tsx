@@ -3,8 +3,8 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth-session";
 import { db } from "@/lib/db";
 import { getActiveWorkout } from "@/lib/workouts";
-import { SignOutButton } from "@/components/sign-out-button";
 import { BottomNav } from "@/components/bottom-nav";
+import { Sidebar } from "@/components/sidebar";
 
 /**
  * Protected application boundary. Every page under app/(app)/ requires an
@@ -13,29 +13,23 @@ import { BottomNav } from "@/components/bottom-nav";
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await requireSession();
   const activeWorkout = await getActiveWorkout(db, session.user.id);
+  // Better Auth maps `name` to app_user.display_name (see lib/auth.ts). The
+  // column is nullable, so fall back to the email rather than render a blank
+  // account row.
+  const displayName = session.user.name.trim() || session.user.email;
 
   return (
     <>
-      <header className="border-b border-zinc-200 bg-white">
+      <Sidebar displayName={displayName} activeWorkout={activeWorkout ?? null} />
+
+      {/* Below `sm` the sidebar is hidden, so the top bar stays as the place to
+          reach the wordmark, the active-workout chip and the account link on a
+          phone. Sign-out lives on /account only, from every breakpoint. */}
+      <header className="border-b border-zinc-200 bg-white sm:hidden">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-2.5">
           <Link href="/" className="text-base font-semibold">
             forte
           </Link>
-
-          <nav className="hidden items-center gap-4 text-sm sm:flex" aria-label="Primary">
-            <Link href="/routines" className="hover:underline">
-              Routines
-            </Link>
-            <Link href="/exercises" className="hover:underline">
-              Exercises
-            </Link>
-            <Link href="/workouts" className="hover:underline">
-              Workouts
-            </Link>
-            <Link href="/progress" className="hover:underline">
-              Progress
-            </Link>
-          </nav>
 
           <div className="ml-auto flex items-center gap-2">
             {activeWorkout ? (
@@ -44,8 +38,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
                 className="inline-flex min-h-9 items-center gap-1.5 rounded-full bg-amber-100 px-3 text-xs font-medium text-amber-900"
               >
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
-                <span className="max-w-24 truncate sm:max-w-52">{activeWorkout.title}</span>
-                <span className="hidden sm:inline">· resume</span>
+                <span className="max-w-24 truncate">{activeWorkout.title}</span>
               </Link>
             ) : null}
             <Link
@@ -54,13 +47,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             >
               Account
             </Link>
-            <SignOutButton />
           </div>
         </div>
       </header>
 
-      {/* Bottom padding leaves room for the mobile bottom nav. */}
-      <div className="pb-24 sm:pb-0">{children}</div>
+      {/* Bottom padding leaves room for the mobile bottom nav; from `sm` up the
+          left padding matches the fixed sidebar (w-64) so content never sits
+          under it and the page cannot scroll horizontally. */}
+      <div className="pb-24 sm:pb-0 sm:pl-64">{children}</div>
 
       <BottomNav />
     </>

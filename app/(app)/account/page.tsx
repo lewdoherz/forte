@@ -12,6 +12,7 @@ import {
 } from "@/lib/account-actions";
 import { AccountForm } from "@/components/account-form";
 import { DeleteAccountForm } from "@/components/delete-account-form";
+import { SignOutButton } from "@/components/sign-out-button";
 import { SessionList, type ActiveSession } from "@/components/session-list";
 
 export default async function AccountPage() {
@@ -118,6 +119,16 @@ export default async function AccountPage() {
           cannot be undone, so download your data first if you want to keep it.
         </p>
         <DeleteAccountForm action={deleteAccountAction} />
+      </section>
+
+      <section className="mt-10 border-t border-zinc-200 pt-6">
+        <h2 className="text-lg font-semibold">Sign out</h2>
+        <p className="mt-2 text-sm text-zinc-600">
+          Ends this session on this device and returns you to the sign-in page.
+        </p>
+        <div className="mt-4">
+          <SignOutButton />
+        </div>
       </section>
     </main>
   );
