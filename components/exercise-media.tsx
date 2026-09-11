@@ -61,20 +61,42 @@ export function ExerciseThumbnail({ slug }: { slug: string }) {
  * data migration.
  *
  * The base URL is also the switch: unset means "no video hosting is configured",
- * and the element is not rendered at all. `preload="none"` keeps a visit to the
- * instructions from downloading a video the reader may never play, and the
- * thumbnail doubles as the poster when one has been imported.
+ * and the element is not rendered at all. The thumbnail doubles as the poster
+ * when one has been imported.
+ *
+ * It autoplays, and must also be `muted`: browsers refuse to start an unmuted
+ * video without a user gesture, so an unmuted autoplay request would never
+ * actually play. It is a silent demonstration loop — hence no `controls`
+ * either — and `playsInline` keeps iOS from taking it fullscreen on open.
+ *
+ * The player takes the full width of its column with an automatic height, so
+ * its own dimensions decide the box. The catalog is not one shape (720x452 and
+ * 720x404 are both present), so a fixed `aspect-video` would letterbox the
+ * mismatched files behind black side bars.
+ *
+ * `className` carries the column sizing, since only the page that places the
+ * player knows how much room it has.
  */
-export function ExerciseVideo({ slug, mediaUrl }: { slug: string; mediaUrl: string | null }) {
+export function ExerciseVideo({
+  slug,
+  mediaUrl,
+  className = "",
+}: {
+  slug: string;
+  mediaUrl: string | null;
+  className?: string;
+}) {
   const baseUrl = process.env.NEXT_PUBLIC_MEDIA_BASE_URL;
   if (!baseUrl || !mediaUrl) return null;
 
   return (
     <video
-      controls
-      preload="none"
+      autoPlay
+      muted
+      playsInline
+      preload="auto"
       poster={`${THUMBNAIL_PREFIX}/${encodeURIComponent(slug)}.jpg`}
-      className="mt-2 aspect-video w-full rounded-xl border border-zinc-200 bg-black"
+      className={`h-auto w-full rounded-xl border border-zinc-200 bg-black ${className}`}
     >
       <source src={`${baseUrl.replace(/\/+$/, "")}/${mediaUrl}`} type="video/mp4" />
     </video>

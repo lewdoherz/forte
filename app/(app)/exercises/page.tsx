@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { EXERCISE_TYPE_LABELS, getVocabularies, listExercises } from "@/lib/exercises";
 import { requireSessionUserId } from "@/lib/auth-session";
+import { ExerciseThumbnail } from "@/components/exercise-media";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -95,17 +96,25 @@ export default async function ExercisesPage({ searchParams }: { searchParams: Se
                 href={`/exercises/${ex.id}`}
                 className="block rounded-xl border border-zinc-200 bg-white p-4 shadow-sm hover:border-zinc-400"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 break-words font-medium">{ex.title}</span>
-                  {ex.is_custom ? (
-                    <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
-                      Custom
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-1 text-sm text-zinc-500">
-                  {muscleNames.get(ex.primary_muscle) ?? ex.primary_muscle} ·{" "}
-                  {EXERCISE_TYPE_LABELS[ex.exercise_type]}
+                {/* The thumbnail removes itself when artwork is missing, so a
+                    row without one simply starts its text at the card edge
+                    rather than leaving a gap behind. */}
+                <div className="flex items-start gap-3">
+                  <ExerciseThumbnail slug={ex.slug} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 break-words font-medium">{ex.title}</span>
+                      {ex.is_custom ? (
+                        <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
+                          Custom
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-1 text-sm text-zinc-500">
+                      {muscleNames.get(ex.primary_muscle) ?? ex.primary_muscle} ·{" "}
+                      {EXERCISE_TYPE_LABELS[ex.exercise_type]}
+                    </div>
+                  </div>
                 </div>
               </Link>
             </li>
