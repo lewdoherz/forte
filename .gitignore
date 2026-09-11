@@ -48,6 +48,12 @@ next-env.d.ts
 # embedded PostgreSQL data directory (db:verify:postgres harness, disposable)
 .pgdata*/
 
+# Local working artifacts. Step-by-step task instructions the maintainer keeps
+# on disk while working but never versions; ignoring them keeps `git status`
+# signal. Deliberately narrow — real documentation (DEPLOYMENT.md, docs/) and
+# .env.example must stay tracked.
+/forte-step*-instructions.md
+
 # Local reference material. It is not part of this repository — the remaining
 # files are a live API key and hundreds of third-party exercise videos — so these
 # must stay ignored. They are still required: the directory exists on developer

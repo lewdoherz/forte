@@ -266,6 +266,23 @@ bun run build            # production build
 bun run db:verify        # all verification suites (PGlite by default)
 ```
 
+Those commands prove the **working tree** compiles, which is not the same as the
+**commit** compiling. A tracked file can import a file that was never staged:
+every check above resolves it off disk and passes, while the deployment runner —
+which receives only the commit — fails to resolve it. Verify the commit itself
+before reporting success:
+
+```bash
+bun run verify:committed
+```
+
+It checks HEAD out into a throwaway `git worktree`, where only committed files
+exist, links the existing `node_modules` in (no install), runs typecheck, lint,
+build and `db:verify` there, and removes the worktree afterwards — including on
+failure. CI already checks the committed tree because a runner starts from a
+fresh clone; this makes that check runnable locally, before the claim rather
+than after the deployment.
+
 To run the suites against PostgreSQL instead of PGlite, set
 `TEST_DATABASE_URL` to a server you are willing to have a scratch database
 created and dropped on:
