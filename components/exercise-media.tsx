@@ -53,16 +53,21 @@ export function ExerciseThumbnail({ slug }: { slug: string }) {
 /**
  * The example video for an exercise.
  *
- * `NEXT_PUBLIC_MEDIA_BASE_URL` is both the host and the switch: with it unset
- * (the current state — no video is deployed) there is no element at all, because
- * an empty `<video>` would paint a blank frame for a file nothing can serve.
- * `preload="none"` keeps a visit to the instructions from downloading a video
- * the reader may never play, and the thumbnail doubles as the poster when one has
- * been imported.
+ * `ExerciseVideo` renders only when the exercise row records where its media
+ * lives (`media_url`), and that path is relative — the host comes from
+ * `NEXT_PUBLIC_MEDIA_BASE_URL`. That keeps two things true at once: an exercise
+ * whose video was never uploaded shows no player rather than a control pointing
+ * at a 404, and switching blob stores stays a configuration change instead of a
+ * data migration.
+ *
+ * The base URL is also the switch: unset means "no video hosting is configured",
+ * and the element is not rendered at all. `preload="none"` keeps a visit to the
+ * instructions from downloading a video the reader may never play, and the
+ * thumbnail doubles as the poster when one has been imported.
  */
-export function ExerciseVideo({ slug }: { slug: string }) {
+export function ExerciseVideo({ slug, mediaUrl }: { slug: string; mediaUrl: string | null }) {
   const baseUrl = process.env.NEXT_PUBLIC_MEDIA_BASE_URL;
-  if (!baseUrl) return null;
+  if (!baseUrl || !mediaUrl) return null;
 
   return (
     <video
@@ -71,10 +76,7 @@ export function ExerciseVideo({ slug }: { slug: string }) {
       poster={`${THUMBNAIL_PREFIX}/${encodeURIComponent(slug)}.jpg`}
       className="mt-2 aspect-video w-full rounded-xl border border-zinc-200 bg-black"
     >
-      <source
-        src={`${baseUrl.replace(/\/+$/, "")}/${encodeURIComponent(slug)}.mp4`}
-        type="video/mp4"
-      />
+      <source src={`${baseUrl.replace(/\/+$/, "")}/${mediaUrl}`} type="video/mp4" />
     </video>
   );
 }

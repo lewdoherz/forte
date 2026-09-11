@@ -137,7 +137,7 @@ export default async function ExerciseDetailPage({
       <div className="mt-6">
         {activeTab === "how-to" ? (
           <>
-            <ExerciseVideo slug={exercise.slug} />
+            <ExerciseVideo slug={exercise.slug} mediaUrl={exercise.media_url} />
             {howTo ? (
               // Source text with its own numbering and line breaks: preserving
               // them is the whole point, so it must not be reflowed.

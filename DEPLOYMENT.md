@@ -137,21 +137,28 @@ Some curated rows are near-duplicates of imported ones under different titles
 (`Barbell Back Squat` versus `Squat (Barbell)`); both are kept deliberately,
 because the curated rows are what existing workouts and routines reference.
 
-**Media is addressed by slug, not stored per row**, so switching hosts is a
-configuration change rather than a data migration:
+**Media is recorded per row as a relative path**, so switching hosts is a
+configuration change rather than a data migration.
+`exercise_template.media_url` says which exercises actually have a video — the
+uploader writes it (`0012_exercise_media_url.sql`) and the page renders a player
+only where it is set — and it holds a path relative to the media host, never a
+full URL:
 
 | Asset | Where it comes from |
 |---|---|
 | Thumbnail | `/exercise-media/thumbnails/<slug>.jpg`, committed (8.8 MB) |
-| Video | `${NEXT_PUBLIC_MEDIA_BASE_URL}/<slug>.mp4`, Vercel Blob |
+| Video | `${NEXT_PUBLIC_MEDIA_BASE_URL}/${media_url}`, e.g. `.../exercise-videos/<slug>.mp4`, Vercel Blob |
 
-`NEXT_PUBLIC_MEDIA_BASE_URL` is both the host and the switch: unset — which is a
-supported state, not a broken one — the video element is not rendered at all.
-To populate a new environment, create a **public** Blob store, connect it to the
-project, and run `scripts/upload-exercise-videos.ts` with
+`NEXT_PUBLIC_MEDIA_BASE_URL` is only the host and the switch: unset — a
+supported state, not a broken one — renders no video element at all, and neither
+does an exercise whose `media_url` is null (the 19 curated rows whose titles have
+no uploaded file). To populate a new environment, create a **public** Blob store,
+connect it to the project, and run `scripts/upload-exercise-videos.ts` with
 `BLOB_READ_WRITE_TOKEN` (a token for code running outside Vercel; the app itself
 only ever reads public URLs, so it is not needed at runtime and is not part of
-the required production set).
+the required production set). A full upload rewrites `0012_exercise_media_url.sql`
+to match what it published — or run the same script with `--emit-migration` to
+rewrite it without uploading — and commit the result.
 
 ## The deployed instance
 
@@ -161,7 +168,7 @@ the required production set).
 | URLs | https://forte-delta.vercel.app (production), https://forte-herco1.vercel.app |
 | Deployment | production, deployed from `main` (no pinned deployment id — that changes on every push) |
 | Database | Neon project `forte` — PostgreSQL 18.6, `us-east-2`, pooled endpoint |
-| Environment | `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `TRUST_FORWARDED_HEADER=true`, `EMAIL_API_KEY`, `EMAIL_FROM` |
+| Environment | `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `TRUST_FORWARDED_HEADER=true`, `EMAIL_API_KEY`, `EMAIL_FROM`, `NEXT_PUBLIC_MEDIA_BASE_URL` (bare store host) |
 
 **The Vercel project is linked to the GitHub repository** (`lewdoherz/forte`,
 production branch `main`), so pushing to `main` deploys. Establishing that took a
