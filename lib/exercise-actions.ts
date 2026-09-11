@@ -10,10 +10,41 @@ import {
   createCustomExercise,
   deleteCustomExercise,
   exerciseInputSchema,
+  listExercises,
   updateCustomExercise,
+  type ExerciseListFilters,
 } from "./exercises";
+import { toLibraryExercise, type LibraryExercise } from "./exercise-library";
 
 export type ExerciseActionState = { error?: string };
+
+/**
+ * The Library panel's filtered read.
+ *
+ * The panel lives in the exercises layout, which cannot receive `searchParams`,
+ * so the filtered list comes back through this action. It calls the same
+ * `listExercises` query the old page did, which keeps one filtering
+ * implementation — in SQL — rather than a JavaScript copy that could drift.
+ */
+export async function listExercisesAction(
+  filters: ExerciseListFilters,
+): Promise<LibraryExercise[]> {
+  const userId = await requireSessionUserId();
+  const rows = await listExercises(db, userId, {
+    q: filters.q?.trim() || undefined,
+    muscle: filters.muscle || undefined,
+    equipment: filters.equipment || undefined,
+  });
+  return rows.map(toLibraryExercise);
+}
+
+/** Reads the optional custom-exercise extras, mapping an absent field to undefined. */
+function optionalFields(formData: FormData) {
+  return {
+    media_url: formData.get("media_url") ?? undefined,
+    how_to: formData.get("how_to") ?? undefined,
+  };
+}
 
 export async function createExercise(
   _prev: ExerciseActionState | null,
@@ -26,6 +57,7 @@ export async function createExercise(
     primary_muscle: formData.get("primary_muscle"),
     secondary_muscles: formData.getAll("secondary_muscles"),
     equipment: formData.get("equipment"),
+    ...optionalFields(formData),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
@@ -58,6 +90,7 @@ export async function updateExercise(
     primary_muscle: formData.get("primary_muscle"),
     secondary_muscles: formData.getAll("secondary_muscles"),
     equipment: formData.get("equipment"),
+    ...optionalFields(formData),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };

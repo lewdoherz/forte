@@ -4,12 +4,12 @@ import { db } from "@/lib/db";
 import { EXERCISE_TYPE_LABELS, getVisibleExercise, getVocabularies } from "@/lib/exercises";
 import { requireSessionUserId } from "@/lib/auth-session";
 import { getUserProfile } from "@/lib/users";
-import { listWorkouts } from "@/lib/workouts";
 import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 import { DeleteExerciseButton } from "@/components/delete-exercise-button";
 import { ExerciseThumbnail, ExerciseVideo } from "@/components/exercise-media";
+import { ExerciseImage } from "@/components/exercise-image";
 import { ExerciseStats } from "@/components/exercise-stats";
-import { WorkoutHistory } from "@/components/workout-history";
+import { ExerciseHistory } from "@/components/exercise-history";
 
 /**
  * The page's sections, in the order the feature describes them. `statistics`
@@ -27,12 +27,17 @@ function isTabId(value: string | undefined): value is TabId {
   return TABS.some((tab) => tab.id === value);
 }
 
+/** A repeated search param arrives as an array; only a single value is meaningful here. */
+function asString(value: string | string[] | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
 export default async function ExerciseDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const userId = await requireSessionUserId();
   const { id } = await params;
@@ -44,8 +49,25 @@ export default async function ExerciseDetailPage({
   // linkable and survives a reload, and the whole page works without JavaScript.
   // An unknown or absent value degrades to the first tab (Statistics) instead
   // of rendering nothing.
-  const { tab } = await searchParams;
-  const activeTab: TabId = isTabId(tab) ? tab : TABS[0].id;
+  const query = await searchParams;
+  const tabParam = asString(query.tab);
+  const activeTab: TabId = isTabId(tabParam) ? tabParam : TABS[0].id;
+
+  // The Library panel's filters ride along on detail URLs, so opening an
+  // exercise does not clear the panel's filter. They are echoed onto the tab
+  // links and the back link for the same reason.
+  const filterParams = new URLSearchParams();
+  for (const key of ["q", "muscle", "equipment"] as const) {
+    const value = asString(query[key]);
+    if (value) filterParams.set(key, value);
+  }
+  const filterQuery = filterParams.toString();
+  const backHref = filterQuery ? `/exercises?${filterQuery}` : "/exercises";
+  const tabHref = (tab: TabId) => {
+    const next = new URLSearchParams(filterParams);
+    next.set("tab", tab);
+    return `/exercises/${exercise.id}?${next.toString()}`;
+  };
 
   const [{ muscles, equipment: equipmentList }, profile] = await Promise.all([
     getVocabularies(db),
@@ -59,16 +81,16 @@ export default async function ExerciseDetailPage({
 
   const howTo = exercise.how_to;
 
-  // Only the active tab's data is read, so opening the instructions costs no
-  // history or analytics query.
-  const history =
-    activeTab === "history"
-      ? await listWorkouts(db, userId, { exerciseId: exercise.id })
-      : null;
+  // `media_url` is a video path for the library catalog, but the create/edit
+  // dialog writes an image URL there for a custom exercise. The extension is the
+  // switch, so an image never reaches the video element.
+  const mediaIsVideo = exercise.media_url
+    ? /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(exercise.media_url)
+    : false;
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
-      <Link href="/exercises" className="text-sm text-zinc-500 underline">
+      <Link href={backHref} className="text-sm text-zinc-500 underline">
         ← Exercises
       </Link>
 
@@ -107,11 +129,19 @@ export default async function ExerciseDetailPage({
             <dd className="min-w-0 break-words text-right text-sm font-medium">{EXERCISE_TYPE_LABELS[exercise.exercise_type]}</dd>
           </div>
         </dl>
-        <ExerciseVideo
-          slug={exercise.slug}
-          mediaUrl={exercise.media_url}
-          className="sm:w-64 sm:shrink-0"
-        />
+        {exercise.media_url && !mediaIsVideo ? (
+          <ExerciseImage
+            src={exercise.media_url}
+            alt={exercise.title}
+            className="sm:w-64 sm:shrink-0"
+          />
+        ) : (
+          <ExerciseVideo
+            slug={exercise.slug}
+            mediaUrl={exercise.media_url}
+            className="sm:w-64 sm:shrink-0"
+          />
+        )}
       </div>
 
       {isOwner ? (
@@ -132,7 +162,7 @@ export default async function ExerciseDetailPage({
           return (
             <Link
               key={t.id}
-              href={`/exercises/${exercise.id}?tab=${t.id}`}
+              href={tabHref(t.id)}
               aria-current={isActive ? "page" : undefined}
               className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
                 isActive
@@ -168,20 +198,13 @@ export default async function ExerciseDetailPage({
           />
         ) : null}
 
-        {activeTab === "history" && history ? (
-          history.completed.length === 0 ? (
-            <p className="text-zinc-500">No workouts include {exercise.title} yet.</p>
-          ) : (
-            // The same list /workouts renders, including its cursor-based "Load
-            // older" control; it already filters by exercise, which is what this
-            // tab wants.
-            <WorkoutHistory
-              initial={history.completed}
-              initialCursor={history.nextCursor}
-              exerciseId={exercise.id}
-              timeZone={timeZone}
-            />
-          )
+        {activeTab === "history" ? (
+          <ExerciseHistory
+            userId={userId}
+            exerciseId={exercise.id}
+            exerciseTitle={exercise.title}
+            timeZone={timeZone}
+          />
         ) : null}
       </div>
     </main>

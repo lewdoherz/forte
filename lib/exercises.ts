@@ -24,6 +24,15 @@ export const exerciseInputSchema = z.object({
   primary_muscle: z.string().min(1, "Primary muscle is required"),
   secondary_muscles: z.array(z.string()).max(8).default([]),
   equipment: z.string().min(1, "Equipment is required"),
+  // Custom-exercise extras. The library catalog's How to text is imported
+  // (migration 0010) and its media_url is a video path baked in by the uploader
+  // (migration 0012), so neither is authored through this form for system rows.
+  // An empty submission is normalised to NULL by the mutations below rather
+  // than stored as an empty string.
+  how_to: z.string().trim().max(20000, "How to is too long").optional(),
+  media_url: z
+    .union([z.literal(""), z.string().trim().max(2048).url("Image must be a valid URL")])
+    .optional(),
 });
 
 export type ExerciseInput = z.infer<typeof exerciseInputSchema>;
@@ -105,6 +114,8 @@ export async function createCustomExercise(
       primary_muscle: input.primary_muscle,
       secondary_muscles: input.secondary_muscles,
       equipment: input.equipment,
+      media_url: input.media_url || null,
+      how_to: input.how_to || null,
       is_custom: true,
       owner_id: userId,
     })
@@ -135,6 +146,8 @@ export async function updateCustomExercise(
       primary_muscle: input.primary_muscle,
       secondary_muscles: input.secondary_muscles,
       equipment: input.equipment,
+      media_url: input.media_url || null,
+      how_to: input.how_to || null,
     })
     .where("id", "=", id)
     .where("is_custom", "=", true)
