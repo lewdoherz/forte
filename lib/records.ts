@@ -148,6 +148,23 @@ const CATEGORIES_BY_EXERCISE_TYPE: Record<ExerciseType, readonly RecordCategory[
 export const E1RM_MAX_REPS = 12;
 
 /**
+ * The categories an exercise type can earn, in canonical order, with
+ * `duration`'s `none` direction already applied — the same list
+ * `extractSetRecordCandidates` walks, so an aggregate that mirrors the engine
+ * (the exercise page's PR section) can never list a category the engine would
+ * drop. It is a function rather than the raw table because `none` removes
+ * `best_duration` from an otherwise identical type.
+ */
+export function recordCategoriesForExerciseType(
+  exerciseType: ExerciseType,
+  durationRecordDirection: DurationRecordDirection = "higher",
+): readonly RecordCategory[] {
+  return CATEGORIES_BY_EXERCISE_TYPE[exerciseType].filter(
+    (category) => !(category === "best_duration" && durationRecordDirection === "none"),
+  );
+}
+
+/**
  * The record rule for estimated one-rep max. It delegates to
  * `estimateOneRepMax` so the Epley formula exists once, and adds two record
  * guards: a single is the actual load (Epley would inflate it by a third of a
@@ -170,8 +187,12 @@ function finiteNumber(value: Numeric | number | null | undefined): number | null
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** The direction that improves a category for one exercise type. */
-function directionFor(
+/**
+ * The direction that improves a category for one exercise type. Exported so an
+ * aggregate that mirrors the engine compares the same way it does — it is the
+ * same switch `extractSetRecordCandidates` applies to each candidate.
+ */
+export function directionFor(
   category: RecordCategory,
   durationRecordDirection: DurationRecordDirection,
 ): RecordDirection {

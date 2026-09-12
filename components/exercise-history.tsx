@@ -1,14 +1,10 @@
 import Link from "next/link";
 import type { SetType } from "@/schema/types";
 import { db } from "@/lib/db";
-import { formatDuration } from "@/lib/format";
+import { RECORD_CATEGORY_LABELS } from "@/lib/records";
 import { formatDateTimeInTimeZone } from "@/lib/timezone";
-import { estimateOneRepMax, getSessionSeries } from "@/lib/progress";
-import {
-  EXERCISE_HISTORY_SESSION_LIMIT,
-  getExerciseHistorySessions,
-  type ExerciseHistorySet,
-} from "@/lib/exercise-history";
+import { formatSetValues } from "@/lib/workout-stats";
+import { EXERCISE_HISTORY_SESSION_LIMIT, getExerciseHistory } from "@/lib/exercise-history";
 
 const SET_TYPE_LABELS: Record<SetType, string> = {
   warmup: "Warm-up",
@@ -17,33 +13,20 @@ const SET_TYPE_LABELS: Record<SetType, string> = {
   dropset: "Drop set",
 };
 
-function formatSet(set: ExerciseHistorySet): string {
-  if (set.weightKg != null && set.reps != null) return `${set.weightKg} kg × ${set.reps}`;
-  if (set.reps != null) return `${set.reps} reps`;
-  if (set.durationSeconds != null) return formatDuration(set.durationSeconds);
-  if (set.distanceMeters != null) return `${set.distanceMeters} m`;
-  return "—";
-}
-
-function Badge({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-700">
-      <span className="text-zinc-500">{label}</span>
-      <span className="font-medium">{value}</span>
-    </span>
-  );
-}
-
 /**
- * The History tab: one card per completed session, newest first, with this
- * exercise's sets and that session's bests.
+ * The History tab: one card per completed session, newest first, showing this
+ * exercise's completed sets in order and the records the session earned for it.
  *
- * Best weight and volume come from `getSessionSeries` — the same SQL aggregate
- * the Statistics tab's chart and summary use — so the two tabs cannot disagree.
- * Per-session best 1RM is not exposed by `lib/progress.ts` (only the all-time
- * maximum is), so it is derived here by applying the exported
- * `estimateOneRepMax` to each set and taking the session's maximum; that is the
- * exact formula the summary's `max(...)` uses, not a second definition of it.
+ * The values are rendered by `formatSetValues` with the exercise's own type, so
+ * every set type is formatted by the same code the logger's previous-performance
+ * column uses — the tab adds no second set-type mapping. The record indicators
+ * are the Records engine's own outcomes, filtered to this exercise: one per
+ * (exercise, category), derived on read and never stored, so deleting or
+ * editing history recalculates them with no badge state to maintain.
+ *
+ * The whole card is the link to the completed workout — the name and the card
+ * are one tap target — which is the same convention the workout history list
+ * uses. No nested control lives inside the link, so the markup stays valid.
  */
 export async function ExerciseHistory({
   userId,
@@ -56,71 +39,60 @@ export async function ExerciseHistory({
   exerciseTitle: string;
   timeZone: string;
 }) {
-  const [series, sessions] = await Promise.all([
-    getSessionSeries(db, userId, exerciseId, "all", timeZone),
-    getExerciseHistorySessions(db, userId, exerciseId),
-  ]);
+  const { exerciseType, sessions } = await getExerciseHistory(db, userId, exerciseId);
 
-  if (sessions.length === 0) {
+  if (exerciseType === null || sessions.length === 0) {
     return <p className="text-zinc-500">No workouts include {exerciseTitle} yet.</p>;
   }
-
-  const pointByWorkout = new Map(series.map((point) => [point.workoutId, point]));
 
   return (
     <>
       <ul className="space-y-4">
-        {sessions.map((session) => {
-          const point = pointByWorkout.get(session.workoutId);
-          const bestOneRepMax = session.sets.reduce<number | null>((best, set) => {
-            if (set.weightKg == null || set.reps == null) return best;
-            const estimate = estimateOneRepMax(set.weightKg, set.reps);
-            if (estimate == null) return best;
-            return best == null || estimate > best ? estimate : best;
-          }, null);
-
-          return (
-            <li
-              key={session.workoutId}
-              className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
+        {sessions.map((session) => (
+          <li key={session.workoutId}>
+            <Link
+              href={`/workouts/${session.workoutId}`}
+              className="block overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm hover:border-zinc-400"
             >
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 py-3">
-                <Link href={`/workouts/${session.workoutId}`} className="font-medium hover:underline">
-                  {session.title}
-                </Link>
-                <span className="text-xs text-zinc-500">
+                <span className="min-w-0 break-words font-medium">{session.title}</span>
+                <span className="shrink-0 text-xs text-zinc-500">
                   {formatDateTimeInTimeZone(session.date, timeZone)}
                 </span>
               </div>
 
+              {session.records.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 border-t border-zinc-100 px-4 py-2">
+                  {session.records.map((category) => (
+                    <span
+                      key={category}
+                      className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800"
+                    >
+                      <span className="font-semibold">PR</span>
+                      <span>{RECORD_CATEGORY_LABELS[category]}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
               <ul className="divide-y divide-zinc-100 border-t border-zinc-100">
                 {session.sets.map((set, index) => (
-                  <li key={index} className="flex items-center gap-3 px-4 py-2 text-sm">
-                    <span className="w-16 shrink-0 text-[11px] text-zinc-500">
+                  <li
+                    key={index}
+                    className="flex items-start justify-between gap-3 px-4 py-2 text-sm"
+                  >
+                    <span className="shrink-0 text-[11px] text-zinc-500">
                       {SET_TYPE_LABELS[set.setType]}
                     </span>
-                    <span>{formatSet(set)}</span>
+                    <span className="min-w-0 break-words text-right tabular-nums">
+                      {formatSetValues(set, exerciseType)}
+                    </span>
                   </li>
                 ))}
               </ul>
-
-              <div className="flex flex-wrap gap-2 border-t border-zinc-100 px-4 py-3">
-                <Badge
-                  label="Best Weight"
-                  value={point?.bestWeightKg != null ? `${point.bestWeightKg} kg` : "—"}
-                />
-                <Badge
-                  label="Best Volume"
-                  value={point ? `${Math.round(point.volumeKg).toLocaleString()} kg` : "—"}
-                />
-                <Badge
-                  label="Best 1 Rep Max"
-                  value={bestOneRepMax != null ? `${Math.round(bestOneRepMax)} kg` : "—"}
-                />
-              </div>
-            </li>
-          );
-        })}
+            </Link>
+          </li>
+        ))}
       </ul>
 
       {sessions.length >= EXERCISE_HISTORY_SESSION_LIMIT ? (

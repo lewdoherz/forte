@@ -2,10 +2,18 @@ export function ProgressChart({
   title,
   unit,
   points,
+  formatValue = (value) => String(Math.round(value)),
 }: {
   title: string;
   unit: string;
   points: { label: string; value: number }[];
+  /**
+   * Axis labels only. The default is the whole-number rounding /progress has
+   * always shown; a caller charting a fractional metric (pace, a per-minute
+   * rate) passes a formatter so its top and bottom labels do not collapse to the
+   * same integer.
+   */
+  formatValue?: (value: number) => string;
 }) {
   if (points.length === 0) return null;
 
@@ -31,10 +39,10 @@ export function ProgressChart({
             <circle key={i} cx={c.x} cy={c.y} r={3} fill="#18181b" />
           ))}
           <text x={pad} y={14} fontSize={10} fill="#a1a1aa">
-            {Math.round(max)} {unit}
+            {formatValue(max)} {unit}
           </text>
           <text x={pad} y={height - 6} fontSize={10} fill="#a1a1aa">
-            {Math.round(min)} {unit}
+            {formatValue(min)} {unit}
           </text>
         </svg>
         <div className="flex justify-between text-[10px] text-zinc-400">

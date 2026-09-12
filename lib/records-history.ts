@@ -73,8 +73,12 @@ const STEPS = sql<number | null>`(ws.metrics->>'steps')::float8`;
 // cap, the one-rep special case and the rate/pace operator order are all the
 // rules in lib/records.ts, not new ones.
 
-/** Best per (exercise, workout) before any history is applied. */
-const PERF_COLUMNS = {
+/**
+ * Best per (exercise, workout) before any history is applied. Exported so a
+ * caller that needs per-workout bests reuses these guards instead of writing a
+ * third SQL copy of the record rules.
+ */
+export const PERF_COLUMNS = {
   heaviest_weight: sql<number | null>`max(case when ws.weight_kg > 0 then ws.weight_kg::float8 end)`,
   // A single is the actual load, not Epley's inflated weight × 31/30, and an
   // estimate above E1RM_MAX_REPS is extrapolation — both guards from
@@ -177,14 +181,23 @@ function toBaseline(row: BaselineRow, direction: DurationRecordDirection): Recor
 }
 
 /**
- * The shared derivation for one workout or a page of them: load every
- * workout's completed sets once, load every pre-workout baseline once, compare.
+ * The earned records for one workout or a page of them, keyed by workout id.
  *
- * Three round trips regardless of how many workouts or sets are involved: the
- * window query, the candidate-set query (issued together), and nothing else.
- * There is no per-workout query.
+ * This is the batch primitive behind `getWorkoutRecords` and
+ * `getWorkoutRecordCounts`, exported because a list view (the exercise History
+ * tab) needs each row's records, not just the counts — calling
+ * `getWorkoutRecords` per row would be an N+1. Each workout's list is ordered
+ * by the workout's exercise position and then canonical category order, and is
+ * tagged with the exercise each record belongs to, so a caller showing one
+ * exercise filters to it without re-running the comparison. Every requested id
+ * is present; an unknown id maps to an empty list.
+ *
+ * Load every requested workout's completed sets once, load every pre-workout
+ * baseline once, compare. Three round trips regardless of how many workouts or
+ * sets are involved: the window query, the candidate-set query (issued
+ * together), and nothing else. There is no per-workout query.
  */
-async function deriveEarnedRecords(
+export async function getEarnedRecordsForWorkouts(
   db: Kysely<Database>,
   userId: string,
   workoutIds: readonly string[],
@@ -381,7 +394,7 @@ export async function getWorkoutRecords(
   userId: string,
   workoutId: string,
 ): Promise<EarnedRecord[]> {
-  const records = await deriveEarnedRecords(db, userId, [workoutId]);
+  const records = await getEarnedRecordsForWorkouts(db, userId, [workoutId]);
   return records.get(workoutId) ?? [];
 }
 
@@ -396,7 +409,7 @@ export async function getWorkoutRecordCounts(
   userId: string,
   workoutIds: readonly string[],
 ): Promise<Map<string, number>> {
-  const derived = await deriveEarnedRecords(db, userId, workoutIds);
+  const derived = await getEarnedRecordsForWorkouts(db, userId, workoutIds);
   const counts = new Map<string, number>();
   for (const [workoutId, records] of derived) {
     counts.set(workoutId, records.length);
