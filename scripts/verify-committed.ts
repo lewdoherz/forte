@@ -8,10 +8,11 @@ import { fileURLToPath } from "node:url";
 /**
  * Verifies the committed tree at HEAD, not the working tree.
  *
- * `bun run typecheck && bun run lint && bun run build && bun run db:verify`
- * proves the working tree compiles. It does not prove the commit does: tracked
- * source can import a file that is itself still untracked, and every check
- * above resolves that file off disk. A runner only receives the commit, so the
+ * `bun run typecheck && bun run lint && bun run verify:service-worker &&
+ * bun run build && bun run db:verify` proves the working tree compiles and its
+ * service-worker policy behaves. It does not prove the commit does: tracked
+ * source can import a file that is itself still untracked, and every check above
+ * resolves it off disk. A runner only receives the commit, so the
  * same import fails there — after the local checks reported success. This
  * script closes that gap by checking HEAD out into a throwaway git worktree,
  * where only committed files exist, and running the checks in it.
@@ -33,7 +34,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const realNodeModules = join(root, "node_modules");
 
 /** The checks CI runs, in the same order. Fail fast and name the first failure. */
-const checks = ["typecheck", "lint", "build", "db:verify"];
+const checks = ["typecheck", "lint", "verify:service-worker", "build", "db:verify"];
 
 function git(args: string[]): { ok: boolean; out: string } {
   const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -182,4 +183,6 @@ if (failed) {
   process.exit(1);
 }
 
-console.log(`\nHEAD (${headName}) verifies: typecheck, lint, build and db:verify pass on the committed tree.`);
+console.log(
+  `\nHEAD (${headName}) verifies: typecheck, lint, service worker, build and db:verify pass on the committed tree.`,
+);

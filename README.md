@@ -67,8 +67,13 @@ analytics with personal records.
   (`components/bottom-nav.tsx`); the desktop header nav is hidden. The bar is omitted
   entirely on `/workouts/[id]` so the logger's sticky control bar owns the bottom of the
   screen. Safe areas come from `viewportFit: "cover"` plus
-  `pb-[env(safe-area-inset-bottom)]`. There is deliberately **no service worker** — no
-  offline or background sync.
+  `pb-[env(safe-area-inset-bottom)]`.
+- **Offline active workouts are account-isolated.** The logger writes its active
+  document to an owner-scoped IndexedDB store and reconciles it when connectivity
+  returns. The service worker caches immutable build assets plus the exact active
+  workout route in a separate private cache; it never caches arbitrary authenticated
+  pages or Next RSC payloads. Sign-out, account deletion and an account change purge
+  both private stores.
 - **PWA icons are generated, not assets.** `next/og` renders a neutral monogram
   (`components/forte-mark.tsx`) into PNGs at request/build time, so no binary image
   files are checked in.
@@ -101,6 +106,8 @@ analytics with personal records.
 | 13 | Operability: CI, failure boundaries, structured logging, opt-in dev seed, SQL-aggregated analytics | done |
 | 14 | Logger depth: snapshotted rest target with a rest timer, and superset grouping | done |
 | 15 | Auth hardening: database-backed rate limiting with per-endpoint rules, and session management | done |
+| 16 | First production deployment and Vercel/Neon verification | done |
+| Post-16 | Account lifecycle, offline logging, routine sharing, workout summaries, PRs, and exercise tabs | done |
 
 ## Routes
 
@@ -146,6 +153,7 @@ bun run dev          # dev server
 bun run build        # production build
 bun run typecheck    # tsc --noEmit
 bun run lint         # eslint
+bun run verify:service-worker  # exercise service-worker cache isolation policy
 bun run db:migrate   # apply SQL migrations
 bun run db:seed:dev  # OPT-IN demo account + ~4 months of history (local databases only)
 bun run db:verify    # run all schema/feature verification suites
@@ -165,6 +173,8 @@ Verification suites live in `schema/tests/` and run against a real PostgreSQL (P
 - `verify-history` — history list, ordering, read-only enforcement, summaries
 - `verify-progress` — PRs, Epley 1RM, volume, ranges, ownership
 - `verify-timezone` — local day boundaries, DST transitions, range lower bounds, end-to-end bucketing
+- `verify:service-worker` — public/static cache separation, private workout fallback,
+  RSC exclusion, account cleanup, and in-flight response invalidation
 
 ```bash
 bun run db:verify

@@ -56,17 +56,19 @@ authority; no ORM owns or generates the schema.
   `/apple-icon`, `/manifest.webmanifest`) and `/_not-found` are static.
 - **PWA assets are generated, not static files.** `next/og` renders the icons at
   request/build time, so no image binaries are committed.
-- **Service worker:** a hand-written runtime cache (`public/sw.js`), registered
-  in production only. It is **not** a build-time precache — the logging route is
-  dynamic and its chunks are content-hashed — so it caches same-origin GETs as
-  they are fetched, cache-first with a network fallback, and answers an uncached
-  navigation with a small offline page. That means the app opens without a
-  network *once it has been opened with one*; a fresh install still cannot cold
-  start offline. It never intercepts `/api/` or non-GET requests: writes belong
-  to the app's reconciliation path, and a worker that queued them would be a
-  second, conflicting outbox. Do not configure a CDN to serve the app shell as
-  if it were offline-capable — a cache that pretends the network is up is not the
-  same as a worker that owns the shell and falls back honestly.
+- **Service worker:** a hand-written, narrow runtime cache (`public/sw.js`),
+  registered in production only. Immutable `/_next/static/*` assets and generated
+  PWA metadata use a shared static cache. The exact `/workouts/[id]` HTML is the
+  only personalized response retained, in a separate private cache that is
+  deleted on sign-out, account deletion, or an account change. Every navigation
+  goes to the network first; only that exact workout route can fall back to a
+  private snapshot, while other uncached navigations get the small offline page.
+  Arbitrary authenticated pages and Next RSC/prefetch GETs are never cached.
+  `/api/`, writes, cross-origin traffic, and range requests are never intercepted.
+  The first logger visit warms its own snapshot after a client-side transition,
+  so an opened workout survives a later reload without making general account
+  data available offline. A fresh install still cannot cold start offline. Do
+  not configure a CDN to serve the app shell as if it were offline-capable.
 - **Connection pooling:** a single `pg.Pool` per server process. If your platform
   runs many instances, use a pooler (e.g. PgBouncer) and set `DATABASE_URL`
   to it.
@@ -260,10 +262,11 @@ when both are; declaring neither is only correct locally, where rate limiting is
 ## Verifying a deployment
 
 ```bash
-bun run typecheck        # tsc --noEmit
-bun run lint             # eslint
-bun run build            # production build
-bun run db:verify        # all verification suites (PGlite by default)
+bun run typecheck              # tsc --noEmit
+bun run lint                   # eslint
+bun run verify:service-worker  # private/static cache behavior
+bun run build                  # production build
+bun run db:verify              # all verification suites (PGlite by default)
 ```
 
 Those commands prove the **working tree** compiles, which is not the same as the
@@ -278,10 +281,10 @@ bun run verify:committed
 
 It checks HEAD out into a throwaway `git worktree`, where only committed files
 exist, links the existing `node_modules` in (no install), runs typecheck, lint,
-build and `db:verify` there, and removes the worktree afterwards — including on
-failure. CI already checks the committed tree because a runner starts from a
-fresh clone; this makes that check runnable locally, before the claim rather
-than after the deployment.
+the service-worker behavior check, build and `db:verify` there, and removes the
+worktree afterwards — including on failure. CI already checks the committed
+tree because a runner starts from a fresh clone; this makes that check runnable
+locally, before the claim rather than after the deployment.
 
 To run the suites against PostgreSQL instead of PGlite, set
 `TEST_DATABASE_URL` to a server you are willing to have a scratch database

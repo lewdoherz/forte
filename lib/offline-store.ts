@@ -17,6 +17,15 @@ import type { LoggedWorkout } from "@/lib/workout-sync";
 const DB_NAME = "forte-offline";
 const DB_VERSION = 1;
 
+/**
+ * Private route snapshots use their own cache family. Static assets are safe to
+ * keep across accounts; rendered workout HTML is not.
+ *
+ * Kept in step with `PRIVATE_CACHE_PREFIX` in `public/sw.js`.
+ */
+const PRIVATE_CACHE_PREFIX = "forte-private-";
+const CLEAR_PRIVATE_CACHE_MESSAGE = "clear-private-cache";
+
 /** The active workout documents, keyed by workout id. */
 const WORKOUTS = "workouts";
 /** Workout ids with unsynced local changes; presence means pending. */
@@ -173,14 +182,14 @@ function serialized<T>(task: () => Promise<T>): Promise<T> {
 
 /**
  * Records `userId` as the database owner, clearing the records when a different
- * user was stored. Clearing is the only safe answer to a mismatch: the previous
- * user's workout would otherwise be unreachable but still on disk.
+ * user was stored. Returns whether the owner changed, so the caller can also
+ * discard private route snapshots owned by the previous account.
  */
-async function claimOwner(db: IDBDatabase, userId: string): Promise<void> {
-  await transact(db, STORE_NAMES, "readwrite", async (tx) => {
+async function claimOwner(db: IDBDatabase, userId: string): Promise<boolean> {
+  return transact(db, STORE_NAMES, "readwrite", async (tx) => {
     const meta = tx.objectStore(META);
     const owner = await fromRequest<string | undefined>(meta.get(OWNER_KEY));
-    if (owner === userId) return;
+    if (owner === userId) return false;
 
     if (owner !== undefined) {
       await fromRequest(tx.objectStore(WORKOUTS).clear());
@@ -188,6 +197,7 @@ async function claimOwner(db: IDBDatabase, userId: string): Promise<void> {
       await fromRequest(meta.clear());
     }
     await fromRequest(meta.put(userId, OWNER_KEY));
+    return true;
   });
 }
 
@@ -248,16 +258,88 @@ function createStore(db: IDBDatabase): OfflineStore {
 }
 
 /**
- * Opens the store scoped to `userId`, clearing any records left by a different
- * user. Safe to call repeatedly: the connection is cached and ownership is
- * re-checked, so a sign-out followed by a different sign-in on the same page
- * cannot expose the earlier user's workout.
+ * Drops personalized route snapshots. The message invalidates an active
+ * worker's in-flight cache writes; the direct Cache Storage deletion also works
+ * before a page is controlled by that worker.
+ */
+async function clearPrivateRouteCaches(): Promise<void> {
+  if (
+    typeof navigator !== "undefined" &&
+    "serviceWorker" in navigator &&
+    navigator.serviceWorker.controller
+  ) {
+    navigator.serviceWorker.controller.postMessage({ type: CLEAR_PRIVATE_CACHE_MESSAGE });
+  }
+
+  if (typeof caches === "undefined") return;
+  const keys = await caches.keys();
+  await Promise.all(
+    keys
+      .filter((key) => key.startsWith(PRIVATE_CACHE_PREFIX))
+      .map((key) => caches.delete(key)),
+  );
+}
+
+/**
+ * Clears every personalized offline artifact before a session is ended or an
+ * account is deleted. Static build assets stay cached because they contain no
+ * user data and are shared safely by every account on the origin.
+ */
+export async function clearOfflineClientData(): Promise<void> {
+  const operations: Promise<unknown>[] = [clearPrivateRouteCaches()];
+  if (typeof indexedDB !== "undefined") {
+    operations.push(
+      openDatabase().then((db) => serialized(() => createStore(db).clear())),
+    );
+  }
+  const results = await Promise.allSettled(operations);
+  for (const result of results) {
+    if (result.status === "rejected") throw result.reason;
+  }
+}
+
+/**
+ * Asks the controlling worker to snapshot the current workout route. This is
+ * needed after a client-side navigation, which has no document-navigation
+ * response for the worker to cache.
+ */
+export function cacheCurrentOfflineRoute(): void {
+  if (
+    typeof navigator === "undefined" ||
+    !("serviceWorker" in navigator) ||
+    !navigator.serviceWorker.controller ||
+    typeof location === "undefined"
+  ) {
+    return;
+  }
+  navigator.serviceWorker.controller.postMessage({
+    type: "cache-private-route",
+    url: location.href,
+  });
+}
+
+/**
+ * Opens the store scoped to `userId`, clearing every personalized offline
+ * artifact left by a different user. Safe to call repeatedly: a re-authentication
+ * by the same account keeps its unsynced workout, while an account change clears
+ * both IndexedDB and private route snapshots before either can be read.
  */
 export async function openOfflineStore(userId: string): Promise<OfflineStore> {
   if (typeof indexedDB === "undefined") {
     throw new Error("Offline logging needs IndexedDB, which this browser does not provide.");
   }
   const db = await openDatabase();
-  await serialized(() => claimOwner(db, userId));
+  const ownerChanged = await serialized(() => claimOwner(db, userId));
+  if (ownerChanged) await clearPrivateRouteCaches();
   return createStore(db);
+}
+
+/**
+ * Claims the offline data for an authenticated account before navigation.
+ * Login is online, so discard any earlier route snapshot unconditionally; the
+ * current logger can warm a fresh copy without risking another account's HTML.
+ */
+export async function prepareOfflineDataForUser(userId: string): Promise<void> {
+  await clearPrivateRouteCaches();
+  await openOfflineStore(userId);
 }

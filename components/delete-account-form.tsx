@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useCallback } from "react";
 import type { AccountActionState } from "@/lib/account-actions";
+import { clearOfflineClientData } from "@/lib/offline-store";
 
 type FormAction = (
   prev: AccountActionState | null,
@@ -14,7 +15,23 @@ type FormAction = (
  * to end an account.
  */
 export function DeleteAccountForm({ action }: { action: FormAction }) {
-  const [state, formAction, pending] = useActionState(action, null);
+  const isolatedAction = useCallback<FormAction>(
+    async (prev, formData) => {
+      // Preserve the server action's validation for every other value. Once the
+      // destructive confirmation is correct, private device data must be gone
+      // before the server account and session disappear.
+      if (String(formData.get("confirmation") ?? "").trim() === "DELETE") {
+        try {
+          await clearOfflineClientData();
+        } catch {
+          return { error: "Could not clear offline workout data. Account deletion was stopped." };
+        }
+      }
+      return action(prev, formData);
+    },
+    [action],
+  );
+  const [state, formAction, pending] = useActionState(isolatedAction, null);
   const error = state && "error" in state ? state.error : undefined;
 
   return (

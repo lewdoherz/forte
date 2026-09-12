@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ExerciseType, SetType, WorkoutSet } from "@/schema/types";
-import { openOfflineStore, type OfflineStore } from "@/lib/offline-store";
+import {
+  cacheCurrentOfflineRoute,
+  openOfflineStore,
+  type OfflineStore,
+} from "@/lib/offline-store";
 import { formatSetValues, formatVolumeKg, summarizeWorkout } from "@/lib/workout-stats";
 import type { LoggedExercise, LoggedWorkout, WorkoutSyncInput } from "@/lib/workout-sync";
 import {
@@ -385,6 +389,14 @@ export function WorkoutLogger({
   // Hydrate the store once, then render from it. The first paint above already
   // came from `initial`, so there is no flash of empty content.
   useEffect(() => {
+    const onControllerChange = () => {
+      // Registration happens after window.load. If this logger opened before
+      // the first worker took control, warm its snapshot as soon as it does.
+      if (storeRef.current) cacheCurrentOfflineRoute();
+    };
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+    }
     let cancelled = false;
     const opening = openOfflineStore(userId);
     storePromiseRef.current = opening;
@@ -392,6 +404,9 @@ export function WorkoutLogger({
       .then(async (store) => {
         if (cancelled) return;
         storeRef.current = store;
+        // A client-side transition has no navigation response for the worker to
+        // retain. Snapshot this exact logger route after ownership is claimed.
+        cacheCurrentOfflineRoute();
         const workoutId = initialRef.current.id;
         // A document left pending by an earlier session is newer than the server
         // render this page hydrated from: it was edited after that render was
@@ -437,6 +452,9 @@ export function WorkoutLogger({
       });
     return () => {
       cancelled = true;
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+      }
     };
   }, [userId, runSync, refreshSyncState]);
 

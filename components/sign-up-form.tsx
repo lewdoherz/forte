@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
+import { prepareOfflineDataForUser } from "@/lib/offline-store";
 
 export function SignUpForm() {
   const router = useRouter();
@@ -32,7 +33,7 @@ export function SignUpForm() {
 
     // Better Auth's email signup requires a `name` (mapped to display_name).
     // Derive a default display name from the email; changeable in onboarding.
-    const { error } = await authClient.signUp.email({
+    const result = await authClient.signUp.email({
       email,
       password,
       name: email.split("@")[0] ?? email,
@@ -43,8 +44,17 @@ export function SignUpForm() {
       callbackURL: "/verify-email",
     });
 
-    if (error) {
-      setError(error.message ?? "Could not create your account.");
+    if (result.error) {
+      setError(result.error.message ?? "Could not create your account.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      await prepareOfflineDataForUser(result.data.user.id);
+    } catch {
+      await authClient.signOut();
+      setError("Your account was created, but offline workout data could not be prepared. Sign in again.");
       setLoading(false);
       return;
     }

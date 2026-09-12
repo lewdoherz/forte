@@ -16,9 +16,9 @@ signal, not that the whole app works offline.
 | Start a workout from a routine | **no** | Needs a session and a routine. Starting happens at a door, desk or sofa far more often than mid-set. |
 | History, progress, routines, exercises, account | **no** | All read surfaces; they degrade to the browser's offline page. |
 
-Cold start matters: without a service worker, opening the app in the gym with no
-signal loads nothing, and the feature is pointless. So the shell is precached —
-see below.
+Cold/reload matters: opening the current logger with no signal must not produce
+the browser's generic error. The service worker therefore runtime-snapshots that
+exact route after it has been opened online — see below.
 
 ## The central decision: sync the document, not a log of operations
 
@@ -52,11 +52,13 @@ IndexedDB, one database per origin, hand-written (no new dependency):
   simply retried.
 - `meta` — the signed-in user id, and when the store was last synced.
 
-**Scoped and cleared by user.** Every record carries the owning user id, and the
-store is cleared on sign-out. Without that, the next person to use the device
-sees the previous user's training — the worst failure this feature can have.
-Rendering also refuses if the last sync is older than 7 days, so a device left
-signed in cannot serve an indefinitely stale session.
+**Scoped and cleared by user.** The `meta` store records the owner id. Opening
+for a different owner clears every local workout before returning a store, and
+sign-out or account deletion clears the store explicitly. The private route
+cache follows the same lifecycle. Without both, the next person to use the
+device could see the previous user's training — the worst failure this feature
+can have. Rendering also refuses a pending document whose last successful sync
+is older than 7 days.
 
 ## Server changes
 
@@ -82,34 +84,35 @@ Everything else — `routines`, `history`, `progress` — is untouched.
 
 Hand-written, no dependency, registered from the root layout.
 
-**Runtime cache, not a build-time precache.** `/workouts/[id]` is a dynamic route
-— its HTML is generated per request, and the JS chunks are content-hashed — so
-there is nothing meaningful to enumerate at install time. The worker instead
-caches same-origin GETs as they are fetched, cache-first, with a network fallback
-for navigations.
+**Narrow runtime cache, not a build-time precache.** The worker has two cache
+families with different trust:
 
-That sets the honest envelope: **offline works once the app has been opened
-once.** Which matches the use — open it at home or on the way, and it keeps
-working in the basement. A freshly installed app with no network will not open,
-and no worker can change that.
+- **Shared static cache:** immutable `/_next/static/*` chunks and generated PWA
+  metadata. These contain no account data and survive account changes.
+- **Private route cache:** the exact `/workouts/[id]` HTML after the active
+  `WorkoutLogger` has claimed its IndexedDB owner and explicitly asked the worker
+  to retain that URL. Merely viewing a completed workout does not cache it.
+  Sign-out, account deletion, and a different IndexedDB owner delete every
+  private cache.
 
-- **Network-first for navigations**, falling back to the cached copy and then to
-  the offline page. Their HTML is generated per request, and navigations are how
-  a deploy is picked up: serving them cache-first would hand out the previous
-  build until a version constant was bumped by hand.
-- **Cache-first for everything else** — content-hashed chunks, icons. A new build
-  produces new chunk URLs, so caching these cannot serve stale code, and it is
-  what lets the app open with no signal.
-- **Never intercept** `/api/*` or POSTs. Writes are the reconciliation action's
-  job; a worker that queued requests would be a second, conflicting outbox.
-- **Offline fallback**: for a same-origin navigation with nothing cached, a page
-  saying the app is offline and what still works.
+Every navigation is network-first. Only an exact workout route can fall back to
+its private snapshot; every other failed navigation gets the offline page.
+Authenticated history, progress, routines, exercises and account pages are never
+restored from cache. Non-navigation GETs are intercepted only for the explicit
+static allowlist, which excludes Next RSC and prefetch responses even though they
+use GET and carry personalized data.
 
-This reverses a deliberate earlier decision — `DEPLOYMENT.md` currently states
-there is no service worker on purpose and that a CDN must not serve the shell as
-if it were offline-capable. That paragraph gets rewritten in the same change, and
-the "do not configure a CDN to serve the shell" warning stays: a worker that owns
-the shell is different from a cache that pretends the network is up.
+The worker never intercepts `/api/*`, POSTs, cross-origin traffic, or range
+requests. Writes remain the reconciliation action's job; a worker that queued
+them would be a second, conflicting outbox.
+
+An epoch invalidates a private response that began before sign-out but completed
+after cleanup, so an in-flight fetch cannot recreate the deleted cache. Activating
+this policy also deletes the earlier broad `forte-v2` cache immediately.
+
+The honest envelope remains: offline works after the current workout and its
+assets have been opened online. A fresh install with no network cannot cold start.
+The CDN must not pretend otherwise by serving a cached authenticated shell.
 
 ## Client data flow on the logging page
 
@@ -142,12 +145,16 @@ The page keeps its server-rendered first paint, then hands over:
   identical — the property the whole design rests on.
 - **Ownership**: another user's workout cannot be synced or read through the
   store's code paths.
-- **Store scoping**: sign-out clears the store; a different user id cannot read
-  the previous user's records.
-- **Offline in a real browser**: Puppeteer's `page.setOfflineMode(true)` against
-  the dev server — load the logging page, go offline, log sets, confirm they
-  persist locally and survive a reload, go online, confirm they reach the
-  database and the pending indicator clears. This is the acceptance test.
+- **Store and cache scoping:** sign-out clears IndexedDB and private route
+  snapshots; a different user id cannot read the previous user's records.
+- **Service-worker policy:** `bun run verify:service-worker` executes the worker
+  against observable requests and verifies the static/private split, RSC
+  exclusion, cleanup, exact-route fallback, and the sign-out race.
+- **Offline in a real browser:** load the logging page, go offline, log sets,
+  confirm they persist locally and survive a reload, go online, confirm they
+  reach the database and the pending indicator clears. Then change accounts and
+  confirm the new account sees neither the prior IndexedDB document nor its
+  private route snapshot.
 
 ## Explicit non-goals
 

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
+import { prepareOfflineDataForUser } from "@/lib/offline-store";
 
 export function SignInForm() {
   const router = useRouter();
@@ -25,9 +26,20 @@ export function SignInForm() {
       return;
     }
 
-    const { error } = await authClient.signIn.email({ email, password });
-    if (error) {
-      setError(error.message ?? "Invalid email or password.");
+    const result = await authClient.signIn.email({ email, password });
+    if (result.error) {
+      setError(result.error.message ?? "Invalid email or password.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      await prepareOfflineDataForUser(result.data.user.id);
+    } catch {
+      // Fail closed: entering the authenticated app while another account's
+      // offline data may still be present is worse than requiring another try.
+      await authClient.signOut();
+      setError("Could not securely prepare offline workout data. Try again.");
       setLoading(false);
       return;
     }
