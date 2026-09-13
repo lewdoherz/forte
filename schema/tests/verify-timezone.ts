@@ -1,7 +1,9 @@
 import { createTestDatabase } from "./harness";
 import { createRoutine } from "../../lib/routines";
 import { finishWorkout, getWorkoutTree, logSet, startWorkout } from "../../lib/workouts";
-import { getSessionSeries, rangeStart } from "../../lib/progress";
+import { getVisibleExercise } from "../../lib/exercises";
+import { getExerciseStatistics } from "../../lib/exercise-statistics";
+import { rangeStart } from "../../lib/progress";
 import {
   DEFAULT_TIME_ZONE,
   formatDateTimeInTimeZone,
@@ -11,7 +13,7 @@ import {
 
 /**
  * Timezone-aware calendar bucketing: local day boundaries, DST transitions,
- * range lower bounds, and the end-to-end effect on /progress' data.
+ * range lower bounds, and the end-to-end effect on exercise statistics.
  */
 const { db, query, close, dialect } = await createTestDatabase();
 
@@ -111,7 +113,7 @@ check(
   `${formatDateTimeInTimeZone(midnightish, "America/Chicago")} / ${formatDateTimeInTimeZone(midnightish, "UTC")}`,
 );
 
-// ---- end-to-end: the stored zone drives /progress bucketing ----------------
+// ---- end-to-end: the stored zone drives statistics bucketing ---------------
 const ZONE = "Asia/Tokyo";
 const inserted = await query<{ id: string }>(
   "insert into app_user (email, timezone) values ($1, $2) returning id",
@@ -124,6 +126,8 @@ const benchRow = await query<{ id: string }>(
 );
 const bench = benchRow.rows[0]?.id;
 if (!bench) bail("bench fixture present");
+const exercise = await getVisibleExercise(db, bench, alice);
+if (!exercise) bail("bench is visible");
 
 const routine = await createRoutine(db, alice, {
   title: "TZ routine",
@@ -170,26 +174,29 @@ await db
   .where("id", "=", started.id)
   .execute();
 
-const inRows = await getSessionSeries(db, alice, bench, "30d", earlier.zone);
+const inStats = await getExerciseStatistics(db, alice, exercise, "30d", earlier.zone);
 check(
   `a session inside the ${earlier.zone} 30-day window is included`,
-  inRows.some((r) => r.workoutId === started.id),
+  inStats.sessions.some((session) => session.workoutId === started.id),
 );
-const outRows = await getSessionSeries(db, alice, bench, "30d", later.zone);
+const outStats = await getExerciseStatistics(db, alice, exercise, "30d", later.zone);
 check(
   `the same session is outside the ${later.zone} 30-day window`,
-  !outRows.some((r) => r.workoutId === started.id),
+  !outStats.sessions.some((session) => session.workoutId === started.id),
 );
 check(
   "the stored zone — not the server's — decides the bucket",
   earlier.zone !== later.zone,
 );
 
-const allRows = await getSessionSeries(db, alice, bench, "all", ZONE);
-check("timezone never drops data from the all-time range", allRows.some((r) => r.workoutId === started.id));
+const allStats = await getExerciseStatistics(db, alice, exercise, "all", ZONE);
+check(
+  "timezone never drops data from the all-time range",
+  allStats.sessions.some((session) => session.workoutId === started.id),
+);
 
-const unknown = await getSessionSeries(db, alice, bench, "30d", DEFAULT_TIME_ZONE);
-check("an explicit UTC default is applied when no zone is supplied", Array.isArray(unknown));
+const defaultStats = await getExerciseStatistics(db, alice, exercise, "30d", DEFAULT_TIME_ZONE);
+check("an explicit UTC default is applied when no zone is supplied", Array.isArray(defaultStats.sessions));
 
 await close();
 

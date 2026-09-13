@@ -7,12 +7,7 @@ export function ProgressChart({
   title: string;
   unit: string;
   points: { label: string; value: number }[];
-  /**
-   * Axis labels only. The default is the whole-number rounding /progress has
-   * always shown; a caller charting a fractional metric (pace, a per-minute
-   * rate) passes a formatter so its top and bottom labels do not collapse to the
-   * same integer.
-   */
+  /** Axis labels; fractional metrics provide their own formatter. */
   formatValue?: (value: number) => string;
 }) {
   if (points.length === 0) return null;

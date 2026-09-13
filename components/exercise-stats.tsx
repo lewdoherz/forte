@@ -14,17 +14,13 @@ import { ProgressChart } from "@/components/progress-chart";
 import { formatDateTimeInTimeZone } from "@/lib/timezone";
 
 /**
- * One exercise's statistics, on the exercise page's Statistics tab.
+ * One exercise's canonical statistics view.
  *
- * Every number here is derived from completed sets by lib/exercise-statistics,
- * which shares the Records engine's guards (`PERF_COLUMNS`) and comparison
- * (`bestRecordCandidates`) — so the summary, the chart and the PR list agree
- * with the records shown in Workout Detail by construction, not by convention.
- * What is displayed depends on the exercise's TYPE: a distance run has no
- * "best weight", and a step machine has no "best reps", so each type gets its
- * own summary fields, chart metric and PR categories rather than one generic
- * weight-and-reps panel. Values are canonical (kg, seconds, metres, and rates
- * per minute); nothing is stored, so a corrected set corrects this view.
+ * Every number comes from completed sets in finished workouts. The query shares
+ * the Records engine's guards (`PERF_COLUMNS`) and comparison
+ * (`bestRecordCandidates`), so summary values, chart points, and personal
+ * records agree by construction. Presentation is exercise-type-specific: a
+ * distance run has no best weight, and a step machine has no best reps.
  */
 
 // ---------------------------------------------------------------------------
@@ -236,13 +232,9 @@ interface ChartSpec {
 }
 
 /**
- * The metric worth charting for each type — the one whose movement means
- * progress. A weight_reps chart plots estimated 1RM rather than raw weight,
- * because a heavy single and a lighter high-rep set are not comparable loads; a
- * run plots pace, because raw duration rewards short runs. The e1RM series uses
- * the Records rule (12-rep cap, a single is its load), which is deliberately
- * narrower than /progress's Epley-for-everything summary — the divergence is
- * documented in lib/records.ts, not silently aligned here.
+ * The useful progression metric for each exercise type. The values use the
+ * Records engine's canonical policy, including the 12-rep estimated-1RM cap and
+ * the one-rep special case.
  */
 function chartSpecFor(
   exerciseType: ExerciseType,
@@ -368,11 +360,8 @@ function PersonalRecords({
 }
 
 /**
- * `range` is threaded from the page's `?range=` search param (to `progressQuerySchema`'s
- * vocabulary) and defaults to all time, which is the useful view for a single
- * exercise: its history is short enough that narrowing the window would hide the
- * shape of the progression rather than help. It is optional so the page cannot
- * fail to render if the param is not wired; the links still resolve.
+ * `range` is validated by the page against the shared progress-range
+ * vocabulary and defaults to all time.
  */
 export async function ExerciseStats({
   userId,
@@ -394,12 +383,13 @@ export async function ExerciseStats({
 
   const stats = await getExerciseStatistics(db, userId, exercise, range, timeZone);
 
-  // Never completed: there is no honest number to show, so show a sentence
-  // instead of a grid of zeroes and a flat chart. This is judged on ALL time,
-  // not the selected range — a narrow window with no sets is a different state,
-  // handled below.
+  // No finished performance: avoid presenting zeroes as measured results.
   if (stats.allTimeCompletedSets === 0) {
-    return <p className="text-zinc-500">No workout history yet. Complete a set of {exerciseTitle} to see statistics here.</p>;
+    return (
+      <p className="text-zinc-500">
+        No workout history yet. Finish a workout containing {exerciseTitle} to see statistics here.
+      </p>
+    );
   }
 
   const summary = SUMMARY_BY_TYPE[exercise.exercise_type];

@@ -1,5 +1,4 @@
 import type { DurationRecordDirection, ExerciseType, Numeric, WorkoutSet } from "@/schema/types";
-import { estimateOneRepMax } from "./progress";
 
 /**
  * Personal records, derived from completed workout history.
@@ -12,28 +11,23 @@ import { estimateOneRepMax } from "./progress";
  * workout starts) never qualifies — so extraction rejects a set with no
  * `completed_at` rather than trusting the caller to filter.
  *
- * Comparison is always against completed performances STRICTLY before the
- * workout being evaluated; a workout is never its own baseline. Only a strict
- * improvement counts: matching a previous best is not a new record, because a
- * tie is not progress. The first-ever performance establishes the baseline but
- * scores nothing, so it is returned flagged (`firstEver`) and excluded from
- * counts rather than hidden.
+ * Comparison is always against finished workouts STRICTLY before the workout
+ * being evaluated; a workout is never its own baseline. Database callers
+ * enforce workout completion while this pure module enforces set completion.
+ * Only a strict improvement counts: matching a previous best is not a new
+ * record, because a tie is not progress. The first-ever performance establishes
+ * the baseline but scores nothing, so it is returned flagged (`firstEver`) and
+ * excluded from counts rather than hidden.
  *
  * This module is pure — no database, no React, no display formatting — and it
  * speaks canonical units only (kilograms, seconds, metres). A value and its
  * unit-equivalent are therefore the same performance: formatting can never
  * change whether something is a record.
  *
- * It is deliberately not the same source of truth as lib/progress.ts, and the
- * two disagree in exactly two places, documented rather than silently changed.
- * `getProgressSummary.bestEstimated1RmKg` computes Epley (`weight × (1 +
- * reps/30)`) for every rep count, while a record's estimated 1RM only counts
- * sets of at most `E1RM_MAX_REPS` reps (above that the estimate is
- * extrapolation) and treats a single as the actual load, not Epley's inflated
- * `weight × 31/30`, because a one-rep set IS a one-rep max. Changing
- * progress.ts is out of scope, so the record rule is the narrower one — and the
- * baseline query must apply both of the same guards, or a record could beat a
- * baseline it never actually beat.
+ * Estimated one-rep max follows one policy everywhere: only sets of at most
+ * `E1RM_MAX_REPS` count, and a single is its actual load rather than Epley's
+ * inflated `weight × 31/30`. The historical SQL expressions mirror these same
+ * guards so a candidate and its baseline cannot disagree.
  */
 
 // ---------------------------------------------------------------------------
@@ -165,15 +159,16 @@ export function recordCategoriesForExerciseType(
 }
 
 /**
- * The record rule for estimated one-rep max. It delegates to
- * `estimateOneRepMax` so the Epley formula exists once, and adds two record
- * guards: a single is the actual load (Epley would inflate it by a third of a
- * rep), and an estimate above `E1RM_MAX_REPS` reps is not computed at all.
+ * The canonical estimated one-rep-max rule.
+ *
+ * Epley is useful only for a bounded rep range here: above
+ * `E1RM_MAX_REPS` the extrapolation is too weak to be a record, while a
+ * one-rep set is already the measured maximum and must not be inflated.
  */
 export function estimatedOneRepMaxForRecord(weightKg: number, reps: number): number | null {
-  if (!(reps <= E1RM_MAX_REPS)) return null;
-  if (reps === 1) return weightKg > 0 ? weightKg : null;
-  return estimateOneRepMax(weightKg, reps);
+  if (!(weightKg > 0) || !(reps > 0) || reps > E1RM_MAX_REPS) return null;
+  if (reps === 1) return weightKg;
+  return weightKg * (1 + reps / 30);
 }
 
 /**

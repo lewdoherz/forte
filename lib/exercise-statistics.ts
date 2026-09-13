@@ -15,21 +15,14 @@ import { DEFAULT_TIME_ZONE } from "./timezone";
 /**
  * Everything the exercise page's Statistics tab reads, in two bounded queries.
  *
- * The shape follows the Records engine rather than lib/progress: only completed
- * sets count (`completed_at is not null`), a workout does not need to have
- * ended, and a per-category "best" is the same value the engine extracts — the
- * SQL expressions are literally `PERF_COLUMNS` from lib/records-history, so a
- * record and the number beside it can never drift. The one deliberate
- * divergence is documented on `rangeStart`'s caller below: `lib/progress.ts`
- * additionally requires `ended_at`, and the progress page's e1RM is Epley for
- * every rep count while a record's e1RM is capped at `E1RM_MAX_REPS` and treats
- * a single as its load. The Statistics tab uses the Records rule so the summary,
- * the chart and the PR list all speak with one voice.
+ * The shape follows the Records engine: only completed sets from finished
+ * workouts count. Per-category bests use the same `PERF_COLUMNS` expressions
+ * as historical record baselines, and the JavaScript fold reuses
+ * `bestRecordCandidates`, so summaries, charts, and records share one policy.
  *
- * Both queries aggregate to ONE ROW PER SESSION before anything is folded in
- * JavaScript, so the transfer is bounded by the number of workouts the exercise
- * appears in, never by the number of sets. The fold itself reuses the engine's
- * own `bestRecordCandidates`, so "best" is defined once.
+ * Both queries aggregate to one row per session before anything is folded in
+ * JavaScript. Transfer is therefore bounded by the number of workouts in which
+ * the exercise appears, never by the number of sets.
  */
 
 // ---------------------------------------------------------------------------
@@ -109,7 +102,7 @@ export interface ExercisePersonalRecord {
 }
 
 export interface ExerciseStatistics {
-  /** Completed sets across all time; zero means the exercise was never performed. */
+  /** Completed sets in finished workouts across all time. */
   allTimeCompletedSets: number;
   /** Totals over the selected range. */
   totals: ExerciseRangeTotals;
@@ -167,11 +160,9 @@ function bestColumnFor(
 }
 
 /**
- * One of this exercise's session rows, aggregated by the database. The filter
- * is the Records engine's: the caller's own history, completed sets only. It
- * deliberately does NOT require `ended_at`, unlike lib/progress.ts — a completed
- * set in an unfinished workout is still a completed performance to the engine,
- * and the PR list must agree with the engine.
+ * One finished session, aggregated by the database. Requiring both a finished
+ * workout and a completed set prevents an in-progress logger value from
+ * entering durable statistics or personal records before the user finishes.
  */
 function sessionQuery(
   db: Kysely<Database>,
@@ -208,6 +199,7 @@ function sessionQuery(
       PERF_COLUMNS.best_steps_per_minute.as("best_steps_per_minute"),
     ])
     .where("w.owner_id", "=", userId)
+    .where("w.ended_at", "is not", null)
     .where("we.template_id", "=", templateId)
     .where("ws.completed_at", "is not", null)
     .groupBy(["w.id", "w.title", "w.started_at"])

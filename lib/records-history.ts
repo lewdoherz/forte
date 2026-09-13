@@ -10,41 +10,18 @@ import {
 import type { DurationRecordDirection, ExerciseType } from "@/schema/types";
 
 /**
- * The historical baseline for the Records system.
+ * Historical baselines for the Records system.
  *
- * A record is exercise- and category-specific and comes from completed sets
- * only, compared against the same exercise's completed performances STRICTLY
- * BEFORE the workout being evaluated. This module answers one question for one
- * workout, or for a page of them: what was each exercise's best value per
- * category before this workout, and therefore which records did it earn.
+ * A record is exercise- and category-specific and comes from completed sets in
+ * finished workouts, compared against the same exercise's finished
+ * performances strictly before the workout being evaluated. Everything is
+ * derived: deleting or editing an old workout changes later answers without a
+ * stored records table or recalculation step.
  *
- * Everything here is derived — there is no records table and no PR columns.
- * The baseline is a window over the user's own history, so deleting or editing
- * an old workout changes later answers with no recalculation step, and
- * re-deriving the same history always returns the same result.
- *
- * Two facts make that deterministic:
- *
- *  - Time is Forte's stored `workout.started_at`, never wall-clock `now()` and
- *    never `created_at` (which moves when a workout is edited). `started_at`
- *    is the ordering the history list, progress series and previous-performance
- *    lookup already use, so "before" means the same thing everywhere.
- *  - `workout.id` breaks the tie between two workouts that share a start
- *    timestamp. Two sessions at the same instant have no wall-clock order;
- *    this gives them a stable total order instead, so a rerun — or a second
- *    user reading the same rows — sees the same baseline.
- *
- * The baseline is computed over one row per (exercise, workout), not one row
- * per set. A workout must not advance its own baseline set by set: `80×8, 90×5,
- * 100×3` is one heaviest-weight performance, so the window frame aggregates the
- * workout first and only then looks at strictly earlier workouts.
- *
- * Only `completed_at is not null` is required, per the Records spec's
- * "completed sets only". Note lib/progress.ts and lib/previous-performance.ts
- * additionally require the workout to have ended; that is deliberately not
- * copied here — a completed set in an unfinished workout is still a completed
- * performance, and the workout being evaluated is itself excluded from its own
- * baseline by construction.
+ * Ordering uses `workout.started_at`, with `workout.id` as a deterministic
+ * tie-breaker. The baseline first aggregates each exercise within each workout,
+ * then applies the historical window, so one workout never advances its own
+ * baseline set by set.
  */
 
 /** An earned record, tagged with the exercise it belongs to. */
@@ -81,9 +58,8 @@ const STEPS = sql<number | null>`(ws.metrics->>'steps')::float8`;
 export const PERF_COLUMNS = {
   heaviest_weight: sql<number | null>`max(case when ws.weight_kg > 0 then ws.weight_kg::float8 end)`,
   // A single is the actual load, not Epley's inflated weight × 31/30, and an
-  // estimate above E1RM_MAX_REPS is extrapolation — both guards from
-  // estimatedOneRepMaxForRecord. This intentionally diverges from
-  // getProgressSummary.bestEstimated1RmKg, which has neither.
+  // estimate above E1RM_MAX_REPS is extrapolation. These are the canonical
+  // guards from estimatedOneRepMaxForRecord.
   best_e1rm: sql<number | null>`max(case
     when ws.reps between 1 and 12 and ws.weight_kg > 0 then
       case when ws.reps = 1 then ws.weight_kg::float8
@@ -229,6 +205,7 @@ export async function getEarnedRecordsForWorkouts(
       PERF_COLUMNS.best_steps_per_minute.as("best_steps_per_minute"),
     ])
     .where("w.owner_id", "=", userId)
+    .where("w.ended_at", "is not", null)
     .where("ws.completed_at", "is not", null)
     // Only exercises the requested workouts actually contain can need a
     // baseline; this keeps the window from scanning the user's entire catalog.
@@ -273,6 +250,7 @@ export async function getEarnedRecordsForWorkouts(
     .select(["w.id as workout_id", "we.template_id"])
     .distinct()
     .where("w.owner_id", "=", userId)
+    .where("w.ended_at", "is not", null)
     .where("w.id", "in", ids);
 
   const baselineQuery = db
@@ -320,6 +298,7 @@ export async function getEarnedRecordsForWorkouts(
       "ws.metrics",
     ])
     .where("w.owner_id", "=", userId)
+    .where("w.ended_at", "is not", null)
     .where("w.id", "in", ids)
     .where("ws.completed_at", "is not", null)
     .orderBy("w.id", "asc")

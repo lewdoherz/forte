@@ -6,26 +6,16 @@ import { getEarnedRecordsForWorkouts } from "./records-history";
 import type { FormattableSet } from "./workout-stats";
 
 /**
- * The History tab's data: this exercise's completed sessions, each with the
- * completed sets that make it up and the records it earned for this exercise.
+ * The History tab's data: this exercise's finished sessions, each with its
+ * completed sets and the records earned for this exercise.
  *
- * `lib/progress.ts` exposes per-session aggregates (`getSessionSeries`) and the
- * most recent session's sets (`getRecentSession`), but not every session's set
- * rows; the History tab renders those rows, so this module reads them. It is a
- * plain read, not a second statistics implementation: the record indicators are
- * derived by the Records engine (`lib/records-history.ts`), and the set values
- * are formatted by the shared formatter (`lib/workout-stats.ts`).
+ * This is a history read rather than a second statistics implementation:
+ * record indicators come from the Records engine and set values use the shared
+ * workout formatter. A session qualifies only when its workout has ended and
+ * it contains at least one completed set.
  *
- * A session is a completed occurrence only when the workout has ended and the
- * exercise has at least one completed set. Routine templates never appear, and
- * an unfinished set (the logger copies planned reps and weight onto one when a
- * workout starts) is never a performance.
- *
- * The reads are batched and bounded. Sessions are located with an ordered LIMIT
- * before their sets are fetched, so the result is capped by `limit` sessions
- * rather than by the unbounded number of sets logged over time; the sets and
- * the records for those sessions are then fetched once for the whole page.
- * Nothing here runs per row.
+ * Reads are batched and bounded. Sessions are located with an ordered limit
+ * before their sets and records are fetched once for the whole page.
  */
 
 /**
@@ -84,8 +74,8 @@ export async function getExerciseHistory(
     .where("ws.completed_at", "is not", null)
     .where("we.template_id", "=", templateId)
     .orderBy("w.started_at", "desc")
-    // The id breaks ties so the limit is deterministic when two sessions share a
-    // start timestamp — the same ordering `getRecentSession` uses.
+    // The id breaks ties so the limit is deterministic when two sessions share
+    // a start timestamp.
     .orderBy("w.id", "desc")
     .limit(limit)
     .execute();

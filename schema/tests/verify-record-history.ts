@@ -137,17 +137,18 @@ interface SeedExercise {
   sets: SeedSet[];
 }
 
-/** Inserts a workout with its exercises and sets directly, so timestamps and completion are exact. */
+/** Inserts a workout directly, so timestamps and completion are exact. */
 async function seedWorkout(
   ownerId: string,
   title: string,
   startedAt: Date,
   exercises: SeedExercise[],
+  endedAt: Date | null = startedAt,
 ): Promise<string> {
   const workoutId = (
     await query<{ id: string }>(
-      `insert into workout (owner_id, title, started_at, ended_at) values ($1, $2, $3, $3) returning id`,
-      [ownerId, title, startedAt],
+      `insert into workout (owner_id, title, started_at, ended_at) values ($1, $2, $3, $4) returning id`,
+      [ownerId, title, startedAt, endedAt],
     )
   ).rows[0].id;
 
@@ -233,6 +234,33 @@ check(
 check(
   "an earlier workout still sees only its own past",
   (await getWorkoutRecords(db, alice, benchA)).length === 0,
+);
+
+// ---- only finished workouts participate -----------------------------------
+const finishBoundary = await mkExercise(alice, "Finish boundary", "weight_reps");
+await seedWorkout(alice, "Finished baseline", day(2), [
+  { templateId: finishBoundary, position: 0, sets: [{ weightKg: "100", reps: 5 }] },
+]);
+const activeCandidate = await seedWorkout(
+  alice,
+  "Active candidate",
+  day(3),
+  [{ templateId: finishBoundary, position: 0, sets: [{ weightKg: "200", reps: 5 }] }],
+  null,
+);
+const afterActive = await seedWorkout(alice, "Finished after active", day(4), [
+  { templateId: finishBoundary, position: 0, sets: [{ weightKg: "150", reps: 5 }] },
+]);
+check(
+  "an active workout cannot earn records",
+  (await getWorkoutRecords(db, alice, activeCandidate)).length === 0,
+);
+const afterActiveRecords = await getWorkoutRecords(db, alice, afterActive);
+check(
+  "an active workout cannot become a record baseline",
+  byCategory(afterActiveRecords, "heaviest_weight")[0]?.value === 150 &&
+    byCategory(afterActiveRecords, "heaviest_weight")[0]?.previousValue === 100,
+  JSON.stringify(afterActiveRecords),
 );
 
 // ---- one record per (exercise, category, workout) --------------------------

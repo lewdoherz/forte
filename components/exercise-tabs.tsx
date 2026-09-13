@@ -23,9 +23,8 @@ export type ExerciseTab = {
  * `hidden` attribute: switching a tab is a state change, not a navigation, so
  * nothing else on the page (the Library panel's filter fields and scroll, the
  * header, a playing clip) is remounted or refetched. The URL is kept truthful
- * with `history.replaceState` — the same shallow update the /progress controls
- * use for their range, and the reason a switch never adds a history entry the
- * back button would have to reason about.
+ * with `history.replaceState`, so switching never adds a history entry for the
+ * back button to unwind.
  *
  * The tabs are anchors rather than buttons so the active tab is still reachable
  * without JavaScript: the server reads `?tab=` and marks the matching panel

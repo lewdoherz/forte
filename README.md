@@ -35,11 +35,10 @@ analytics with personal records.
   The snapshot carries everything the logger needs at log time — including the rest
   target (`workout_exercise.rest_seconds`) and superset grouping — so neither is ever
   read back through `routine_id`.
-- **Analytics are derived, and aggregated in SQL.** PRs, volume, estimated 1RM and
-  progression are computed from completed sets at read time — never stored as
-  authoritative records. The aggregation runs in the database, so result sizes stay
-  bounded by the number of *sessions* rather than the number of *sets*; an earlier
-  implementation folded every completed set in JavaScript, which grew without bound.
+- **Analytics are canonical, derived, and aggregated in SQL.** Statistics and
+  personal records use completed sets from finished workouts, with one type-aware
+  metric policy. Nothing is stored as an authoritative aggregate, and result sizes
+  stay bounded by sessions rather than growing with every set.
 - **Failures are visible.** Route-level `error`/`loading`/`not-found` boundaries render
   inside the shell so navigation survives a failure, and the reference they show is the
   same `digest` recorded server-side by `onRequestError` (instrumentation.ts) through
@@ -100,7 +99,7 @@ analytics with personal records.
 | 7 | Routines / workout templates (`/routines`, editor, ordered exercises + planned sets) | done |
 | 8 | Active workout logger (`/workouts/[id]`, set logging, completion, finish) | done |
 | 9 | Workout history (`/workouts` list + read-only completed detail) | done |
-| 10 | Progress analytics + PRs (`/progress`, Epley 1RM, charts) | done |
+| 10 | Type-aware progress analytics and PRs (exercise Statistics, canonical e1RM, charts) | done |
 | 11 | Mobile-first shell (bottom nav, safe areas, touch targets) + installable PWA (manifest, generated icons) | done |
 | 12 | Production readiness: validated env, secret hardening, timezone-aware analytics, account settings, PostgreSQL path verified | done |
 | 13 | Operability: CI, failure boundaries, structured logging, opt-in dev seed, SQL-aggregated analytics | done |
@@ -118,7 +117,7 @@ analytics with personal records.
 | `/exercises`, `/exercises/[id]`, `/exercises/new`, `/exercises/[id]/edit` | Exercise library |
 | `/routines`, `/routines/[id]`, `/routines/new`, `/routines/[id]/edit` | Routine templates |
 | `/workouts`, `/workouts/[id]` | History list / active logger or completed detail |
-| `/progress` | Per-exercise analytics and PRs |
+| `/progress` | Exercise picker for the canonical Statistics view |
 | `/account` | Account settings (display name, IANA timezone) |
 | `/api/auth/[...all]` | Better Auth handler |
 | `/manifest.webmanifest`, `/icon`, `/apple-icon`, `/pwa-icon/[size]` | Generated PWA manifest and icons |
@@ -171,7 +170,6 @@ Verification suites live in `schema/tests/` and run against a real PostgreSQL (P
 - `verify-routines` — routine CRUD, ordering, transactions, visibility
 - `verify-workouts` — start/snapshot, set logging, completion, ownership, historical identity
 - `verify-history` — history list, ordering, read-only enforcement, summaries
-- `verify-progress` — PRs, Epley 1RM, volume, ranges, ownership
 - `verify-timezone` — local day boundaries, DST transitions, range lower bounds, end-to-end bucketing
 - `verify:service-worker` — public/static cache separation, private workout fallback,
   RSC exclusion, account cleanup, and in-flight response invalidation

@@ -6,13 +6,11 @@ import type { WorkoutSet } from "@/schema/types";
  * "Last time you did this" — the values the logger offers alongside each set
  * while a workout is in progress.
  *
- * Only completed history counts. The same predicate the rest of the app uses
- * (`workout.ended_at is not null` and `workout_set.completed_at is not null`,
- * see lib/progress.ts and lib/exercise-history.ts) is applied here, so a value
- * is never a prescription copied off a routine at start — `startWorkout` copies
- * planned reps/weight onto an unfinished set, and those rows carry no
- * `completed_at`. It also means an in-progress workout is invisible: it can
- * never be "previous" to itself.
+ * Only completed sets from finished workouts count. Applying the same
+ * `workout.ended_at is not null` and `workout_set.completed_at is not null`
+ * predicates as Statistics, History, and Records keeps an in-progress workout
+ * provisional and prevents a routine prescription from becoming a previous
+ * performance.
  *
  * One statement for the whole exercise list. A `distinct on` subquery picks the
  * most recent completed session per template (indexed by

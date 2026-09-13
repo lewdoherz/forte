@@ -14,7 +14,6 @@ import {
   getExerciseStatistics,
   type ExercisePersonalRecord,
 } from "../../lib/exercise-statistics";
-import { estimateOneRepMax } from "../../lib/progress";
 import { RANGE_LABELS } from "../../lib/progress";
 import type { DurationRecordDirection, ExerciseType } from "../../schema/types";
 import { EXERCISE_TYPES } from "../../schema/types";
@@ -179,7 +178,8 @@ async function enginePersonalRecords(
          from workout_set ws
          join workout_exercise we on we.id = ws.workout_exercise_id
          join workout w on w.id = we.workout_id
-        where w.owner_id = $1 and we.template_id = $2 and ws.completed_at is not null
+        where w.owner_id = $1 and we.template_id = $2
+          and w.ended_at is not null and ws.completed_at is not null
         order by w.started_at asc, w.id asc, ws.position asc`,
       [userId, exercise.id],
     )
@@ -403,22 +403,28 @@ check(
   JSON.stringify(prescribedStats.personalRecords),
 );
 
-// A completed set in an UNFINISHED workout is still a performance to the
-// Records engine, so the statistics tab counts it too (lib/progress.ts would
-// not — that divergence is deliberate and documented in lib/exercise-statistics).
+// A completed set remains provisional while its workout is active. Finishing
+// the workout is the transition that makes the same set durable history.
 const unfinished = await mkExercise(alice, "Unfinished", "weight_reps");
-await seedWorkout(
+const unfinishedWorkout = await seedWorkout(
   alice,
   "Still logging",
   day(2),
   [{ templateId: unfinished.id, sets: [{ weightKg: "60", reps: 5 }, { reps: 5, completedAt: null }] }],
   null,
 );
-const unfinishedStats = await statsFor(unfinished);
+const activeStats = await statsFor(unfinished);
 check(
-  "a completed set in an unfinished workout still counts",
-  unfinishedStats.allTimeCompletedSets === 1 && near(unfinishedStats.totals.bests.heaviest_weight, 60),
-  `${unfinishedStats.allTimeCompletedSets}`,
+  "a completed set in an active workout is excluded",
+  activeStats.allTimeCompletedSets === 0 && activeStats.personalRecords.length === 0,
+  `${activeStats.allTimeCompletedSets}`,
+);
+await query(`update workout set ended_at = $2 where id = $1`, [unfinishedWorkout, day(3)]);
+const finishedStats = await statsFor(unfinished);
+check(
+  "finishing the workout publishes its completed set",
+  finishedStats.allTimeCompletedSets === 1 && near(finishedStats.totals.bests.heaviest_weight, 60),
+  `${finishedStats.allTimeCompletedSets}`,
 );
 
 // ---------------------------------------------------------------------------
@@ -489,9 +495,8 @@ await seedWorkout(alice, "Single", day(1), [
 ]);
 const singleStats = await statsFor(single);
 check(
-  "a one-rep set's e1RM is its actual load, not Epley's inflation",
-  near(singleStats.totals.bests.best_e1rm, 100) &&
-    !near(singleStats.totals.bests.best_e1rm, estimateOneRepMax(100, 1)),
+  "a one-rep set's e1RM is its actual load, not an inflated estimate",
+  near(singleStats.totals.bests.best_e1rm, 100),
   `${singleStats.totals.bests.best_e1rm}`,
 );
 
