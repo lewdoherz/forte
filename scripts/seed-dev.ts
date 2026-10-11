@@ -111,11 +111,19 @@ async function main(): Promise<void> {
   await updateUserProfile(db, user.id, { timeZone: DEMO_TIMEZONE });
 
   // ---- catalog ------------------------------------------------------------
+  // `listExercises` is Library-visible only, and migration 0013 archives the
+  // curated rows the imported library replaced. Seed titles must therefore be
+  // the imported names — 'Barbell Back Squat' is retired in favour of
+  // 'Squat (Barbell)', and so on.
   const catalog = await listExercises(db, user.id, {});
   const byTitle = new Map(catalog.map((e) => [e.title, e]));
   const need = (title: string) => {
     const found = byTitle.get(title);
-    if (!found) throw new Error(`system exercise "${title}" is missing from the seed`);
+    if (!found) {
+      throw new Error(
+        `system exercise "${title}" is not in the Library (archived rows are excluded)`,
+      );
+    }
     return found;
   };
 
@@ -127,14 +135,14 @@ async function main(): Promise<void> {
     await createCustomExercise(db, user.id, {
       title: "Seated Cable Row",
       exercise_type: "weight_reps",
-      primary_muscle: need("Barbell Row").primary_muscle,
+      primary_muscle: need("Bent Over Row (Barbell)").primary_muscle,
       secondary_muscles: [],
-      equipment: need("Cable Fly").equipment,
+      equipment: need("Seated Cable Row - V Grip (Cable)").equipment,
     }),
     await createCustomExercise(db, user.id, {
       title: "Bulgarian Split Squat",
       exercise_type: "weight_reps",
-      primary_muscle: need("Barbell Back Squat").primary_muscle,
+      primary_muscle: need("Squat (Barbell)").primary_muscle,
       secondary_muscles: [],
       equipment: need("Goblet Squat").equipment,
     }),
@@ -149,17 +157,17 @@ async function main(): Promise<void> {
       title: "Push Day",
       notes: "Chest, shoulders, triceps.",
       exercises: [
-        { title: "Bench Press", rest: 150, sets: [8, 8, 6] },
-        { title: "Overhead Press", rest: 120, sets: [8, 8] },
-        { title: "Incline Dumbbell Press", rest: 90, sets: [10, 10] },
+        { title: "Bench Press (Barbell)", rest: 150, sets: [8, 8, 6] },
+        { title: "Overhead Press (Barbell)", rest: 120, sets: [8, 8] },
+        { title: "Incline Bench Press (Dumbbell)", rest: 90, sets: [10, 10] },
       ],
     },
     {
       title: "Pull Day",
       notes: "Back and biceps.",
       exercises: [
-        { title: "Barbell Row", rest: 150, sets: [8, 8, 6] },
-        { title: "Romanian Deadlift", rest: 150, sets: [8, 8] },
+        { title: "Bent Over Row (Barbell)", rest: 150, sets: [8, 8, 6] },
+        { title: "Romanian Deadlift (Barbell)", rest: 150, sets: [8, 8] },
         { title: "Face Pull", rest: 60, sets: [15, 15] },
       ],
     },
@@ -167,9 +175,9 @@ async function main(): Promise<void> {
       title: "Leg Day",
       notes: "Squat focus.",
       exercises: [
-        { title: "Barbell Back Squat", rest: 180, sets: [6, 6, 5] },
+        { title: "Squat (Barbell)", rest: 180, sets: [6, 6, 5] },
         { title: "Bulgarian Split Squat", rest: 90, sets: [10, 10] },
-        { title: "Leg Press", rest: 120, sets: [10, 10] },
+        { title: "Leg Press (Machine)", rest: 120, sets: [10, 10] },
       ],
     },
   ];
@@ -192,15 +200,15 @@ async function main(): Promise<void> {
   // ---- history ------------------------------------------------------------
   const SESSIONS_PER_ROUTINE = 5;
   const STARTING_WEIGHT: Record<string, number> = {
-    "Bench Press": 60,
-    "Overhead Press": 35,
-    "Incline Dumbbell Press": 22.5,
-    "Barbell Row": 50,
-    "Romanian Deadlift": 70,
+    "Bench Press (Barbell)": 60,
+    "Overhead Press (Barbell)": 35,
+    "Incline Bench Press (Dumbbell)": 22.5,
+    "Bent Over Row (Barbell)": 50,
+    "Romanian Deadlift (Barbell)": 70,
     "Face Pull": 20,
-    "Barbell Back Squat": 80,
+    "Squat (Barbell)": 80,
     "Bulgarian Split Squat": 16,
-    "Leg Press": 120,
+    "Leg Press (Machine)": 120,
   };
 
   let sessions = 0;
