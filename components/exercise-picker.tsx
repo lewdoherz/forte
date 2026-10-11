@@ -9,6 +9,7 @@ import {
   type VocabularyEntry,
 } from "@/components/exercise-filter-form";
 import { listExercisesAction } from "@/lib/exercise-actions";
+import { useI18n } from "@/lib/i18n/context";
 import type { LibraryExercise } from "@/lib/exercise-library";
 
 /**
@@ -50,6 +51,7 @@ export function ExercisePicker({
   onSelect: (id: string) => void;
 }) {
   const [filters, setFilters] = useState<ExerciseFilterValues>(EMPTY_EXERCISE_FILTERS);
+  const { t } = useI18n();
   const [result, setResult] = useState<{ key: string; rows: LibraryExercise[] } | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -93,10 +95,10 @@ export function ExercisePicker({
       />
       <div className={`max-h-72 overflow-y-auto ${pending ? "opacity-60" : ""}`}>
         {visible === null ? (
-          <p className="px-4 py-6 text-sm text-zinc-500">Loading…</p>
+          <p className="px-4 py-6 text-sm text-zinc-500">{t("common.loading")}</p>
         ) : visible.length === 0 ? (
           <p className="px-4 py-6 text-sm text-zinc-500">
-            {hasFilters ? "No matching exercises." : "No exercises available."}
+            {hasFilters ? t("exercises.picker.emptyFiltered") : t("exercises.picker.empty")}
           </p>
         ) : (
           <ul>
@@ -118,7 +120,7 @@ export function ExercisePicker({
                     </span>
                   </span>
                   <span className="shrink-0 rounded border border-zinc-300 px-3 py-1 text-xs">
-                    Add
+                    {t("common.add")}
                   </span>
                 </button>
               </li>

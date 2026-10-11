@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getVocabularies } from "@/lib/exercises";
 import { createExercise } from "@/lib/exercise-actions";
+import { getI18n } from "@/lib/i18n/server";
 import { ExerciseForm } from "@/components/exercise-form";
 import { ExerciseFormModal, type ExerciseDialogDismiss } from "@/components/exercise-form-modal";
 
@@ -11,14 +12,15 @@ import { ExerciseFormModal, type ExerciseDialogDismiss } from "@/components/exer
  */
 export async function ExerciseCreateDialog({ dismiss }: { dismiss: ExerciseDialogDismiss }) {
   const { muscles, equipment } = await getVocabularies(db);
+  const { t } = await getI18n();
 
   return (
-    <ExerciseFormModal title="Create exercise" dismiss={dismiss}>
+    <ExerciseFormModal title={t("exercises.create.title")} dismiss={dismiss}>
       <ExerciseForm
         action={createExercise}
         muscles={muscles}
         equipment={equipment}
-        submitLabel="Create exercise"
+        submitLabel={t("exercises.create.title")}
       />
     </ExerciseFormModal>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useI18n } from "@/lib/i18n/context";
 import type { AccountActionState } from "@/lib/account-actions";
 
 type FormAction = (
@@ -11,10 +12,10 @@ type FormAction = (
 interface AccountFormProps {
   action: FormAction;
   initial: { email: string; displayName: string; timeZone: string };
-  submitLabel: string;
 }
 
-export function AccountForm({ action, initial, submitLabel }: AccountFormProps) {
+export function AccountForm({ action, initial }: AccountFormProps) {
+  const { t } = useI18n();
   const [state, formAction, pending] = useActionState(action, null);
   const error = state && "error" in state ? state.error : undefined;
   const saved = state !== null && "ok" in state && state.ok;
@@ -28,7 +29,7 @@ export function AccountForm({ action, initial, submitLabel }: AccountFormProps) 
       ) : null}
 
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Email</span>
+        <span className="text-sm font-medium">{t("account.form.email")}</span>
         <input
           value={initial.email}
           readOnly
@@ -37,7 +38,7 @@ export function AccountForm({ action, initial, submitLabel }: AccountFormProps) 
       </label>
 
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Display name</span>
+        <span className="text-sm font-medium">{t("account.form.displayName")}</span>
         <input
           name="displayName"
           defaultValue={initial.displayName}
@@ -48,18 +49,16 @@ export function AccountForm({ action, initial, submitLabel }: AccountFormProps) 
       </label>
 
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Timezone</span>
+        <span className="text-sm font-medium">{t("account.form.timeZone")}</span>
         <input
           name="timeZone"
           defaultValue={initial.timeZone}
           required
           maxLength={64}
-          placeholder="America/Chicago"
+          placeholder={t("account.form.timeZonePlaceholder")}
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
         />
-        <span className="block text-xs text-zinc-500">
-          IANA timezone name (e.g. America/Chicago), used for date and progress bucketing.
-        </span>
+        <span className="block text-xs text-zinc-500">{t("account.form.timeZoneHelp")}</span>
       </label>
 
       <button
@@ -67,12 +66,12 @@ export function AccountForm({ action, initial, submitLabel }: AccountFormProps) 
         disabled={pending}
         className="h-11 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-60"
       >
-        {pending ? "Saving…" : submitLabel}
+        {pending ? t("common.saving") : t("common.saveChanges")}
       </button>
 
       {saved ? (
         <p role="status" className="text-sm text-green-700">
-          Saved.
+          {t("common.saved")}
         </p>
       ) : null}
     </form>

@@ -1,12 +1,28 @@
-"use client";
-
 import { useMemo } from "react";
 import { BodyHeatmap } from "@/components/body-heatmap";
 import { Modal } from "@/components/modal";
 import type { VocabularyEntry } from "@/components/exercise-filter-form";
-import { formatDuration } from "@/lib/format";
+import { formatDuration } from "@/lib/i18n/format";
+import type { Locale, Messages, Translate } from "@/lib/i18n";
 import { muscleDistribution, type MuscleExercise } from "@/lib/muscle-distribution";
 import { routineSummary, type SummaryExercise } from "@/lib/routine-summary";
+
+/**
+ * The active language, handed down rather than read from a context.
+ *
+ * The routine surfaces are rendered both by server pages (the detail page and
+ * the public shared page) and by the editor's client tree, and the sharing
+ * verification suite renders the public view on its own — with no request scope
+ * and no ambient provider. Carrying the locale, the dictionary and the bound
+ * translator as plain props keeps every one of those paths working, and lets
+ * the public view hand the dictionary to its own `I18nProvider` so that a
+ * client child (the body heatmap's captions) still resolves its language.
+ */
+export interface RoutineI18n {
+  locale: Locale;
+  messages: Messages;
+  t: Translate;
+}
 
 /**
  * The summary of a routine: metrics, body heatmaps and the distribution table.
@@ -27,11 +43,15 @@ import { routineSummary, type SummaryExercise } from "@/lib/routine-summary";
 export function RoutineSummaryBody({
   exercises,
   muscles,
+  i18n,
 }: {
   exercises: readonly (MuscleExercise & SummaryExercise)[];
   /** Muscle vocabulary, in display order; doubles as the code -> name lookup. */
   muscles: readonly VocabularyEntry[];
+  /** The active language, passed by the caller so this needs no provider. */
+  i18n: RoutineI18n;
 }) {
+  const { locale, t } = i18n;
   const summary = useMemo(() => routineSummary(exercises), [exercises]);
   const distribution = useMemo(() => muscleDistribution(exercises), [exercises]);
 
@@ -63,17 +83,17 @@ export function RoutineSummaryBody({
     <>
       <dl className="mt-4 grid grid-cols-3 gap-3 text-center">
         <div className="rounded-lg border border-zinc-200 p-3">
-          <dt className="text-xs text-zinc-500">Exercises</dt>
+          <dt className="text-xs text-zinc-500">{t("routines.summary.exercises")}</dt>
           <dd className="mt-1 text-xl font-semibold">{summary.exerciseCount}</dd>
         </div>
         <div className="rounded-lg border border-zinc-200 p-3">
-          <dt className="text-xs text-zinc-500">Total sets</dt>
+          <dt className="text-xs text-zinc-500">{t("routines.summary.totalSets")}</dt>
           <dd className="mt-1 text-xl font-semibold">{summary.totalSets}</dd>
         </div>
         <div className="rounded-lg border border-zinc-200 p-3">
-          <dt className="text-xs text-zinc-500">Estimated duration</dt>
+          <dt className="text-xs text-zinc-500">{t("routines.summary.estimatedDuration")}</dt>
           <dd className="mt-1 text-xl font-semibold">
-            {summary.totalSets === 0 ? "—" : formatDuration(summary.estimatedDurationSeconds)}
+            {summary.totalSets === 0 ? "—" : formatDuration(locale, summary.estimatedDurationSeconds)}
           </dd>
         </div>
       </dl>
@@ -81,11 +101,9 @@ export function RoutineSummaryBody({
       <BodyHeatmap muscleValues={distribution.roles} className="mt-6" />
 
       <div className="mt-6">
-        <h3 className="text-sm font-medium">Muscle distribution</h3>
+        <h3 className="text-sm font-medium">{t("routines.summary.muscleDistribution")}</h3>
         {rows.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-500">
-            Add exercises to see which muscles the routine works.
-          </p>
+          <p className="mt-2 text-sm text-zinc-500">{t("routines.summary.empty")}</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {rows.map((row) => (
@@ -117,15 +135,18 @@ export function RoutineSummaryPanel({
   exercises,
   muscles,
   onClose,
+  i18n,
 }: {
   exercises: readonly (MuscleExercise & SummaryExercise)[];
   /** Muscle vocabulary, in display order; doubles as the code -> name lookup. */
   muscles: readonly VocabularyEntry[];
   onClose: () => void;
+  /** The active language, passed by the editor so this needs no provider hook. */
+  i18n: RoutineI18n;
 }) {
   return (
-    <Modal title="Routine summary" onClose={onClose} panelClassName="max-w-2xl">
-      <RoutineSummaryBody exercises={exercises} muscles={muscles} />
+    <Modal title={i18n.t("routines.summary.title")} onClose={onClose} panelClassName="max-w-2xl">
+      <RoutineSummaryBody exercises={exercises} muscles={muscles} i18n={i18n} />
     </Modal>
   );
 }

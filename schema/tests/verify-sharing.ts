@@ -6,6 +6,8 @@ import { createCustomExercise, getVocabularies } from "../../lib/exercises";
 import { muscleDistribution } from "../../lib/muscle-distribution";
 import { routineSummary } from "../../lib/routine-summary";
 import { SharedRoutineView } from "../../components/shared-routine-view";
+import { DEFAULT_LOCALE, getMessages } from "../../lib/i18n";
+import { I18nProvider } from "../../lib/i18n/context";
 import {
   generateShareToken,
   getOrCreateRoutineShareToken,
@@ -342,8 +344,17 @@ check(
 );
 
 const { muscles } = await getVocabularies(db);
+// The shared view's summary section renders the body heatmap, a client component
+// that reads its captions from the i18n context. The application supplies that
+// provider in the root layout; this markup check runs with no request scope and
+// no layout, so it supplies the default language explicitly rather than
+// changing the component to tolerate a missing provider.
 const targetHtml = renderToStaticMarkup(
-  createElement(SharedRoutineView, { routine: targetResolved!, muscles }),
+  createElement(
+    I18nProvider,
+    { locale: DEFAULT_LOCALE, messages: getMessages(DEFAULT_LOCALE) },
+    createElement(SharedRoutineView, { routine: targetResolved!, muscles }),
+  ),
 );
 // renderToStaticMarkup escapes `&` in text; decode it so the assertions read as
 // the page does.

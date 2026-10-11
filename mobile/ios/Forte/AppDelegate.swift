@@ -45,12 +45,12 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             web.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
         ])
         let message = UILabel()
-        message.text = "forte could not load. Check your connection and try again."
+        message.text = NSLocalizedString("load_error", comment: "Message shown when the hosted app cannot load")
         message.textColor = .white
         message.numberOfLines = 0
         message.textAlignment = .center
         let retry = UIButton(type: .system)
-        retry.setTitle("Retry", for: .normal)
+        retry.setTitle(NSLocalizedString("retry", comment: "Button that reloads the hosted app"), for: .normal)
         retry.addTarget(self, action: #selector(reloadPage), for: .touchUpInside)
         errorPanel = UIStackView(arrangedSubviews: [message, retry])
         errorPanel.axis = .vertical

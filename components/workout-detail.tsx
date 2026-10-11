@@ -3,17 +3,20 @@ import type { SetType, WorkoutTree } from "@/schema/types";
 import { ExerciseThumbnail } from "@/components/exercise-media";
 import type { VocabularyEntry } from "@/components/exercise-filter-form";
 import { WorkoutSummary } from "@/components/workout-summary";
-import { formatDuration } from "@/lib/format";
-import { RECORD_CATEGORY_LABELS } from "@/lib/records";
+import { formatDuration, formatDateTime } from "@/lib/i18n/format";
+import { getI18n } from "@/lib/i18n/server";
+import type { MessageKey } from "@/lib/i18n";
+import { recordCategoryLabel } from "@/lib/records";
 import type { EarnedRecord } from "@/lib/records-history";
-import { formatDateTimeInTimeZone } from "@/lib/timezone";
 import { formatSetValues, formatVolumeKg, summarizeWorkout } from "@/lib/workout-stats";
 
-const SET_TYPE_LABELS: Record<SetType, string> = {
-  warmup: "Warm-up",
-  normal: "Normal",
-  failure: "Failure",
-  dropset: "Drop set",
+/** The dictionary key for each set type's badge; keyed, not a bare map, so a
+ * new set type cannot be added without its wording. */
+const SET_TYPE_KEYS: Record<SetType, MessageKey> = {
+  warmup: "workouts.setType.warmup",
+  normal: "workouts.setType.normal",
+  failure: "workouts.setType.failure",
+  dropset: "workouts.setType.dropset",
 };
 
 /**
@@ -29,7 +32,7 @@ const SET_TYPE_LABELS: Record<SetType, string> = {
  * shows. Every set is rendered through `formatSetValues`, which follows the
  * exercise's own type rather than assuming weight × reps.
  */
-export function WorkoutDetail({
+export async function WorkoutDetail({
   workout,
   timeZone,
   muscles,
@@ -47,6 +50,7 @@ export function WorkoutDetail({
    */
   records: readonly EarnedRecord[];
 }) {
+  const { locale, t } = await getI18n();
   const stats = summarizeWorkout(workout);
 
   // Grouped by template because a record belongs to the exercise, not to a
@@ -93,7 +97,7 @@ export function WorkoutDetail({
     <main className="mx-auto max-w-2xl px-4 pb-12 pt-6">
       <Link
         href="/workouts"
-        aria-label="Back to workouts"
+        aria-label={t("workouts.detail.back")}
         className="inline-flex h-10 w-10 items-center justify-center rounded-md text-lg text-zinc-600 hover:bg-zinc-200/60"
       >
         ←
@@ -101,26 +105,26 @@ export function WorkoutDetail({
 
       <h1 className="mt-2 break-words text-2xl font-semibold">{workout.title}</h1>
       <p className="mt-1 text-sm text-zinc-500">
-        {formatDateTimeInTimeZone(workout.started_at, timeZone)}
+        {formatDateTime(locale, workout.started_at, timeZone)}
       </p>
 
       <dl className="mt-4 flex flex-wrap gap-3">
         <div className="rounded-lg border border-zinc-200 px-4 py-2">
-          <dt className="text-xs text-zinc-500">Duration</dt>
+          <dt className="text-xs text-zinc-500">{t("workouts.metric.duration")}</dt>
           <dd className="mt-0.5 text-lg font-semibold tabular-nums">
-            {formatDuration(stats.durationSeconds)}
+            {formatDuration(locale, stats.durationSeconds)}
           </dd>
         </div>
         <div className="rounded-lg border border-zinc-200 px-4 py-2">
-          <dt className="text-xs text-zinc-500">Volume</dt>
+          <dt className="text-xs text-zinc-500">{t("workouts.metric.volume")}</dt>
           <dd className="mt-0.5 text-lg font-semibold tabular-nums">
-            {formatVolumeKg(stats.volumeKg)}
+            {formatVolumeKg(stats.volumeKg, locale)}
           </dd>
         </div>
       </dl>
 
       {exercises.length === 0 ? (
-        <p className="mt-6 text-zinc-500">No sets were completed in this workout.</p>
+        <p className="mt-6 text-zinc-500">{t("workouts.detail.noSets")}</p>
       ) : (
         <>
           <ol className="mt-6 space-y-4">
@@ -134,7 +138,7 @@ export function WorkoutDetail({
                   <div className="min-w-0 flex-1">
                     <div className="break-words font-medium">{exercise.template.title}</div>
                     <div className="mt-0.5 text-xs text-zinc-500">
-                      {sets.length} {sets.length === 1 ? "set" : "sets"}
+                      {t("common.plural.sets", { count: sets.length })}
                     </div>
                   </div>
                 </div>
@@ -152,7 +156,7 @@ export function WorkoutDetail({
                         className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
                       >
                         <span aria-hidden>🏅</span>
-                        {RECORD_CATEGORY_LABELS[record.category]}
+                        {recordCategoryLabel(record.category, locale)}
                       </li>
                     ))}
                   </ul>
@@ -165,11 +169,11 @@ export function WorkoutDetail({
                         {index + 1}.
                       </span>
                       <span className="min-w-0 text-zinc-800">
-                        {formatSetValues(set, exercise.template.exercise_type)}
+                        {formatSetValues(set, exercise.template.exercise_type, locale)}
                       </span>
                       {set.set_type === "normal" ? null : (
                         <span className="shrink-0 text-xs text-zinc-500">
-                          {SET_TYPE_LABELS[set.set_type]}
+                          {t(SET_TYPE_KEYS[set.set_type])}
                         </span>
                       )}
                     </li>
@@ -182,7 +186,7 @@ export function WorkoutDetail({
           {/* The record's own muscle work: same heatmap and distribution table as
               the routine summary, fed from the completed sets above. */}
           <section className="mt-8 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-            <h2 className="text-lg font-semibold">Workout summary</h2>
+            <h2 className="text-lg font-semibold">{t("workouts.detail.summaryTitle")}</h2>
             <WorkoutSummary exercises={summaryExercises} muscles={muscles} />
           </section>
         </>

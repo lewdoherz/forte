@@ -1,0 +1,5 @@
+/* Message shown when the hosted forte app cannot load. */
+"load_error" = "forte could not load. Check your connection and try again.";
+
+/* Button that reloads the hosted forte app. */
+"retry" = "Retry";

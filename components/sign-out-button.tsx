@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { clearOfflineClientData } from "@/lib/offline-store";
+import { useI18n } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n";
 
 /**
  * Sign-out control for the account page. It stays a client component even
@@ -14,21 +16,22 @@ import { clearOfflineClientData } from "@/lib/offline-store";
  */
 export function SignOutButton() {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
+  const [errorKey, setErrorKey] = useState<MessageKey | null>(null);
 
   return (
     <div>
       <button
         type="button"
         onClick={async () => {
-          setError(null);
+          setErrorKey(null);
           try {
             // Clear while the authenticated page and its controlling worker are
             // still available. If isolation cannot be guaranteed, keep the
             // session rather than leave private data behind after signing out.
             await clearOfflineClientData();
           } catch {
-            setError("Could not clear offline workout data. Sign-out was stopped.");
+            setErrorKey("auth.error.offlineClearFailed");
             return;
           }
           await authClient.signOut();
@@ -37,11 +40,11 @@ export function SignOutButton() {
         }}
         className="h-11 rounded-md border border-red-300 bg-white px-4 text-sm font-medium text-red-700"
       >
-        Sign out
+        {t("common.signOut")}
       </button>
-      {error ? (
+      {errorKey ? (
         <p role="alert" className="mt-2 text-sm text-red-700">
-          {error}
+          {t(errorKey)}
         </p>
       ) : null}
     </div>

@@ -9,6 +9,7 @@ import {
   type ExerciseFilterValues,
   type VocabularyEntry,
 } from "@/components/exercise-filter-form";
+import { useI18n } from "@/lib/i18n/context";
 import { listExercisesAction } from "@/lib/exercise-actions";
 import type { LibraryExercise } from "@/lib/exercise-library";
 
@@ -38,13 +39,14 @@ export function ExerciseLibrary({
   equipment: VocabularyEntry[];
 }) {
   const pathname = usePathname();
+  const { t } = useI18n();
   const onListRoute = pathname === "/exercises";
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col sm:flex-row">
       <div className={`min-w-0 flex-1 ${onListRoute ? "hidden sm:block" : "block"}`}>{children}</div>
       <aside
-        aria-label="Exercise library"
+        aria-label={t("exercises.library.ariaLabel")}
         className={`w-full border-zinc-200 sm:sticky sm:top-0 sm:flex sm:h-screen sm:w-96 sm:shrink-0 sm:flex-col sm:overflow-hidden sm:border-l ${
           onListRoute ? "block" : "hidden sm:flex"
         }`}
@@ -87,6 +89,7 @@ function ExerciseLibraryPanel({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useI18n();
 
   const q = searchParams.get("q") ?? "";
   const muscle = searchParams.get("muscle") ?? "";
@@ -144,12 +147,12 @@ function ExerciseLibraryPanel({
   return (
     <div className="flex w-full flex-col sm:h-full sm:min-h-0">
       <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
-        <h2 className="text-sm font-semibold">Library</h2>
+        <h2 className="text-sm font-semibold">{t("exercises.library.title")}</h2>
         <Link
           href="/exercises/new"
           className="flex h-9 items-center rounded-md bg-zinc-900 px-3 text-xs font-medium text-white"
         >
-          + Custom Exercise
+          {t("exercises.library.newExercise")}
         </Link>
       </div>
 
@@ -166,9 +169,9 @@ function ExerciseLibraryPanel({
 
       <div className={`sm:min-h-0 sm:flex-1 sm:overflow-y-auto ${pending ? "opacity-60" : ""}`}>
         {exercises === null ? (
-          <p className="px-4 py-6 text-sm text-zinc-500">Loading…</p>
+          <p className="px-4 py-6 text-sm text-zinc-500">{t("common.loading")}</p>
         ) : exercises.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-zinc-500">No exercises found.</p>
+          <p className="px-4 py-6 text-sm text-zinc-500">{t("exercises.library.empty")}</p>
         ) : (
           <ul>
             {exercises.map((exercise) => {
@@ -193,7 +196,7 @@ function ExerciseLibraryPanel({
                     </span>
                     {exercise.is_custom ? (
                       <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-600">
-                        Custom
+                        {t("exercises.library.customBadge")}
                       </span>
                     ) : null}
                   </Link>

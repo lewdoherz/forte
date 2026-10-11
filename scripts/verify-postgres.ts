@@ -44,6 +44,9 @@ const pg = new EmbeddedPostgres({
   password: "postgres",
   port: PORT,
   persistent: false,
+  // See scripts/verify-browser.ts: Windows `initdb` would otherwise create a
+  // WIN1252 cluster, which cannot store the Chinese catalog text from 0017.
+  initdbFlags: ["--encoding=UTF8"],
 });
 
 console.log(`starting embedded PostgreSQL on :${PORT} ...`);

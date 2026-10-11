@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth-session";
 import { db } from "@/lib/db";
 import { getActiveWorkout } from "@/lib/workouts";
+import { getI18n } from "@/lib/i18n/server";
 import { BottomNav } from "@/components/bottom-nav";
 import { Sidebar } from "@/components/sidebar";
 
@@ -17,6 +18,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // column is nullable, so fall back to the email rather than render a blank
   // account row.
   const displayName = session.user.name.trim() || session.user.email;
+  const { t } = await getI18n();
 
   return (
     <>
@@ -28,7 +30,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <header className="border-b border-zinc-200 bg-white sm:hidden">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-2.5">
           <Link href="/" className="text-base font-semibold">
-            forte
+            {t("common.appName")}
           </Link>
 
           <div className="ml-auto flex items-center gap-2">
@@ -45,7 +47,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               href="/account"
               className="inline-flex min-h-9 items-center rounded-md border border-zinc-300 px-3 text-sm font-medium hover:bg-zinc-100"
             >
-              Account
+              {t("nav.account")}
             </Link>
           </div>
         </div>

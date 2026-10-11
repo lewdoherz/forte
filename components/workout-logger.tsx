@@ -24,7 +24,9 @@ import { SetForm, type SetFormValues } from "@/components/set-form";
 import { ExercisePicker, type PickerExercise } from "@/components/exercise-picker";
 import type { VocabularyEntry } from "@/components/exercise-filter-form";
 import { Modal } from "@/components/modal";
-import { formatDuration } from "@/lib/format";
+import { formatDuration, formatNumber } from "@/lib/i18n/format";
+import { useI18n } from "@/lib/i18n/context";
+import type { Locale, MessageKey } from "@/lib/i18n";
 import { formatDateTimeInTimeZone } from "@/lib/timezone";
 
 /**
@@ -42,11 +44,12 @@ type ConfirmState =
   | { kind: "discard" }
   | { kind: "removeExercise"; exerciseId: string; title: string; setCount: number };
 
-const SET_TYPE_LABELS: Record<SetType, string> = {
-  warmup: "Warm-up",
-  normal: "Normal",
-  failure: "Failure",
-  dropset: "Drop set",
+/** The set type names as message keys, resolved with the active locale. */
+const SET_TYPE_KEYS: Record<SetType, MessageKey> = {
+  warmup: "logger.setType.warmup",
+  normal: "logger.setType.normal",
+  failure: "logger.setType.failure",
+  dropset: "logger.setType.dropset",
 };
 
 const EXERCISE_CARD = "rounded-xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-4";
@@ -57,8 +60,6 @@ const EXERCISE_CARD = "rounded-xl border border-zinc-200 bg-white p-3 shadow-sm 
  * reconciliation request, which is all the document-based sync needs.
  */
 const SYNC_DEBOUNCE_MS = 800;
-
-const UNREACHABLE_MESSAGE = "Could not reach the server. Your changes are kept on this device.";
 
 /**
  * Retry schedule for a sync the server did not accept: the wait starts at two
@@ -76,16 +77,14 @@ const RETRY_CEILING_MS = 60_000;
  */
 const STALE_DOCUMENT_MS = 7 * 24 * 60 * 60 * 1000;
 
-const PERMANENT_FAILURE_SUFFIX =
-  " Your changes are kept on this device, but syncing will not be retried.";
-
 /** The quiet status line's states. */
 type SyncState = "saved" | "pending" | "offline";
 
-const SYNC_STATE_TEXT: Record<SyncState, string> = {
-  saved: "All changes saved",
-  pending: "Unsynced changes · kept on this device",
-  offline: "Offline · changes kept on this device",
+/** Each state's message key: the status line renders in the active locale. */
+const SYNC_STATE_KEYS: Record<SyncState, MessageKey> = {
+  saved: "logger.sync.saved",
+  pending: "logger.sync.pending",
+  offline: "logger.sync.offline",
 };
 
 /**
@@ -111,9 +110,10 @@ function previousText(
   performance: PreviousPerformance | undefined,
   index: number,
   exerciseType: ExerciseType,
+  locale: Locale,
 ): string {
   const set = performance?.sets[index];
-  return set ? formatSetValues(set, exerciseType) : "—";
+  return set ? formatSetValues(set, exerciseType, locale) : "—";
 }
 
 /** A blank set, shaped exactly as the server's own append produces one. */
@@ -155,6 +155,8 @@ export function WorkoutLogger({
   previous: Record<string, PreviousPerformance>;
 }) {
   const router = useRouter();
+  // The active language, for the copy and for the locale-aware formatters.
+  const { locale, t } = useI18n();
   // The server render is the first paint and a new object every request, so its
   // identity is pinned for the one mount that matters.
   const initialRef = useRef(initial);
@@ -294,7 +296,7 @@ export function WorkoutLogger({
         try {
           result = await syncWorkoutStateAction(input);
         } catch {
-          setSyncError(UNREACHABLE_MESSAGE);
+          setSyncError(t("logger.sync.unreachable"));
           scheduleRetry();
           void refreshSyncState();
           return;
@@ -305,11 +307,11 @@ export function WorkoutLogger({
             // the server would reject the same document forever.
             rejectedRevisionRef.current = revision;
             cancelRetry();
-            setSyncError(`${result.error}${PERMANENT_FAILURE_SUFFIX}`);
+            setSyncError(t("logger.sync.permanentSuffix", { message: result.error }));
           } else {
             // Transient. The marker stays: the local change is never discarded,
             // and the backoff timer retries it.
-            setSyncError(`${result.error} Your changes are kept on this device.`);
+            setSyncError(t("logger.sync.keptSuffix", { message: result.error }));
             scheduleRetry();
           }
           void refreshSyncState();
@@ -331,7 +333,7 @@ export function WorkoutLogger({
     } finally {
       syncingRef.current = false;
     }
-  }, [cancelRetry, refreshSyncState, scheduleRetry]);
+  }, [cancelRetry, refreshSyncState, scheduleRetry, t]);
 
   // Publishes the newest runSync to the retry timer, which is created before it.
   useEffect(() => {
@@ -446,9 +448,7 @@ export function WorkoutLogger({
         void refreshSyncState();
       })
       .catch(() => {
-        setSyncError(
-          "Offline storage is unavailable. Changes on this screen may not survive a reload.",
-        );
+        setSyncError(t("logger.sync.storageUnavailable"));
       });
     return () => {
       cancelled = true;
@@ -456,7 +456,7 @@ export function WorkoutLogger({
         navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
       }
     };
-  }, [userId, runSync, refreshSyncState]);
+  }, [userId, runSync, refreshSyncState, t]);
 
   // Sync when the network returns, and when the tab comes back to the
   // foreground — the two moments a device that was offline is likely to have a
@@ -683,7 +683,7 @@ export function WorkoutLogger({
     try {
       result = await discardWorkoutAction(workoutRef.current.id);
     } catch {
-      result = { error: UNREACHABLE_MESSAGE };
+      result = { error: t("logger.sync.unreachable") };
     }
     if ("error" in result) {
       setDiscardError(result.error);
@@ -705,7 +705,7 @@ export function WorkoutLogger({
       });
     }
     router.push("/workouts");
-  }, [cancelRetry, router]);
+  }, [cancelRetry, router, t]);
 
   const muscleNames = useMemo(
     () => new Map(muscles.map((m) => [m.code, m.display_name])),
@@ -757,7 +757,7 @@ export function WorkoutLogger({
             {active ? (
               <button
                 type="button"
-                aria-label={`Remove ${ex.template.title}`}
+                aria-label={t("logger.exercise.removeLabel", { title: ex.template.title })}
                 onClick={() =>
                   setConfirm({
                     kind: "removeExercise",
@@ -774,7 +774,14 @@ export function WorkoutLogger({
           </span>
         </div>
         {ex.rest_seconds != null ? (
-          <div className="mt-0.5 text-xs text-zinc-400">Rest {ex.rest_seconds}s</div>
+          <div className="mt-0.5 text-xs text-zinc-400">
+            {t("logger.exercise.rest", {
+              duration: t("common.quantityTight", {
+                value: formatNumber(locale, ex.rest_seconds),
+                unit: t("common.unit.seconds"),
+              }),
+            })}
+          </div>
         ) : null}
         {ex.notes ? <div className="mt-1 text-sm text-zinc-600">{ex.notes}</div> : null}
 
@@ -790,7 +797,7 @@ export function WorkoutLogger({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-medium text-zinc-500">
-                    {SET_TYPE_LABELS[s.set_type]}
+                    {t(SET_TYPE_KEYS[s.set_type])}
                   </span>
 
                   {active ? (
@@ -804,7 +811,7 @@ export function WorkoutLogger({
                         >
                           <button
                             type="submit"
-                            aria-label="Undo set completion"
+                            aria-label={t("logger.set.undoLabel")}
                             className="flex h-10 min-w-10 items-center justify-center rounded-md text-base text-zinc-600 hover:bg-zinc-200/60"
                           >
                             ↺
@@ -819,7 +826,7 @@ export function WorkoutLogger({
                       >
                         <button
                           type="submit"
-                          aria-label="Remove set"
+                          aria-label={t("logger.set.removeLabel")}
                           className="flex h-10 min-w-10 items-center justify-center rounded-md text-sm text-red-600 hover:bg-red-50"
                         >
                           ✕
@@ -836,7 +843,7 @@ export function WorkoutLogger({
                   <div className="min-w-0">
                     {!active || done ? (
                       <span className="text-sm text-zinc-700">
-                        {formatSetValues(s, exerciseType)}
+                        {formatSetValues(s, exerciseType, locale)}
                         {done ? <span className="ml-1 text-green-600">✓</span> : null}
                       </span>
                     ) : (
@@ -849,9 +856,11 @@ export function WorkoutLogger({
                     )}
                   </div>
                   <div className="flex items-baseline gap-1.5 text-xs sm:justify-end">
-                    <span className="uppercase tracking-wide text-zinc-400">Previous</span>
+                    <span className="uppercase tracking-wide text-zinc-400">
+                      {t("logger.set.previous")}
+                    </span>
                     <span className="min-w-0 truncate tabular-nums text-zinc-600">
-                      {previousText(performance, index, exerciseType)}
+                      {previousText(performance, index, exerciseType, locale)}
                     </span>
                   </div>
                 </div>
@@ -870,7 +879,7 @@ export function WorkoutLogger({
                 type="submit"
                 className="h-10 rounded-md border border-dashed border-zinc-300 px-3 text-sm text-zinc-600 hover:bg-zinc-50"
               >
-                + Add set
+                + {t("logger.set.add")}
               </button>
             </form>
           ) : null}
@@ -897,7 +906,7 @@ export function WorkoutLogger({
         <div className="flex items-center gap-2 sm:gap-3">
           <Link
             href="/workouts"
-            aria-label="Back to workouts"
+            aria-label={t("logger.nav.back", { label: t("nav.workouts") })}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-lg text-zinc-600 hover:bg-zinc-200/60"
           >
             ←
@@ -918,7 +927,7 @@ export function WorkoutLogger({
               disabled={finishing}
               className="h-10 shrink-0 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white disabled:opacity-60"
             >
-              {finishing ? "Finishing…" : "Finish"}
+              {finishing ? t("logger.finish.finishing") : t("logger.finish.action")}
             </button>
           ) : null}
         </div>
@@ -928,25 +937,25 @@ export function WorkoutLogger({
             second formula. Duration ticks from `started_at` on its own. */}
         <dl className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-0.5 text-xs">
           <div className="flex items-baseline gap-1.5">
-            <dt className="text-zinc-400">Duration</dt>
+            <dt className="text-zinc-400">{t("logger.metric.duration")}</dt>
             <dd className="font-medium tabular-nums text-zinc-700">
               {active ? (
                 <ElapsedTimer startedAt={workout.started_at.toISOString()} endedAt={null} />
               ) : (
-                formatDuration(stats.durationSeconds)
+                formatDuration(locale, stats.durationSeconds)
               )}
             </dd>
           </div>
           <div className="flex items-baseline gap-1.5">
-            <dt className="text-zinc-400">Volume</dt>
+            <dt className="text-zinc-400">{t("logger.metric.volume")}</dt>
             <dd className="font-medium tabular-nums text-zinc-700">
-              {formatVolumeKg(stats.volumeKg)}
+              {formatVolumeKg(stats.volumeKg, locale)}
             </dd>
           </div>
           <div className="flex items-baseline gap-1.5">
-            <dt className="text-zinc-400">Sets</dt>
+            <dt className="text-zinc-400">{t("logger.metric.sets")}</dt>
             <dd className="font-medium tabular-nums text-zinc-700">
-              {stats.completedSets}/{stats.totalSets}
+              {formatNumber(locale, stats.completedSets)}/{formatNumber(locale, stats.totalSets)}
             </dd>
           </div>
         </dl>
@@ -957,7 +966,7 @@ export function WorkoutLogger({
             set rows, and stays one truncated line so a sync never shifts the
             layout under a thumb. */}
         <div role="status" className="mt-0.5 truncate text-xs text-zinc-500">
-          {SYNC_STATE_TEXT[syncState]}
+          {t(SYNC_STATE_KEYS[syncState])}
         </div>
       </div>
 
@@ -972,16 +981,16 @@ export function WorkoutLogger({
       ) : null}
 
       <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-zinc-500">
-        <span>{formatDateTimeInTimeZone(workout.started_at, timeZone)}</span>
+        <span>{formatDateTimeInTimeZone(workout.started_at, timeZone, locale)}</span>
         {workout.ended_at ? (
-          <span>→ {formatDateTimeInTimeZone(workout.ended_at, timeZone)}</span>
+          <span>→ {formatDateTimeInTimeZone(workout.ended_at, timeZone, locale)}</span>
         ) : null}
-        <span>
-          {stats.exerciseCount} {stats.exerciseCount === 1 ? "exercise" : "exercises"}
-        </span>
+        <span>{t("common.plural.exercises", { count: stats.exerciseCount })}</span>
         {!active ? (
           <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
-            Completed · {formatDuration(stats.durationSeconds)}
+            {t("logger.summary.completed", {
+              duration: formatDuration(locale, stats.durationSeconds),
+            })}
           </span>
         ) : null}
       </div>
@@ -993,7 +1002,7 @@ export function WorkoutLogger({
             onClick={() => setPickerOpen(true)}
             className="h-11 rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-50"
           >
-            Add exercise
+            {t("logger.exercise.add")}
           </button>
           <button
             type="button"
@@ -1003,7 +1012,7 @@ export function WorkoutLogger({
             }}
             className="ml-auto h-11 rounded-md px-3 text-sm font-medium text-red-600 hover:bg-red-50"
           >
-            Discard
+            {t("logger.discard.action")}
           </button>
         </div>
       ) : null}
@@ -1011,8 +1020,8 @@ export function WorkoutLogger({
       {exercises.length === 0 ? (
         <p className="mt-6 rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500">
           {active
-            ? "No exercises yet. Add one to start logging sets."
-            : "No exercises were performed in this workout."}
+            ? t("logger.exercise.emptyActive")
+            : t("logger.exercise.emptyCompleted")}
         </p>
       ) : (
         <ol className="mt-6 space-y-4">
@@ -1034,11 +1043,9 @@ export function WorkoutLogger({
               >
                 <div className="mb-2 flex flex-wrap items-center gap-x-2">
                   <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-900">
-                    Superset
+                    {t("logger.superset.title")}
                   </span>
-                  <span className="text-xs text-sky-800">
-                    Alternate between these, then rest
-                  </span>
+                  <span className="text-xs text-sky-800">{t("logger.superset.hint")}</span>
                 </div>
                 <div className="space-y-3">
                   {group.exercises.map((ex) => (
@@ -1054,7 +1061,11 @@ export function WorkoutLogger({
       )}
 
       {pickerOpen ? (
-        <Modal title="Add exercise" onClose={() => setPickerOpen(false)} panelClassName="max-w-lg">
+        <Modal
+          title={t("logger.exercise.add")}
+          onClose={() => setPickerOpen(false)}
+          panelClassName="max-w-lg"
+        >
           <div className="mt-3">
             <ExercisePicker
               exercises={library}
@@ -1071,10 +1082,10 @@ export function WorkoutLogger({
         <Modal
           title={
             confirm.kind === "finish"
-              ? "Finish workout"
+              ? t("logger.finish.title")
               : confirm.kind === "discard"
-                ? "Discard workout"
-                : "Remove exercise"
+                ? t("logger.discard.title")
+                : t("logger.exercise.removeTitle")
           }
           onClose={() => {
             // A destructive request in flight must not be dismissed underneath
@@ -1086,9 +1097,11 @@ export function WorkoutLogger({
           {confirm.kind === "finish" ? (
             <>
               <p className="mt-3 text-sm text-zinc-600">
-                {incompleteSets} of {stats.totalSets} {stats.totalSets === 1 ? "set is" : "sets are"}{" "}
-                not completed. {incompleteSets === 1 ? "It" : "They"} will be saved as not
-                completed — nothing is marked done for you.
+                {t("logger.finish.openSets", {
+                  incomplete: formatNumber(locale, incompleteSets),
+                  count: stats.totalSets,
+                  tail: t("logger.finish.openTail", { count: incompleteSets }),
+                })}
               </p>
               <div className="mt-4 flex justify-end gap-2">
                 <button
@@ -1096,7 +1109,7 @@ export function WorkoutLogger({
                   onClick={() => setConfirm(null)}
                   className="h-11 rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-50"
                 >
-                  Keep logging
+                  {t("logger.finish.keep")}
                 </button>
                 <button
                   type="button"
@@ -1104,7 +1117,7 @@ export function WorkoutLogger({
                   disabled={finishing}
                   className="h-11 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-60"
                 >
-                  {finishing ? "Finishing…" : "Finish workout"}
+                  {finishing ? t("logger.finish.finishing") : t("logger.finish.title")}
                 </button>
               </div>
             </>
@@ -1112,9 +1125,7 @@ export function WorkoutLogger({
 
           {confirm.kind === "discard" ? (
             <>
-              <p className="mt-3 text-sm text-zinc-600">
-                This deletes the workout without saving a completed one. This cannot be undone.
-              </p>
+              <p className="mt-3 text-sm text-zinc-600">{t("logger.discard.body")}</p>
               {discardError ? (
                 <p role="alert" className="mt-2 text-sm text-red-600">
                   {discardError}
@@ -1127,7 +1138,7 @@ export function WorkoutLogger({
                   disabled={discarding}
                   className="h-11 rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-50 disabled:opacity-60"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="button"
@@ -1135,7 +1146,7 @@ export function WorkoutLogger({
                   disabled={discarding}
                   className="h-11 rounded-md bg-red-600 px-4 text-sm font-medium text-white disabled:opacity-60"
                 >
-                  {discarding ? "Discarding…" : "Discard workout"}
+                  {discarding ? t("logger.discard.confirming") : t("logger.discard.title")}
                 </button>
               </div>
             </>
@@ -1144,10 +1155,10 @@ export function WorkoutLogger({
           {confirm.kind === "removeExercise" ? (
             <>
               <p className="mt-3 text-sm text-zinc-600">
-                Remove {confirm.title}?{" "}
-                {confirm.setCount === 1
-                  ? "Its 1 set will be removed too."
-                  : `Its ${confirm.setCount} sets will be removed too.`}
+                {t("logger.exercise.removeConfirm", {
+                  title: confirm.title,
+                  tail: t("logger.exercise.removeSets", { count: confirm.setCount }),
+                })}
               </p>
               <div className="mt-4 flex justify-end gap-2">
                 <button
@@ -1155,14 +1166,14 @@ export function WorkoutLogger({
                   onClick={() => setConfirm(null)}
                   className="h-11 rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-50"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="button"
                   onClick={() => removeExercise(confirm.exerciseId)}
                   className="h-11 rounded-md bg-red-600 px-4 text-sm font-medium text-white"
                 >
-                  Remove
+                  {t("common.remove")}
                 </button>
               </div>
             </>

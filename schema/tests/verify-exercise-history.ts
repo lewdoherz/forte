@@ -162,7 +162,7 @@ check(
 check(
   "an incomplete set is not part of a session",
   benchHistory.sessions[2]?.sets.length === 1 &&
-    formatSetValues(benchHistory.sessions[2].sets[0], "weight_reps") === "100 kg × 5 reps",
+    formatSetValues(benchHistory.sessions[2].sets[0], "weight_reps", "en") === "100 kg × 5 reps",
   JSON.stringify(benchHistory.sessions[2]?.sets),
 );
 check(
@@ -201,9 +201,9 @@ check(
 );
 check(
   "sets follow the workout's exercise and set positions",
-  orderHistory.sessions[0]?.sets.map((set) => formatSetValues(set, "weight_reps")).join(" | ") ===
+  orderHistory.sessions[0]?.sets.map((set) => formatSetValues(set, "weight_reps", "en")).join(" | ") ===
     "60 kg × 10 reps | 80 kg × 5 reps | 70 kg × 8 reps",
-  orderHistory.sessions[0]?.sets.map((set) => formatSetValues(set, "weight_reps")).join(" | "),
+  orderHistory.sessions[0]?.sets.map((set) => formatSetValues(set, "weight_reps", "en")).join(" | "),
 );
 
 // ---- every exercise type is formatted by the shared formatter ---------------
@@ -229,7 +229,7 @@ for (const [index, testCase] of formatCases.entries()) {
   ]);
   const history = await getExerciseHistory(db, alice, templateId);
   const set = history.sessions[0]?.sets[0];
-  const formatted = set === undefined ? "<no set>" : formatSetValues(set, testCase.type);
+  const formatted = set === undefined ? "<no set>" : formatSetValues(set, testCase.type, "en");
   check(
     `formats a ${testCase.type} set`,
     history.exerciseType === testCase.type && formatted === testCase.expected,
@@ -315,7 +315,7 @@ check(
 check(
   "the surviving set values are unchanged",
   afterDelete.sessions[0] !== undefined &&
-    formatSetValues(afterDelete.sessions[0].sets[0], "weight_reps") === "115 kg × 5 reps",
+    formatSetValues(afterDelete.sessions[0].sets[0], "weight_reps", "en") === "115 kg × 5 reps",
 );
 
 // ---- empty states and isolation --------------------------------------------

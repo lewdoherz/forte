@@ -2,12 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { db } from "@/lib/db";
-import { EXERCISE_TYPE_LABELS } from "@/lib/exercise-types";
+import { exerciseTypeLabel } from "@/lib/exercise-types";
 import { getVisibleExercise, getVocabularies } from "@/lib/exercises";
 import { requireSessionUserId } from "@/lib/auth-session";
 import { getUserProfile } from "@/lib/users";
 import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 import { PROGRESS_RANGES, type ProgressRange } from "@/lib/progress";
+import { getI18n } from "@/lib/i18n/server";
 import { DeleteExerciseButton } from "@/components/delete-exercise-button";
 import { ExerciseThumbnail } from "@/components/exercise-media";
 import { ExerciseImage } from "@/components/exercise-image";
@@ -23,9 +24,9 @@ import { ExerciseTabs, type ExerciseTab } from "@/components/exercise-tabs";
  * tab is linkable and a reload lands back on it.
  */
 const TABS = [
-  { id: "how-to", label: "How to" },
-  { id: "statistics", label: "Statistics" },
-  { id: "history", label: "History" },
+  { id: "how-to", labelKey: "exerciseDetail.tabs.howTo" },
+  { id: "statistics", labelKey: "exerciseDetail.tabs.statistics" },
+  { id: "history", labelKey: "exerciseDetail.tabs.history" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -47,6 +48,7 @@ export default async function ExerciseDetailPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const userId = await requireSessionUserId();
+  const { locale, t } = await getI18n();
   const { id } = await params;
   const exercise = await getVisibleExercise(db, id, userId);
   if (!exercise) notFound();
@@ -138,7 +140,8 @@ export default async function ExerciseDetailPage({
   };
 
   const tabs: ExerciseTab[] = TABS.map((tab) => ({
-    ...tab,
+    id: tab.id,
+    label: t(tab.labelKey),
     href: tabHref(tab.id),
     content: panels[tab.id],
   }));
@@ -146,7 +149,7 @@ export default async function ExerciseDetailPage({
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
       <Link href={backHref} className="text-sm text-zinc-500 underline">
-        ← Exercises
+        ← {t("nav.exercises")}
       </Link>
 
       {/* The stable header: identity and catalog metadata, on every tab. The
@@ -157,7 +160,11 @@ export default async function ExerciseDetailPage({
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3">
             <h1 className="min-w-0 break-words text-2xl font-semibold">{exercise.title}</h1>
             <span className="shrink-0 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
-              {exercise.is_custom ? "Custom exercise" : "Library exercise"}
+              {t(
+                exercise.is_custom
+                  ? "exerciseDetail.badge.custom"
+                  : "exerciseDetail.badge.library",
+              )}
             </span>
           </div>
         </div>
@@ -165,29 +172,31 @@ export default async function ExerciseDetailPage({
         <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start">
           <dl className="min-w-0 flex-1 divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white shadow-sm">
             <div className="flex justify-between gap-3 px-4 py-3">
-              <dt className="text-sm text-zinc-500">Primary muscle</dt>
+              <dt className="text-sm text-zinc-500">{t("exerciseDetail.field.primaryMuscle")}</dt>
               <dd className="min-w-0 break-words text-right text-sm font-medium">
                 {muscleNames.get(exercise.primary_muscle) ?? exercise.primary_muscle}
               </dd>
             </div>
             {secondary.length > 0 ? (
               <div className="flex justify-between gap-3 px-4 py-3">
-                <dt className="text-sm text-zinc-500">Secondary muscles</dt>
+                <dt className="text-sm text-zinc-500">
+                  {t("exerciseDetail.field.secondaryMuscles")}
+                </dt>
                 <dd className="min-w-0 break-words text-right text-sm font-medium">
                   {secondary.join(", ")}
                 </dd>
               </div>
             ) : null}
             <div className="flex justify-between gap-3 px-4 py-3">
-              <dt className="text-sm text-zinc-500">Equipment</dt>
+              <dt className="text-sm text-zinc-500">{t("exerciseDetail.field.equipment")}</dt>
               <dd className="min-w-0 break-words text-right text-sm font-medium">
                 {equipmentNames.get(exercise.equipment) ?? exercise.equipment}
               </dd>
             </div>
             <div className="flex justify-between gap-3 px-4 py-3">
-              <dt className="text-sm text-zinc-500">Type</dt>
+              <dt className="text-sm text-zinc-500">{t("exerciseDetail.field.type")}</dt>
               <dd className="min-w-0 break-words text-right text-sm font-medium">
-                {EXERCISE_TYPE_LABELS[exercise.exercise_type]}
+                {exerciseTypeLabel(exercise.exercise_type, locale)}
               </dd>
             </div>
           </dl>
@@ -207,7 +216,7 @@ export default async function ExerciseDetailPage({
             href={`/exercises/${exercise.id}/edit`}
             className="flex h-11 items-center rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-100"
           >
-            Edit
+            {t("common.edit")}
           </Link>
           <DeleteExerciseButton id={exercise.id} />
         </div>

@@ -9,29 +9,48 @@ import {
   type WorkoutSyncInput,
 } from "./workout-sync";
 import { SET_TYPES, type WorkoutSet, type WorkoutTree } from "@/schema/types";
+import { pickNullableText, pickText } from "./i18n/content";
+import { getLocaleSafe } from "./i18n/server";
+import { DEFAULT_LOCALE, createTranslator, getMessages, type Translate } from "./i18n";
 
-const weightString = z
-  .string()
-  .trim()
-  .refine((s) => /^\d{1,4}(\.\d{1,3})?$/.test(s), "Weight must be a non-negative number");
-const rpeString = z
-  .string()
-  .trim()
-  .refine((s) => /^\d{1,2}(\.\d)?$/.test(s) && Number(s) >= 1 && Number(s) <= 10, "RPE must be between 1 and 10");
+/** The English wording, for the schemas that have no request locale. */
+const DEFAULT_TRANSLATOR = createTranslator(DEFAULT_LOCALE, getMessages(DEFAULT_LOCALE));
+
+/** A set's weight string, with `t` wording the rejection the reader sees. */
+function weightStringFor(t: Translate) {
+  return z
+    .string()
+    .trim()
+    .refine((s) => /^\d{1,4}(\.\d{1,3})?$/.test(s), t("workouts.validation.weightInvalid"));
+}
+
+/** A set's RPE string, with `t` wording the rejection the reader sees. */
+function rpeStringFor(t: Translate) {
+  return z
+    .string()
+    .trim()
+    .refine(
+      (s) => /^\d{1,2}(\.\d)?$/.test(s) && Number(s) >= 1 && Number(s) <= 10,
+      t("workouts.validation.rpeInvalid"),
+    );
+}
 
 /** Shared guard for ids that reach SQL as a `::uuid` cast. */
 const uuidSchema = z.string().uuid();
 
 export const workoutSetInputSchema = z.object({
   reps: z.number().int().min(0).nullish(),
-  weight_kg: weightString.nullish(),
-  rpe: rpeString.nullish(),
+  weight_kg: weightStringFor(DEFAULT_TRANSLATOR).nullish(),
+  rpe: rpeStringFor(DEFAULT_TRANSLATOR).nullish(),
 });
 
 export const logSetInputSchema = workoutSetInputSchema.extend({ setId: z.string().uuid() });
 export const addSetInputSchema = z.object({ workoutExerciseId: z.string().uuid() });
 export const setIdSchema = z.object({ setId: z.string().uuid() });
 export const finishWorkoutInputSchema = z.object({ workoutId: z.string().uuid() });
+
+/** What `logSet` accepts: a completed set's actual values, keyed by set id. */
+export type LogSetInput = z.infer<typeof logSetInputSchema>;
 
 /**
  * How many sets one sync document may carry. A logged workout is a few tens of
@@ -42,63 +61,79 @@ export const MAX_SYNC_SETS = 300;
 /** Same bound for exercises, which number far fewer than sets in practice. */
 export const MAX_SYNC_EXERCISES = 100;
 
-const syncExerciseInputSchema = z.object({
-  id: z.string().uuid(),
-  template_id: z.string().uuid(),
-  position: z.number().int().min(0).max(10_000),
-  superset_key: z.string().max(64).nullable(),
-  // One day is far beyond any real rest target; the bound keeps a malformed
-  // document from storing a value the schema would reject anyway.
-  rest_seconds: z.number().int().min(0).max(86_400).nullable(),
-  notes: z.string().max(2_000).nullable(),
-});
+/**
+ * The reconciliation action's payload, with the issues worded by `t`. Entirely
+ * attacker-controlled, so it is validated in full before any of it reaches SQL.
+ *
+ * The action hands the schema's own issue text back to the client, so the
+ * sentences a reader can see are resolved from the request's translator here.
+ * Ids, positions and set types stay structural.
+ */
+export function syncWorkoutInputSchemaFor(t: Translate) {
+  const weightString = weightStringFor(t);
+  const rpeString = rpeStringFor(t);
 
-const syncSetInputSchema = z.object({
-  id: z.string().uuid(),
-  workout_exercise_id: z.string().uuid(),
-  // The client's ordering within its exercise. Bounded so a malformed document
-  // cannot store absurd positions; uniqueness per exercise is checked below.
-  position: z.number().int().min(0).max(10_000),
-  set_type: z.enum(SET_TYPES),
-  reps: z.number().int().min(0).max(100_000).nullable(),
-  weight_kg: weightString.nullable(),
-  rpe: rpeString.nullable(),
-  completed_at: z.string().datetime().nullable(),
-});
+  const syncExerciseInputSchema = z.object({
+    id: z.string().uuid(),
+    template_id: z.string().uuid(),
+    position: z.number().int().min(0).max(10_000),
+    superset_key: z.string().max(64).nullable(),
+    // One day is far beyond any real rest target; the bound keeps a malformed
+    // document from storing a value the schema would reject anyway.
+    rest_seconds: z.number().int().min(0).max(86_400).nullable(),
+    notes: z.string().max(2_000).nullable(),
+  });
+
+  const syncSetInputSchema = z.object({
+    id: z.string().uuid(),
+    workout_exercise_id: z.string().uuid(),
+    // The client's ordering within its exercise. Bounded so a malformed document
+    // cannot store absurd positions; uniqueness per exercise is checked below.
+    position: z.number().int().min(0).max(10_000),
+    set_type: z.enum(SET_TYPES),
+    reps: z.number().int().min(0).max(100_000).nullable(),
+    weight_kg: weightString.nullable(),
+    rpe: rpeString.nullable(),
+    completed_at: z.string().datetime().nullable(),
+  });
+
+  return z.object({
+    workoutId: z.string().uuid(),
+    endedAt: z.string().datetime().nullable(),
+    exercises: z
+      .array(syncExerciseInputSchema)
+      .max(MAX_SYNC_EXERCISES)
+      // Both refines reject a document the database would reject anyway, but as
+      // a clean validation error rather than a constraint violation.
+      .refine(
+        (exercises) => new Set(exercises.map((e) => e.id)).size === exercises.length,
+        t("workouts.validation.duplicateExerciseId"),
+      )
+      .refine(
+        (exercises) => new Set(exercises.map((e) => e.position)).size === exercises.length,
+        t("workouts.validation.exercisePositionTaken"),
+      ),
+    sets: z
+      .array(syncSetInputSchema)
+      .max(MAX_SYNC_SETS)
+      // Both refines reject a document the database would reject anyway, but as
+      // a clean validation error rather than a constraint violation.
+      .refine(
+        (sets) => new Set(sets.map((s) => s.id)).size === sets.length,
+        t("workouts.validation.duplicateSetId"),
+      )
+      .refine(
+        (sets) => new Set(sets.map((s) => `${s.workout_exercise_id}:${s.position}`)).size === sets.length,
+        t("workouts.validation.setPositionTaken"),
+      ),
+  });
+}
 
 /**
- * The reconciliation action's payload. Entirely attacker-controlled, so it is
- * validated in full before any of it reaches SQL.
+ * The English-message instance, for callers that have no request locale — the
+ * verification suites drive this module directly, outside any request scope.
  */
-export const syncWorkoutInputSchema = z.object({
-  workoutId: z.string().uuid(),
-  endedAt: z.string().datetime().nullable(),
-  exercises: z
-    .array(syncExerciseInputSchema)
-    .max(MAX_SYNC_EXERCISES)
-    // Both refines reject a document the database would reject anyway, but as
-    // a clean validation error rather than a constraint violation.
-    .refine(
-      (exercises) => new Set(exercises.map((e) => e.id)).size === exercises.length,
-      "Duplicate exercise id",
-    )
-    .refine(
-      (exercises) => new Set(exercises.map((e) => e.position)).size === exercises.length,
-      "Two exercises share a position",
-    ),
-  sets: z
-    .array(syncSetInputSchema)
-    .max(MAX_SYNC_SETS)
-    // Both refines reject a document the database would reject anyway, but as
-    // a clean validation error rather than a constraint violation.
-    .refine((sets) => new Set(sets.map((s) => s.id)).size === sets.length, "Duplicate set id")
-    .refine(
-      (sets) => new Set(sets.map((s) => `${s.workout_exercise_id}:${s.position}`)).size === sets.length,
-      "Two sets share a position",
-    ),
-});
-
-export type LogSetInput = z.infer<typeof logSetInputSchema>;
+export const syncWorkoutInputSchema = syncWorkoutInputSchemaFor(DEFAULT_TRANSLATOR);
 
 /**
  * Starts a workout from an owned routine: snapshots routine title/notes and
@@ -244,7 +279,19 @@ export async function getWorkoutTree(
         .where((eb) => eb.or([eb("owner_id", "is", null), eb("owner_id", "=", userId)]))
         .execute()
     : [];
-  const templateMap = new Map(templates.map((t) => [t.id, t]));
+  const locale = await getLocaleSafe();
+  const templateMap = new Map(
+    templates.map((t) => {
+      // The returned object keeps the field names the logger and the detail view
+      // already read (`title`, `how_to`); only the language changes.
+      const localized = {
+        ...t,
+        title: pickText(locale, t.title, t.title_zh),
+        how_to: pickNullableText(locale, t.how_to, t.how_to_zh),
+      };
+      return [t.id, localized] as const;
+    }),
+  );
 
   const sets = exercises.length
     ? await db
@@ -861,17 +908,24 @@ export async function listWorkouts(
  * filter. Built from what they have actually logged rather than the whole
  * catalog, which would offer filters that can only ever return nothing.
  */
-export function listLoggedExercises(db: Kysely<Database>, userId: string) {
-  return db
+export async function listLoggedExercises(db: Kysely<Database>, userId: string) {
+  const rows = await db
     .selectFrom("workout_exercise as we")
     .innerJoin("workout as w", "w.id", "we.workout_id")
     .innerJoin("exercise_template as et", "et.id", "we.template_id")
-    .select(["et.id", "et.title"])
+    .select(["et.id", "et.title", "et.title_zh"])
     .distinct()
     .where("w.owner_id", "=", userId)
     .where("w.ended_at", "is not", null)
+    // Ordered by the English title so the filter list is stable across languages.
     .orderBy("et.title", "asc")
     .execute();
+
+  const locale = await getLocaleSafe();
+  return rows.map((row) => ({
+    id: row.id,
+    title: pickText(locale, row.title, row.title_zh),
+  }));
 }
 
 // Re-exported so this module's callers are unchanged, while client components

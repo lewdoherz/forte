@@ -4,6 +4,8 @@ import { getWorkoutRecordCounts } from "./records-history";
 import { summarizeWorkout } from "./workout-stats";
 import type { WorkoutPage, WorkoutSummary } from "./workouts";
 import type { WorkoutCardData, WorkoutCardExercise } from "@/components/workout-card";
+import { pickText } from "./i18n/content";
+import { getLocaleSafe } from "./i18n/server";
 
 /**
  * The history list's card data.
@@ -57,6 +59,7 @@ export async function enrichWorkoutCards(
       "we.workout_id as workout_id",
       "we.id as workout_exercise_id",
       "et.title as title",
+      "et.title_zh as title_zh",
       "et.slug as slug",
       "ws.completed_at as completed_at",
       "ws.reps as reps",
@@ -78,6 +81,7 @@ export async function enrichWorkoutCards(
   // Rows are ordered by exercise position, so a workout's exercises arrive in
   // order; sets of different workouts interleave, which is why the fold tracks
   // the last exercise per workout rather than assuming adjacency.
+  const locale = await getLocaleSafe();
   const byWorkout = new Map<string, WorkoutAccumulator>();
   for (const row of rows) {
     let accumulator = byWorkout.get(row.workout_id);
@@ -86,7 +90,11 @@ export async function enrichWorkoutCards(
       byWorkout.set(row.workout_id, accumulator);
     }
     if (row.workout_exercise_id !== accumulator.lastExerciseId) {
-      accumulator.exercises.push({ title: row.title, slug: row.slug, sets: [] });
+      accumulator.exercises.push({
+        title: pickText(locale, row.title, row.title_zh),
+        slug: row.slug,
+        sets: [],
+      });
       accumulator.lastExerciseId = row.workout_exercise_id;
     }
     // Incomplete sets are real rows without a completed_at; they are not part of

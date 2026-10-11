@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useI18n } from "@/lib/i18n/context";
 
 export type ExerciseTab = {
   /** Stable id used in `?tab=`, and in the ARIA tab/tabpanel wiring. */
@@ -37,13 +38,15 @@ export type ExerciseTab = {
 export function ExerciseTabs({
   tabs,
   activeId,
-  label = "Exercise sections",
+  label,
 }: {
   tabs: ExerciseTab[];
   /** The initial selection, resolved from `?tab=` on the server. */
   activeId: string;
+  /** Overrides the tab list's accessible name, for a page with other tab strips. */
   label?: string;
 }) {
+  const { t } = useI18n();
   // `from` records the prop this state came from, so a server navigation that
   // resolves a different `?tab=` — a no-JS tab click, a Statistics range link, a
   // soft navigation from another page — is noticed during render and the local
@@ -86,7 +89,7 @@ export function ExerciseTabs({
     <>
       <div
         role="tablist"
-        aria-label={label}
+        aria-label={label ?? t("exerciseDetail.tabs.label")}
         className="mt-8 flex overflow-x-auto border-b border-zinc-200"
       >
         {tabs.map((tab, index) => {

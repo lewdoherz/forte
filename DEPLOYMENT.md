@@ -79,9 +79,45 @@ authority; no ORM owns or generates the schema.
   so an opened workout survives a later reload without making general account
   data available offline. A fresh install still cannot cold start offline. Do
   not configure a CDN to serve the app shell as if it were offline-capable.
+- **The verification harness creates its embedded cluster as UTF8.** `initdb` on
+  Windows defaults to the console code page (WIN1252), and such a cluster rejects
+  the Chinese text migration 0017 stores with *"character … has no equivalent in
+  encoding"*. `scripts/verify-browser.ts` and `scripts/verify-postgres.ts` pass
+  `initdbFlags: ["--encoding=UTF8"]`. The collation is deliberately left at the
+  platform default, because changing it would reorder anything sorted by text.
+  CI already gets UTF8 from `postgres:18-alpine`.
 - **Connection pooling:** a single `pg.Pool` per server process. If your platform
   runs many instances, use a pooler (e.g. PgBouncer) and set `DATABASE_URL`
   to it.
+
+## Languages
+
+The interface is English or Simplified Chinese (`en`, `zh-CN`). Migrations 0016
+and 0017 add the storage and the translated catalog; `vercel.json` already runs
+`db:migrate` before the build, so a deploy needs no extra step and no new
+environment variable.
+
+| Concern | Where it lives |
+|---|---|
+| Rendering | `forte_locale` cookie, read on the server before the first byte |
+| Email | `app_user.locale`, because mail is sent from a background task with no request |
+| Wording | `lib/i18n/dictionaries/{en,zh-CN}/<area>.ts`, flat typed key maps |
+| Formatting | `lib/i18n/format.ts` — numbers, dates and durations per locale |
+| Catalog content | `exercise_template.title_zh`/`how_to_zh`, `muscle_group.display_name_zh`, `equipment.display_name_zh` |
+
+The cookie is deliberately **not** `httpOnly`: the service worker's offline
+fallback page has no server render and reads it to choose a language. It carries a
+language tag and nothing else, so this exposes no secret.
+
+Adding a third language means adding a `LOCALES` entry, a dictionary module and a
+complete key set; the compiler then reports every missing message, and
+`zh-CN/index.ts`'s `Messages` annotation is what keeps a locale complete. Do not
+add a language without a full dictionary — a partial one renders message keys.
+
+The exercise catalog translation (0017) is hand-written data, not generated: the
+Chinese bodies are the only source for those strings, unlike 0011, which is
+regenerated from the git-ignored `exercises/` directory. Re-running
+`scripts/import-exercises.ts` rewrites the English columns only.
 
 ## Native hosted clients
 

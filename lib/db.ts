@@ -22,9 +22,10 @@ import type {
  * schema; Kysely is the query layer only.
  */
 export interface Database {
-  // `timezone` (0006_user_timezone.sql) is application-only: it is not part of
-  // Better Auth's user model, so it is not on the shared `AppUser` row type.
-  app_user: AppUser & { timezone: string };
+  // `timezone` (0006_user_timezone.sql) and `locale` (0016_localization.sql)
+  // are application-only: they are not part of Better Auth's user model, so
+  // they are not on the shared `AppUser` row type.
+  app_user: AppUser & { timezone: string; locale: string };
   session: Session;
   account: Account;
   verification: Verification;
@@ -43,6 +44,11 @@ export interface Database {
     // separate list, and a column present on only one of the two makes every
     // `selectAll` fail to typecheck.
     how_to: string | null;
+    // Added by 0016, populated for the catalog by 0017. Nullable in both
+    // directions: custom exercises have no translation, and a renderer must
+    // fall back to the English column rather than show nothing.
+    title_zh: string | null;
+    how_to_zh: string | null;
     is_custom: boolean;
     owner_id: string | null;
     archived_at: Date | null;

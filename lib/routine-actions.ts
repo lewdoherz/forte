@@ -5,11 +5,12 @@ import { z } from "zod";
 import { db } from "./db";
 import { reportFailure } from "./log";
 import { requireSessionUserId } from "./auth-session";
+import { getI18n } from "./i18n/server";
 import {
   createRoutine,
   deleteRoutine as deleteRoutineById,
   duplicateRoutine as duplicateRoutineById,
-  routineInputSchema,
+  routineInputSchemaFor,
   updateRoutine,
   type RoutineInput,
 } from "./routines";
@@ -21,9 +22,10 @@ const EXPECTED_FAILURES = ["not_authorized", "invalid_exercise", "not_found"] as
 
 export async function saveRoutine(input: RoutineInput): Promise<RoutineActionState> {
   const userId = await requireSessionUserId();
-  const parsed = routineInputSchema.safeParse(input);
+  const { t } = await getI18n();
+  const parsed = routineInputSchemaFor(t).safeParse(input);
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+    return { error: parsed.error.issues[0]?.message ?? t("routines.error.invalidInput") };
   }
 
   try {
@@ -38,46 +40,48 @@ export async function saveRoutine(input: RoutineInput): Promise<RoutineActionSta
     return { id: created.id };
   } catch (e) {
     if (e instanceof Error && e.message === "not_authorized") {
-      return { error: "You don't have permission to modify this routine." };
+      return { error: t("routines.error.notAllowedModify") };
     }
     if (e instanceof Error && e.message === "invalid_exercise") {
-      return { error: "One or more exercises are not available to you." };
+      return { error: t("routines.error.invalidExercise") };
     }
     reportFailure("saveRoutine", e, EXPECTED_FAILURES);
-    return { error: "Could not save the routine." };
+    return { error: t("routines.error.saveFailed") };
   }
 }
 
 export async function duplicateRoutine(id: string): Promise<RoutineActionState> {
   const userId = await requireSessionUserId();
+  const { t } = await getI18n();
   const parsedId = z.string().uuid().safeParse(id);
-  if (!parsedId.success) return { error: "Invalid routine." };
+  if (!parsedId.success) return { error: t("routines.error.invalidRoutine") };
   try {
     const copy = await duplicateRoutineById(db, userId, parsedId.data);
     revalidatePath("/routines");
     return { id: copy.id };
   } catch (e) {
     if (e instanceof Error && e.message === "not_found") {
-      return { error: "That routine no longer exists." };
+      return { error: t("routines.error.notFound") };
     }
     reportFailure("duplicateRoutine", e, EXPECTED_FAILURES);
-    return { error: "Could not duplicate the routine." };
+    return { error: t("routines.error.duplicateFailed") };
   }
 }
 
 export async function deleteRoutine(id: string): Promise<RoutineActionState> {
   const userId = await requireSessionUserId();
+  const { t } = await getI18n();
   const parsedId = z.string().uuid().safeParse(id);
-  if (!parsedId.success) return { error: "Invalid routine." };
+  if (!parsedId.success) return { error: t("routines.error.invalidRoutine") };
   try {
     await deleteRoutineById(db, userId, parsedId.data);
     revalidatePath("/routines");
     return {};
   } catch (e) {
     if (e instanceof Error && e.message === "not_authorized") {
-      return { error: "You don't have permission to delete this routine." };
+      return { error: t("routines.error.notAllowedDelete") };
     }
     reportFailure("deleteRoutine", e, EXPECTED_FAILURES);
-    return { error: "Could not delete the routine." };
+    return { error: t("routines.error.deleteFailed") };
   }
 }

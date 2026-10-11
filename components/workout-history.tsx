@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { loadWorkoutPageAction } from "@/lib/workout-actions";
 import { WorkoutCard, type WorkoutCardData } from "@/components/workout-card";
+import { useI18n } from "@/lib/i18n/context";
 
 /**
  * The completed-workout list, newest first.
@@ -28,6 +29,7 @@ export function WorkoutHistory({
   exerciseId: string | null;
   timeZone: string;
 }) {
+  const { t } = useI18n();
   const [items, setItems] = useState(initial);
   const [cursor, setCursor] = useState(initialCursor);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +48,7 @@ export function WorkoutHistory({
         setCursor(page.nextCursor);
         setError(null);
       } catch {
-        setError("Could not load older workouts.");
+        setError(t("workouts.history.loadError"));
       }
     });
   }
@@ -74,10 +76,10 @@ export function WorkoutHistory({
           disabled={pending}
           className="mt-4 h-11 w-full rounded-md border border-zinc-300 text-sm font-medium hover:bg-zinc-100 disabled:opacity-60"
         >
-          {pending ? "Loading…" : "Load older workouts"}
+          {pending ? t("common.loading") : t("workouts.history.loadOlder")}
         </button>
       ) : (
-        <p className="mt-4 text-center text-sm text-zinc-500">That is every workout.</p>
+        <p className="mt-4 text-center text-sm text-zinc-500">{t("workouts.history.end")}</p>
       )}
     </>
   );

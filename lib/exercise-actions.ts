@@ -9,11 +9,12 @@ import { requireSessionUserId } from "./auth-session";
 import {
   createCustomExercise,
   deleteCustomExercise,
-  exerciseInputSchema,
+  exerciseInputSchemaFor,
   listExercises,
   updateCustomExercise,
   type ExerciseListFilters,
 } from "./exercises";
+import { getI18n } from "./i18n/server";
 import { toLibraryExercise, type LibraryExercise } from "./exercise-library";
 
 export type ExerciseActionState = { error?: string };
@@ -54,7 +55,8 @@ export async function createExercise(
   formData: FormData,
 ): Promise<ExerciseActionState> {
   const userId = await requireSessionUserId();
-  const parsed = exerciseInputSchema.safeParse({
+  const { t } = await getI18n();
+  const parsed = exerciseInputSchemaFor(t).safeParse({
     title: formData.get("title"),
     exercise_type: formData.get("exercise_type"),
     primary_muscle: formData.get("primary_muscle"),
@@ -63,14 +65,14 @@ export async function createExercise(
     ...optionalFields(formData),
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+    return { error: parsed.error.issues[0]?.message ?? t("exercises.error.invalidInput") };
   }
 
   let createdId: string;
   try {
     createdId = (await createCustomExercise(db, userId, parsed.data)).id;
   } catch {
-    return { error: "Could not create the exercise." };
+    return { error: t("exercises.error.createFailed") };
   }
   // redirect() deliberately sits OUTSIDE the try: it signals by throwing
   // NEXT_REDIRECT, which a catch block would swallow — reporting a failure
@@ -85,9 +87,10 @@ export async function updateExercise(
   formData: FormData,
 ): Promise<ExerciseActionState> {
   const userId = await requireSessionUserId();
+  const { t } = await getI18n();
   const parsedId = z.string().uuid().safeParse(id);
-  if (!parsedId.success) return { error: "Invalid exercise." };
-  const parsed = exerciseInputSchema.safeParse({
+  if (!parsedId.success) return { error: t("exercises.error.invalidExercise") };
+  const parsed = exerciseInputSchemaFor(t).safeParse({
     title: formData.get("title"),
     exercise_type: formData.get("exercise_type"),
     primary_muscle: formData.get("primary_muscle"),
@@ -96,15 +99,15 @@ export async function updateExercise(
     ...optionalFields(formData),
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+    return { error: parsed.error.issues[0]?.message ?? t("exercises.error.invalidInput") };
   }
 
   try {
     await updateCustomExercise(db, userId, parsedId.data, parsed.data);
   } catch (e) {
     return e instanceof Error && e.message === "not_authorized"
-      ? { error: "You don't have permission to edit this exercise." }
-      : { error: "Could not update the exercise." };
+      ? { error: t("exercises.error.notAuthorized") }
+      : { error: t("exercises.error.updateFailed") };
   }
   // Outside the try — see createExercise.
   revalidatePath("/exercises");

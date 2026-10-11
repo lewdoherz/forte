@@ -6,16 +6,19 @@ import type { ExerciseType, RoutineTree, SetType } from "@/schema/types";
 import { SET_TYPES } from "@/schema/types";
 import { normaliseSupersetKeys } from "@/lib/supersets";
 import { saveRoutine } from "@/lib/routine-actions";
+import { useI18n } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n";
 import type { VocabularyEntry } from "@/components/exercise-filter-form";
 import { ExercisePicker, type PickerExercise } from "@/components/exercise-picker";
 import { RoutineSummaryCard } from "@/components/routine-summary-card";
 import { RoutineSummaryPanel } from "@/components/routine-summary-panel";
 
-const SET_TYPE_LABELS: Record<SetType, string> = {
-  warmup: "Warm-up",
-  normal: "Normal",
-  failure: "Failure",
-  dropset: "Drop set",
+/** The set-type option labels, resolved through the active dictionary. */
+const SET_TYPE_KEYS: Record<SetType, MessageKey> = {
+  warmup: "routines.setType.warmup",
+  normal: "routines.setType.normal",
+  failure: "routines.setType.failure",
+  dropset: "routines.setType.dropset",
 };
 
 type SetDraft = {
@@ -92,40 +95,56 @@ const TARGET_FIELDS_BY_TYPE: Record<ExerciseType, readonly SetTargetField[]> = {
 
 /**
  * The form input for a target, reusing the logger's units and wording: kg,
- * reps, seconds and metres, with weight the only decimal.
+ * reps, seconds and metres, with weight the only decimal. Labels and
+ * placeholders are dictionary keys, resolved with the active translator.
  */
 const TARGET_FIELD_INPUTS: Record<
   SetTargetField,
   {
     draftKey: SetDraftValueKey;
-    label: string;
-    placeholder: string;
+    labelKey: MessageKey;
+    placeholderKey: MessageKey;
     inputMode: "numeric" | "decimal";
     step?: string;
   }
 > = {
   weight: {
     draftKey: "weight_kg",
-    label: "Weight in kilograms",
-    placeholder: "kg",
+    labelKey: "routines.target.weight",
+    placeholderKey: "common.unit.kg",
     inputMode: "decimal",
     step: "0.001",
   },
-  reps: { draftKey: "reps", label: "Reps", placeholder: "reps", inputMode: "numeric" },
+  reps: {
+    draftKey: "reps",
+    labelKey: "routines.target.reps",
+    placeholderKey: "common.unit.reps",
+    inputMode: "numeric",
+  },
   duration: {
     draftKey: "duration_seconds",
-    label: "Duration in seconds",
-    placeholder: "s",
+    labelKey: "routines.target.duration",
+    placeholderKey: "common.unit.seconds",
     inputMode: "numeric",
   },
   distance: {
     draftKey: "distance_meters",
-    label: "Distance in metres",
-    placeholder: "m",
+    labelKey: "routines.target.distance",
+    placeholderKey: "common.unit.m",
     inputMode: "numeric",
   },
-  floors: { draftKey: "floors", label: "Floors", placeholder: "floors", inputMode: "numeric" },
-  steps: { draftKey: "steps", label: "Steps", placeholder: "steps", inputMode: "numeric" },
+  floors: {
+    draftKey: "floors",
+    labelKey: "routines.target.floors",
+    placeholderKey: "common.unit.floors",
+    inputMode: "numeric",
+  },
+  steps: {
+    draftKey: "steps",
+    labelKey: "routines.target.steps",
+    placeholderKey: "common.unit.steps",
+    inputMode: "numeric",
+  },
 };
 
 type ExerciseDraft = {
@@ -181,6 +200,8 @@ interface RoutineEditorProps {
  */
 export function RoutineEditor({ library, muscles, equipment, initial }: RoutineEditorProps) {
   const router = useRouter();
+  const i18n = useI18n();
+  const { t } = i18n;
   const [title, setTitle] = useState(initial?.title ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [exercises, setExercises] = useState<ExerciseDraft[]>(() =>
@@ -454,7 +475,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
 
   async function onSave() {
     if (title.trim() === "") {
-      setError("Name is required.");
+      setError(t("routines.editor.nameRequired"));
       return;
     }
     setError(null);
@@ -508,7 +529,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <div className="min-w-0 space-y-6">
           <label className="block space-y-1">
-            <span className="text-sm font-medium">Name</span>
+            <span className="text-sm font-medium">{t("routines.editor.name")}</span>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -519,7 +540,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
           </label>
 
           <label className="block space-y-1">
-            <span className="text-sm font-medium">Notes (optional)</span>
+            <span className="text-sm font-medium">{t("routines.editor.notesOptional")}</span>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -529,11 +550,9 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
           </label>
 
           <div>
-            <h2 className="text-sm font-medium">Exercises</h2>
+            <h2 className="text-sm font-medium">{t("routines.editor.exercises")}</h2>
             {exercises.length === 0 ? (
-              <p className="mt-2 text-sm text-zinc-500">
-                Add an exercise from the Library to get started.
-              </p>
+              <p className="mt-2 text-sm text-zinc-500">{t("routines.editor.emptyLibraryHint")}</p>
             ) : (
               <ol className="mt-2 space-y-3">
                 {exercises.map((ex, i) => (
@@ -551,16 +570,16 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
                         <button
                           type="button"
                           onPointerDown={(e) => onHandlePointerDown(i, e)}
-                          aria-label="Drag to reorder exercise"
-                          title="Drag to reorder"
+                          aria-label={t("routines.editor.dragHandle")}
+                          title={t("routines.editor.dragTitle")}
                           className="flex h-9 w-7 shrink-0 touch-none cursor-grab items-center justify-center rounded text-zinc-400 hover:text-zinc-600 active:cursor-grabbing"
                         >
                           ⠿
                         </button>
-                        <span className="min-w-0 break-words font-medium">{i + 1}. {libraryById[ex.template_id]?.title ?? "Exercise"}</span>
+                        <span className="min-w-0 break-words font-medium">{i + 1}. {libraryById[ex.template_id]?.title ?? t("routines.editor.unknownExercise")}</span>
                         {ex.superset_key ? (
                           <span className="shrink-0 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-900">
-                            SS
+                            {t("routines.supersetBadge")}
                           </span>
                         ) : null}
                       </span>
@@ -569,26 +588,26 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
                           <button
                             type="button"
                             onClick={() => ungroup(i)}
-                            aria-label="Remove from superset"
+                            aria-label={t("routines.editor.removeFromSuperset")}
                             className="flex h-9 items-center rounded border border-sky-300 px-2 text-xs text-sky-900"
                           >
-                            Ungroup
+                            {t("routines.editor.ungroup")}
                           </button>
                         ) : i < exercises.length - 1 ? (
                           <button
                             type="button"
                             onClick={() => groupWithNext(i)}
-                            aria-label="Superset with the next exercise"
+                            aria-label={t("routines.editor.groupWithNext")}
                             className="flex h-9 items-center rounded border px-2 text-xs"
                           >
-                            +SS
+                            {t("routines.editor.supersetShort")}
                           </button>
                         ) : null}
                         <button
                           type="button"
                           onClick={() => moveExercise(i, -1)}
                           disabled={i === 0}
-                          aria-label="Move exercise up"
+                          aria-label={t("routines.editor.moveUp")}
                           className="flex h-9 w-9 items-center justify-center rounded border text-sm disabled:opacity-40"
                         >
                           ↑
@@ -597,7 +616,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
                           type="button"
                           onClick={() => moveExercise(i, 1)}
                           disabled={i === exercises.length - 1}
-                          aria-label="Move exercise down"
+                          aria-label={t("routines.editor.moveDown")}
                           className="flex h-9 w-9 items-center justify-center rounded border text-sm disabled:opacity-40"
                         >
                           ↓
@@ -605,7 +624,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
                         <button
                           type="button"
                           onClick={() => removeExercise(i)}
-                          aria-label="Remove exercise"
+                          aria-label={t("routines.editor.removeExercise")}
                           className="flex h-9 w-9 items-center justify-center rounded border border-red-200 text-sm text-red-700"
                         >
                           ✕
@@ -615,7 +634,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
 
                     <div className="mt-2 flex flex-wrap gap-3">
                       <label className="flex items-center gap-1 text-xs text-zinc-600">
-                        Rest (s)
+                        {t("routines.editor.restLabel", { unit: t("common.unit.seconds") })}
                         <input
                           type="number"
                           min={0}
@@ -625,7 +644,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
                         />
                       </label>
                       <label className="flex flex-1 items-center gap-1 text-xs text-zinc-600">
-                        Notes
+                        {t("routines.editor.notes")}
                         <input
                           value={ex.notes}
                           onChange={(e) => patchExercise(i, { notes: e.target.value })}
@@ -640,11 +659,13 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
                           <select
                             value={s.set_type}
                             onChange={(e) => patchSet(i, j, { set_type: e.target.value as SetType })}
-                            aria-label="Set type"
+                            aria-label={t("routines.editor.setType")}
                             className="h-10 rounded border border-zinc-300 px-2"
                           >
-                            {SET_TYPES.map((t) => (
-                              <option key={t} value={t}>{SET_TYPE_LABELS[t]}</option>
+                            {SET_TYPES.map((setType) => (
+                              <option key={setType} value={setType}>
+                                {t(SET_TYPE_KEYS[setType])}
+                              </option>
                             ))}
                           </select>
                           {targetFieldsFor(ex.template_id).map((field) => {
@@ -656,8 +677,8 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
                                 inputMode={input.inputMode}
                                 min={0}
                                 step={input.step}
-                                placeholder={input.placeholder}
-                                aria-label={input.label}
+                                placeholder={t(input.placeholderKey)}
+                                aria-label={t(input.labelKey)}
                                 value={s[input.draftKey]}
                                 onChange={(e) => patchSetValue(i, j, input.draftKey, e.target.value)}
                                 className="h-10 w-20 rounded border border-zinc-300 px-2"
@@ -667,10 +688,10 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
                           <button
                             type="button"
                             onClick={() => removeSet(i, j)}
-                            aria-label="Remove set"
+                            aria-label={t("routines.editor.removeSet")}
                             className="flex h-10 items-center rounded px-2 text-xs text-red-600 hover:bg-red-50"
                           >
-                            remove
+                            {t("common.remove")}
                           </button>
                         </div>
                       ))}
@@ -679,7 +700,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
                         onClick={() => addSet(i)}
                         className="flex h-10 items-center rounded border border-dashed border-zinc-300 px-3 text-sm text-zinc-600 hover:bg-zinc-50"
                       >
-                        + Add set
+                        {t("routines.editor.addSet")}
                       </button>
                     </div>
                   </li>
@@ -695,7 +716,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
               disabled={saving}
               className="h-11 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-60"
             >
-              {saving ? "Saving…" : initial ? "Save changes" : "Create routine"}
+              {saving ? t("common.saving") : initial ? t("common.saveChanges") : t("routines.create")}
             </button>
           </div>
         </div>
@@ -708,7 +729,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
           <RoutineSummaryCard exercises={summaryExercises} onOpen={() => setSummaryOpen(true)} />
 
           <section className="space-y-2">
-            <h2 className="text-sm font-medium">Library</h2>
+            <h2 className="text-sm font-medium">{t("routines.editor.library")}</h2>
             <ExercisePicker
               exercises={library}
               muscles={muscles}
@@ -725,6 +746,7 @@ export function RoutineEditor({ library, muscles, equipment, initial }: RoutineE
           exercises={summaryExercises}
           muscles={muscles}
           onClose={() => setSummaryOpen(false)}
+          i18n={i18n}
         />
       ) : null}
     </div>

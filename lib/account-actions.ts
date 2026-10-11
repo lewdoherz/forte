@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import { auth } from "./auth-server";
 import { db } from "./db";
 import { requireSessionUserId } from "./auth-session";
-import { getUserProfile, updateUserProfile, userProfileInputSchema } from "./users";
+import { getUserProfile, updateUserProfile, userProfileInputSchemaFor } from "./users";
+import { getI18n } from "./i18n/server";
 import { reportFailure } from "./log";
 
 export type AccountActionState = { error?: string } | { ok: true };
@@ -53,12 +54,15 @@ export async function updateAccount(
   formData: FormData,
 ): Promise<AccountActionState> {
   const userId = await requireSessionUserId();
-  const parsed = userProfileInputSchema.safeParse({
+  // The issues and the failure text end up in the form's alert, so they are
+  // resolved in the reader's language rather than left as English literals.
+  const { t } = await getI18n();
+  const parsed = userProfileInputSchemaFor(t).safeParse({
     displayName: formData.get("displayName"),
     timeZone: formData.get("timeZone"),
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+    return { error: parsed.error.issues[0]?.message ?? t("account.errors.invalidInput") };
   }
 
   try {
@@ -73,7 +77,7 @@ export async function updateAccount(
     // is written directly against the owner's row.
     await updateUserProfile(db, userId, { timeZone: parsed.data.timeZone });
   } catch {
-    return { error: "Could not save your settings." };
+    return { error: t("account.errors.saveFailed") };
   }
 
   revalidatePath("/account");
@@ -117,16 +121,17 @@ export async function deleteAccountAction(
   formData: FormData,
 ): Promise<AccountActionState> {
   await requireSessionUserId();
+  const { t } = await getI18n();
 
   if (String(formData.get("confirmation") ?? "").trim() !== "DELETE") {
-    return { error: "Type DELETE in capitals to confirm." };
+    return { error: t("account.errors.confirmation") };
   }
 
   try {
     await auth.api.deleteUser({ body: { callbackURL: "/" }, headers: await headers() });
   } catch (error) {
     reportFailure("deleteUser", error);
-    return { error: "Could not delete the account. Try again." };
+    return { error: t("account.errors.deleteFailed") };
   }
 
   redirect("/");

@@ -1,7 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import { ExerciseThumbnail } from "@/components/exercise-media";
-import { formatDuration } from "@/lib/format";
-import { formatDateTimeInTimeZone } from "@/lib/timezone";
+import { useI18n } from "@/lib/i18n/context";
+import { formatDateTime, formatDuration, formatNumber } from "@/lib/i18n/format";
 import { formatVolumeKg } from "@/lib/workout-stats";
 
 /** One exercise as a history card previews it. */
@@ -40,10 +42,6 @@ export interface WorkoutCardData {
 /** How many exercises a card previews before summarising the rest. */
 const PREVIEW_EXERCISES = 3;
 
-function setCountLabel(count: number): string {
-  return `${count} ${count === 1 ? "set" : "sets"}`;
-}
-
 /**
  * One workout in the history list. The whole card is the link, which is the
  * list's existing convention — so `See N more exercises` navigates to the
@@ -53,6 +51,10 @@ function setCountLabel(count: number): string {
  *
  * It renders no individual sets: the card stays compact and scannable, and the
  * per-set record lives on the workout's own page.
+ *
+ * The language comes from context rather than a prop: the card is rendered both
+ * by the server page and by the client history list, and the provider in the
+ * root layout gives both the same dictionary.
  */
 export function WorkoutCard({
   card,
@@ -65,6 +67,7 @@ export function WorkoutCard({
   /** An in-progress workout: the card links back into the logger. */
   active?: boolean;
 }) {
+  const { locale, t } = useI18n();
   const preview = card.exercises.slice(0, PREVIEW_EXERCISES);
   const remaining = Math.max(0, card.exerciseCount - preview.length);
 
@@ -76,21 +79,25 @@ export function WorkoutCard({
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <span className="min-w-0 break-words font-medium">{card.title}</span>
         <span className="shrink-0 text-xs text-zinc-500">
-          {formatDateTimeInTimeZone(card.started_at, timeZone)}
+          {formatDateTime(locale, card.started_at, timeZone)}
         </span>
       </div>
       {active ? (
-        <div className="mt-0.5 text-xs font-medium text-amber-700">In progress</div>
+        <div className="mt-0.5 text-xs font-medium text-amber-700">
+          {t("workouts.card.inProgress")}
+        </div>
       ) : null}
 
       <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
         <div className="flex items-baseline gap-1.5">
-          <dt className="text-zinc-500">Duration</dt>
-          <dd className="font-medium tabular-nums">{formatDuration(card.durationSeconds)}</dd>
+          <dt className="text-zinc-500">{t("workouts.metric.duration")}</dt>
+          <dd className="font-medium tabular-nums">
+            {formatDuration(locale, card.durationSeconds)}
+          </dd>
         </div>
         <div className="flex items-baseline gap-1.5">
-          <dt className="text-zinc-500">Volume</dt>
-          <dd className="font-medium tabular-nums">{formatVolumeKg(card.volumeKg)}</dd>
+          <dt className="text-zinc-500">{t("workouts.metric.volume")}</dt>
+          <dd className="font-medium tabular-nums">{formatVolumeKg(card.volumeKg, locale)}</dd>
         </div>
         {/* Omitted, not zeroed, when the count is unavailable: an in-progress
             workout has no record yet, and a fabricated "0" would read as a
@@ -98,9 +105,11 @@ export function WorkoutCard({
             medal marks the workouts that actually earned something. */}
         {card.recordCount === null ? null : (
           <div className="flex items-baseline gap-1.5">
-            <dt className="text-zinc-500">Records</dt>
+            <dt className="text-zinc-500">{t("workouts.metric.records")}</dt>
             <dd className="font-medium tabular-nums">
-              {card.recordCount > 0 ? `🏅 ${card.recordCount}` : "0"}
+              {card.recordCount > 0
+                ? `🏅 ${formatNumber(locale, card.recordCount)}`
+                : formatNumber(locale, 0)}
             </dd>
           </div>
         )}
@@ -118,7 +127,7 @@ export function WorkoutCard({
               </span>
               <span className="min-w-0 flex-1 truncate text-sm">{exercise.title}</span>
               <span className="shrink-0 text-xs text-zinc-500">
-                {setCountLabel(exercise.completedSets)}
+                {t("common.plural.sets", { count: exercise.completedSets })}
               </span>
             </li>
           ))}
@@ -127,7 +136,7 @@ export function WorkoutCard({
 
       {remaining > 0 ? (
         <div className="mt-2 text-sm text-zinc-500">
-          See {remaining} more {remaining === 1 ? "exercise" : "exercises"}
+          {t("workouts.card.seeMore", { count: remaining })}
         </div>
       ) : null}
     </Link>

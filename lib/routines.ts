@@ -2,6 +2,9 @@ import { z } from "zod";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "./db";
 import { normaliseSupersetKeys } from "./supersets";
+import { pickNullableText, pickText } from "./i18n/content";
+import { getLocaleSafe } from "./i18n/server";
+import { DEFAULT_LOCALE, createTranslator, getMessages, type Translate } from "./i18n";
 import {
   SET_TYPES,
   type Routine,
@@ -10,49 +13,76 @@ import {
   type RoutineTree,
 } from "@/schema/types";
 
-const weightString = z
-  .string()
-  .trim()
-  .refine((s) => /^\d{1,4}(\.\d{1,3})?$/.test(s), "Weight must be a non-negative number");
+/** The English wording, for the schemas that have no request locale. */
+const DEFAULT_TRANSLATOR = createTranslator(DEFAULT_LOCALE, getMessages(DEFAULT_LOCALE));
 
-const routineSetInputSchema = z.object({
-  set_type: z.enum(SET_TYPES),
-  reps: z.number().int().min(0).nullish(),
-  weight_kg: weightString.nullish(),
-  // A routine prescribes targets, not results. Only the fields the exercise
-  // type uses are supplied by the editor; the rest arrive as null. Seconds and
-  // metres are whole units, matching the integer columns.
-  duration_seconds: z.number().int().min(0).nullish(),
-  distance_meters: z.number().int().min(0).nullish(),
-  // Sidecar metrics for the types that count something other than reps, weight,
-  // seconds or metres — currently floors and steps. The same `SetMetrics` the
-  // completed side stores, so `floors_duration` and `steps_duration` are
-  // prescribable. Optional: a type that uses none sends an empty object.
-  metrics: z
-    .object({
-      geospatial: z.unknown().nullish(),
-      steps: z.number().int().min(0).nullish(),
-      floors: z.number().int().min(0).nullish(),
-    })
-    .nullish(),
-});
+/** A prescribed weight string, with `t` wording the rejection the reader sees. */
+function weightStringFor(t: Translate) {
+  return z
+    .string()
+    .trim()
+    .refine((s) => /^\d{1,4}(\.\d{1,3})?$/.test(s), t("routines.validation.weightInvalid"));
+}
 
-const routineExerciseInputSchema = z.object({
-  template_id: z.string().uuid(),
-  // Consecutive exercises sharing a key are performed together. Optional: most
-  // exercises are not supersetted.
-  superset_key: z.string().trim().min(1).max(40).nullish(),
-  rest_seconds: z.number().int().min(0).nullish(),
-  notes: z.string().trim().max(500).nullish(),
-  sets: z.array(routineSetInputSchema).max(50).default([]),
-});
+/**
+ * The routine editor's input, with the issues worded by `t`.
+ *
+ * `saveRoutine` returns the schema's own issue text, so a Chinese reader must
+ * not be answered by an English validation error. Structure and bounds are
+ * unchanged; only the sentences the reader can see are translated.
+ */
+export function routineInputSchemaFor(t: Translate) {
+  const weightString = weightStringFor(t);
 
-export const routineInputSchema = z.object({
-  id: z.string().uuid().optional(),
-  title: z.string().trim().min(1, "Name is required").max(120, "Name is too long"),
-  notes: z.string().trim().max(2000).nullish(),
-  exercises: z.array(routineExerciseInputSchema).max(100),
-});
+  const routineSetInputSchema = z.object({
+    set_type: z.enum(SET_TYPES),
+    reps: z.number().int().min(0).nullish(),
+    weight_kg: weightString.nullish(),
+    // A routine prescribes targets, not results. Only the fields the exercise
+    // type uses are supplied by the editor; the rest arrive as null. Seconds and
+    // metres are whole units, matching the integer columns.
+    duration_seconds: z.number().int().min(0).nullish(),
+    distance_meters: z.number().int().min(0).nullish(),
+    // Sidecar metrics for the types that count something other than reps, weight,
+    // seconds or metres — currently floors and steps. The same `SetMetrics` the
+    // completed side stores, so `floors_duration` and `steps_duration` are
+    // prescribable. Optional: a type that uses none sends an empty object.
+    metrics: z
+      .object({
+        geospatial: z.unknown().nullish(),
+        steps: z.number().int().min(0).nullish(),
+        floors: z.number().int().min(0).nullish(),
+      })
+      .nullish(),
+  });
+
+  const routineExerciseInputSchema = z.object({
+    template_id: z.string().uuid(),
+    // Consecutive exercises sharing a key are performed together. Optional: most
+    // exercises are not supersetted.
+    superset_key: z.string().trim().min(1).max(40).nullish(),
+    rest_seconds: z.number().int().min(0).nullish(),
+    notes: z.string().trim().max(500).nullish(),
+    sets: z.array(routineSetInputSchema).max(50).default([]),
+  });
+
+  return z.object({
+    id: z.string().uuid().optional(),
+    title: z
+      .string()
+      .trim()
+      .min(1, t("routines.validation.nameRequired"))
+      .max(120, t("routines.validation.nameTooLong")),
+    notes: z.string().trim().max(2000).nullish(),
+    exercises: z.array(routineExerciseInputSchema).max(100),
+  });
+}
+
+/**
+ * The English-message instance, for callers that have no request locale — the
+ * verification suites drive this module directly, outside any request scope.
+ */
+export const routineInputSchema = routineInputSchemaFor(DEFAULT_TRANSLATOR);
 
 export type RoutineInput = z.infer<typeof routineInputSchema>;
 
@@ -63,8 +93,8 @@ export interface RoutineListItem extends Routine {
 }
 
 /** The user's routines with an exercise count, ordered by title. */
-export function listRoutines(db: Kysely<Database>, userId: string) {
-  return db
+export async function listRoutines(db: Kysely<Database>, userId: string) {
+  const rows = await db
     .selectFrom("routine as r")
     .select(["r.id", "r.owner_id", "r.folder_id", "r.title", "r.notes", "r.position", "r.created_at", "r.updated_at"])
     .select(
@@ -75,10 +105,12 @@ export function listRoutines(db: Kysely<Database>, userId: string) {
     // The list card previews the routine by its exercise names, so the names
     // are aggregated here in `position` order — one query for every routine,
     // never one per card. `array(...)` yields an empty array (not null) for a
-    // routine with no exercises.
+    // routine with no exercises. Each entry carries both the English title and
+    // its translation, so the locale-aware pick below keeps the aggregation in
+    // SQL while the choice of language stays in JavaScript.
     .select(
-      sql<string[]>`array(
-        select t.title
+      sql<{ title: string; title_zh: string | null }[]>`array(
+        select jsonb_build_object('title', t.title, 'title_zh', t.title_zh)
         from routine_exercise re
         join exercise_template t on t.id = re.template_id
         where re.routine_id = r.id
@@ -86,8 +118,18 @@ export function listRoutines(db: Kysely<Database>, userId: string) {
       )`.as("exercise_names"),
     )
     .where("r.owner_id", "=", userId)
+    // Ordered by the routine's own (user-authored) title, which is never
+    // translated.
     .orderBy("r.title", "asc")
     .execute();
+
+  const locale = await getLocaleSafe();
+  return rows.map((row) => ({
+    ...row,
+    exercise_names: row.exercise_names.map((entry) =>
+      pickText(locale, entry.title, entry.title_zh),
+    ),
+  }));
 }
 
 /** A routine (owner-scoped) with its ordered exercises and planned sets. */
@@ -122,7 +164,19 @@ export async function getRoutineTree(
         .where((eb) => eb.or([eb("owner_id", "is", null), eb("owner_id", "=", userId)]))
         .execute()
     : [];
-  const templateMap = new Map(templates.map((t) => [t.id, t]));
+  const locale = await getLocaleSafe();
+  const templateMap = new Map(
+    templates.map((t) => {
+      // Field names are preserved (`title`, `how_to`) so every renderer keeps
+      // reading the same keys; only the language changes.
+      const localized = {
+        ...t,
+        title: pickText(locale, t.title, t.title_zh),
+        how_to: pickNullableText(locale, t.how_to, t.how_to_zh),
+      };
+      return [t.id, localized] as const;
+    }),
+  );
 
   const sets = exercises.length
     ? await db

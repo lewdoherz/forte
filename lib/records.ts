@@ -1,4 +1,5 @@
 import type { DurationRecordDirection, ExerciseType, Numeric, WorkoutSet } from "@/schema/types";
+import { getMessages, translate, type Locale, type MessageKey } from "./i18n";
 
 /**
  * Personal records, derived from completed workout history.
@@ -19,10 +20,11 @@ import type { DurationRecordDirection, ExerciseType, Numeric, WorkoutSet } from 
  * the baseline but scores nothing, so it is returned flagged (`firstEver`) and
  * excluded from counts rather than hidden.
  *
- * This module is pure — no database, no React, no display formatting — and it
- * speaks canonical units only (kilograms, seconds, metres). A value and its
- * unit-equivalent are therefore the same performance: formatting can never
- * change whether something is a record.
+ * This module holds no database and no React, and it speaks canonical units
+ * only (kilograms, seconds, metres); its one display concern is the category
+ * wording it owns (`recordCategoryLabel`), which a component may not
+ * duplicate. A value and its unit-equivalent are therefore the same
+ * performance: formatting can never change whether something is a record.
  *
  * Estimated one-rep max follows one policy everywhere: only sets of at most
  * `E1RM_MAX_REPS` count, and a single is its actual load rather than Epley's
@@ -60,25 +62,31 @@ export const RECORD_CATEGORIES = [
 export type RecordCategory = (typeof RECORD_CATEGORIES)[number];
 
 /**
- * The wording the UI renders for a category. It lives here so no component
- * invents its own — a record badge and a record list can never disagree.
+ * The wording the UI renders for a category: one dictionary key per category,
+ * resolved for the reader's locale. It lives here so no component invents its
+ * own — a record badge and a record list can never disagree.
  */
-export const RECORD_CATEGORY_LABELS: Record<RecordCategory, string> = {
-  heaviest_weight: "Heaviest weight",
-  heaviest_added_weight: "Heaviest added weight",
-  best_e1rm: "Best e1RM",
-  most_reps: "Most reps",
-  best_set_volume: "Best set volume",
-  lowest_assistance: "Lowest assistance",
-  best_duration: "Best duration",
-  longest_duration: "Longest duration",
-  longest_distance: "Longest distance",
-  best_pace: "Best pace",
-  most_floors: "Most floors",
-  best_floors_per_minute: "Best floors per minute",
-  most_steps: "Most steps",
-  best_steps_per_minute: "Best steps per minute",
+const RECORD_CATEGORY_KEYS: Record<RecordCategory, MessageKey> = {
+  heaviest_weight: "records.category.heaviest_weight",
+  heaviest_added_weight: "records.category.heaviest_added_weight",
+  best_e1rm: "records.category.best_e1rm",
+  most_reps: "records.category.most_reps",
+  best_set_volume: "records.category.best_set_volume",
+  lowest_assistance: "records.category.lowest_assistance",
+  best_duration: "records.category.best_duration",
+  longest_duration: "records.category.longest_duration",
+  longest_distance: "records.category.longest_distance",
+  best_pace: "records.category.best_pace",
+  most_floors: "records.category.most_floors",
+  best_floors_per_minute: "records.category.best_floors_per_minute",
+  most_steps: "records.category.most_steps",
+  best_steps_per_minute: "records.category.best_steps_per_minute",
 };
+
+/** The category's name as the reader's language writes it. */
+export function recordCategoryLabel(category: RecordCategory, locale: Locale): string {
+  return translate(locale, getMessages(locale), RECORD_CATEGORY_KEYS[category]);
+}
 
 /**
  * Which direction is an improvement for a candidate. Fixed by the category,

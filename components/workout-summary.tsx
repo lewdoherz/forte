@@ -1,5 +1,7 @@
 import { BodyHeatmap } from "@/components/body-heatmap";
 import type { VocabularyEntry } from "@/components/exercise-filter-form";
+import { formatDecimal, formatNumber } from "@/lib/i18n/format";
+import { getI18n } from "@/lib/i18n/server";
 import { muscleDistribution, type MuscleExercise } from "@/lib/muscle-distribution";
 
 /**
@@ -24,7 +26,7 @@ import { muscleDistribution, type MuscleExercise } from "@/lib/muscle-distributi
  * incomplete set is not part of the record. `lib/muscle-distribution.ts` then
  * excludes warm-ups from both aggregations, exactly as it does for a routine.
  */
-export function WorkoutSummary({
+export async function WorkoutSummary({
   exercises,
   muscles,
 }: {
@@ -32,6 +34,7 @@ export function WorkoutSummary({
   /** Muscle vocabulary, in display order; doubles as the code -> name lookup. */
   muscles: readonly VocabularyEntry[];
 }) {
+  const { locale, t } = await getI18n();
   const distribution = muscleDistribution(exercises);
 
   const names: Record<string, string> = {};
@@ -51,8 +54,8 @@ export function WorkoutSummary({
     label: names[code] ?? code,
     // Sets are multiples of 0.5; show a decimal only when there is one.
     setsLabel: Number.isInteger(distribution.sets[code])
-      ? String(distribution.sets[code])
-      : distribution.sets[code].toFixed(1),
+      ? formatNumber(locale, distribution.sets[code])
+      : formatDecimal(locale, distribution.sets[code]),
     // Bar width mirrors the reference: sets relative to the largest muscle.
     percent: max > 0 ? (distribution.sets[code] / max) * 100 : 0,
   }));
@@ -62,11 +65,9 @@ export function WorkoutSummary({
       <BodyHeatmap muscleValues={distribution.roles} className="mt-4" />
 
       <div className="mt-6">
-        <h3 className="text-sm font-medium">Muscle distribution</h3>
+        <h3 className="text-sm font-medium">{t("workouts.summary.muscleDistribution")}</h3>
         {rows.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-500">
-            No working sets to show muscles for.
-          </p>
+          <p className="mt-2 text-sm text-zinc-500">{t("workouts.summary.noSets")}</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {rows.map((row) => (

@@ -24,6 +24,19 @@ let privateCacheEpoch = 0;
 // Shown for a navigation that is neither cached nor reachable. It must be a
 // real page: the browser's default offline error says nothing and cannot tell
 // the user their in-progress workout is safe.
+//
+// A worker can neither render React nor know the reader's language server-side,
+// so the page carries both blocks and an inline script picks one at runtime:
+// the `forte_locale` cookie (readable here only because it is deliberately not
+// httpOnly), then `navigator.language`, then English. English is the block
+// present in the markup and the Chinese one starts hidden, so the page reads
+// correctly with JavaScript disabled; the script swaps the visible block and
+// `<html lang>` otherwise.
+//
+// This is a hand-written static asset with no build step, so the wording below
+// is the source of truth for the page.
+// lib/i18n/dictionaries/en/offline.ts and lib/i18n/dictionaries/zh-CN/offline.ts
+// mirror it by hand and must be kept in step: change one, change the other.
 const OFFLINE_HTML = `<!doctype html>
 <html lang="en">
   <head>
@@ -33,21 +46,49 @@ const OFFLINE_HTML = `<!doctype html>
   </head>
   <body style="margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;background:#fafafa;color:#18181b;font-family:system-ui,-apple-system,'Segoe UI',sans-serif">
     <main style="max-width:28rem;padding:1.5rem">
-      <h1 style="font-size:1.125rem;margin:0 0 0.75rem">You are offline</h1>
-      <p style="margin:0 0 0.75rem;line-height:1.5">
-        forte cannot reach the network right now, and this page was not saved for
-        offline use.
-      </p>
-      <p style="margin:0 0 0.75rem;line-height:1.5">
-        A workout already in progress still works: log sets, edit them, and finish
-        the workout. Everything is stored on this device and syncs the next time
-        you are online.
-      </p>
-      <button type="button" onclick="location.reload()"
-        style="margin-top:0.5rem;min-height:2.25rem;padding:0 0.75rem;border:1px solid #d4d4d8;border-radius:0.375rem;background:#fff;font:inherit;font-size:0.875rem;font-weight:500;color:#18181b;cursor:pointer">
-        Try again
-      </button>
+      <section id="offline-en" lang="en">
+        <h1 style="font-size:1.125rem;margin:0 0 0.75rem">You are offline</h1>
+        <p style="margin:0 0 0.75rem;line-height:1.5">forte cannot reach the network right now, and this page was not saved for offline use.</p>
+        <p style="margin:0 0 0.75rem;line-height:1.5">A workout already in progress still works: log sets, edit them, and finish the workout. Everything is stored on this device and syncs the next time you are online.</p>
+        <button type="button" onclick="location.reload()"
+          style="margin-top:0.5rem;min-height:2.25rem;padding:0 0.75rem;border:1px solid #d4d4d8;border-radius:0.375rem;background:#fff;font:inherit;font-size:0.875rem;font-weight:500;color:#18181b;cursor:pointer">
+          Try again
+        </button>
+      </section>
+      <section id="offline-zh" lang="zh-CN" hidden>
+        <h1 style="font-size:1.125rem;margin:0 0 0.75rem">当前离线</h1>
+        <p style="margin:0 0 0.75rem;line-height:1.5">forte 当前无法连接网络，且此页面未保存为离线可用。</p>
+        <p style="margin:0 0 0.75rem;line-height:1.5">正在进行中的训练仍可继续：记录每一组、随时修改并完成训练。所有数据保存在本设备上，联网后会自动同步。</p>
+        <button type="button" onclick="location.reload()"
+          style="margin-top:0.5rem;min-height:2.25rem;padding:0 0.75rem;border:1px solid #d4d4d8;border-radius:0.375rem;background:#fff;font:inherit;font-size:0.875rem;font-weight:500;color:#18181b;cursor:pointer">
+          重试
+        </button>
+      </section>
     </main>
+    <script>
+      (function () {
+        var match = document.cookie.match(/(?:^|;\s*)forte_locale=([^;]*)/);
+        var stored = "";
+        if (match) {
+          try {
+            stored = decodeURIComponent(match[1]);
+          } catch (error) {
+            stored = match[1];
+          }
+        }
+        var preferred =
+          /^en(-|$)/i.test(stored) || /^zh(-|$)/i.test(stored)
+            ? stored
+            : navigator.language || "";
+        var locale = /^zh/i.test(preferred) ? "zh-CN" : "en";
+        document.documentElement.lang = locale;
+        if (locale === "zh-CN") {
+          document.getElementById("offline-en").hidden = true;
+          document.getElementById("offline-zh").hidden = false;
+          document.title = "forte — 离线";
+        }
+      })();
+    </script>
   </body>
 </html>`;
 

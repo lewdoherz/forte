@@ -252,8 +252,8 @@ check("weight is the numeric-as-string the schema promises", typeof weightSet?.w
 if (!weightSet) bail("the weight/reps previous set exists");
 check(
   "a previous set renders through the canonical formatter",
-  formatSetValues(weightSet, "weight_reps") === "80.5 kg × 10 reps · RPE 8",
-  formatSetValues(weightSet, "weight_reps"),
+  formatSetValues(weightSet, "weight_reps", "en") === "80.5 kg × 10 reps · RPE 8",
+  formatSetValues(weightSet, "weight_reps", "en"),
 );
 
 const durationSet = allTypes.get(durationExercise)?.sets[0];

@@ -3,10 +3,11 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getVisibleExercise, listExercises } from "@/lib/exercises";
 import { requireSessionUserId } from "@/lib/auth-session";
+import { getI18n } from "@/lib/i18n/server";
 import {
   PROGRESS_RANGES,
-  RANGE_LABELS,
   progressQuerySchema,
+  rangeLabel,
   type ProgressRange,
 } from "@/lib/progress";
 import { ProgressControls } from "@/components/progress-controls";
@@ -20,6 +21,7 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
  */
 export default async function ProgressPage({ searchParams }: { searchParams: SearchParams }) {
   const userId = await requireSessionUserId();
+  const { locale, t } = await getI18n();
   const params = await searchParams;
   const exerciseParam = typeof params.exercise === "string" ? params.exercise : "";
   const rangeParam = typeof params.range === "string" ? params.range : "all";
@@ -41,28 +43,22 @@ export default async function ProgressPage({ searchParams }: { searchParams: Sea
   const options = exercises.map((exercise) => ({ id: exercise.id, title: exercise.title }));
   const ranges = PROGRESS_RANGES.map((option) => ({
     value: option,
-    label: RANGE_LABELS[option],
+    label: rangeLabel(option, locale),
   }));
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="text-2xl font-semibold">Progress</h1>
-      <p className="mt-2 max-w-2xl text-sm text-zinc-500">
-        Choose an exercise to view its statistics, progression, and personal records. Results
-        come from completed sets in finished workouts.
-      </p>
+      <h1 className="text-2xl font-semibold">{t("nav.progress")}</h1>
+      <p className="mt-2 max-w-2xl text-sm text-zinc-500">{t("progress.intro")}</p>
 
       <Suspense fallback={null}>
         <ProgressControls options={options} ranges={ranges} range={range} />
       </Suspense>
 
       {options.length === 0 ? (
-        <p className="mt-8 text-zinc-500">No exercises available.</p>
+        <p className="mt-8 text-zinc-500">{t("progress.empty")}</p>
       ) : (
-        <p className="mt-8 text-sm text-zinc-500">
-          Exercise statistics use type-specific metrics, so a run, hold, and weighted exercise
-          are never compared using the same generic summary.
-        </p>
+        <p className="mt-8 text-sm text-zinc-500">{t("progress.footnote")}</p>
       )}
     </main>
   );

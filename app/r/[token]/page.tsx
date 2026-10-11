@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { resolveRoutineShare } from "@/lib/share";
 import { getVocabularies } from "@/lib/exercises";
+import { getI18n } from "@/lib/i18n/server";
 import { SharedRoutineView } from "@/components/shared-routine-view";
 
 /**
@@ -36,7 +37,11 @@ export default async function SharedRoutinePage({
   // nothing about whether a routine exists behind a token that does not work.
   if (!routine) notFound();
 
+  // The locale comes from the same cookie/header resolution as every other
+  // route, so a signed-out reader still gets their own language; the view takes
+  // it as a prop and needs no provider.
+  const i18n = await getI18n();
   const { muscles } = await getVocabularies(db);
 
-  return <SharedRoutineView routine={routine} muscles={muscles} />;
+  return <SharedRoutineView routine={routine} muscles={muscles} i18n={i18n} />;
 }

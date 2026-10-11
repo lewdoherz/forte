@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useI18n } from "@/lib/i18n/context";
+import { formatStopwatch } from "@/lib/i18n/format";
 
 /**
  * Rest countdown for the active workout.
@@ -66,13 +68,8 @@ function writeOverride(workoutId: string, value: RestOverride): void {
   }
 }
 
-function formatRemaining(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
 export function RestTimer({ workoutId, anchor, restSeconds, workoutActive }: RestTimerProps) {
+  const { t } = useI18n();
   // Both sessionStorage and the wall clock are client-only. Neither is touched
   // until just after paint, so the first client render matches the server's and
   // no state is assigned synchronously inside an effect.
@@ -124,7 +121,9 @@ export function RestTimer({ workoutId, anchor, restSeconds, workoutActive }: Res
         disabled={!hasTarget}
         className="h-9 shrink-0 rounded-md border border-zinc-300 px-3 text-xs font-medium text-zinc-700 disabled:opacity-40"
       >
-        Rest {hasTarget ? formatRemaining(restSeconds) : "—"}
+        {t("workouts.rest.rest", {
+          time: typeof restSeconds === "number" ? formatStopwatch(restSeconds) : "—",
+        })}
       </button>
     );
   }
@@ -135,15 +134,15 @@ export function RestTimer({ workoutId, anchor, restSeconds, workoutActive }: Res
         className="rounded-md bg-sky-100 px-2 py-1 text-xs font-medium tabular-nums text-sky-900"
         aria-live="polite"
       >
-        Rest {formatRemaining(remaining)}
+        {t("workouts.rest.rest", { time: formatStopwatch(remaining) })}
       </span>
       <button
         type="button"
         onClick={() => apply({ manualStart: null, skippedAnchor: anchor })}
-        aria-label="Skip rest"
+        aria-label={t("workouts.rest.skipLabel")}
         className="h-9 rounded-md px-2 text-xs font-medium text-zinc-600 underline"
       >
-        Skip
+        {t("workouts.rest.skip")}
       </button>
     </span>
   );

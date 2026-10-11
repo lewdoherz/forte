@@ -1,16 +1,20 @@
 import Link from "next/link";
 import type { SetType } from "@/schema/types";
 import { db } from "@/lib/db";
-import { RECORD_CATEGORY_LABELS } from "@/lib/records";
-import { formatDateTimeInTimeZone } from "@/lib/timezone";
+import { recordCategoryLabel } from "@/lib/records";
 import { formatSetValues } from "@/lib/workout-stats";
 import { EXERCISE_HISTORY_SESSION_LIMIT, getExerciseHistory } from "@/lib/exercise-history";
+import { formatDateTime } from "@/lib/i18n/format";
+import { getI18n } from "@/lib/i18n/server";
+import type { MessageKey } from "@/lib/i18n";
 
-const SET_TYPE_LABELS: Record<SetType, string> = {
-  warmup: "Warm-up",
-  normal: "Normal",
-  failure: "Failure",
-  dropset: "Drop set",
+/* Set types are a fixed vocabulary, so the row label is a key lookup rather
+   than a second wording of the codes. */
+const SET_TYPE_KEYS: Record<SetType, MessageKey> = {
+  warmup: "exerciseDetail.setType.warmup",
+  normal: "exerciseDetail.setType.normal",
+  failure: "exerciseDetail.setType.failure",
+  dropset: "exerciseDetail.setType.dropset",
 };
 
 /**
@@ -39,10 +43,15 @@ export async function ExerciseHistory({
   exerciseTitle: string;
   timeZone: string;
 }) {
+  const { locale, t } = await getI18n();
   const { exerciseType, sessions } = await getExerciseHistory(db, userId, exerciseId);
 
   if (exerciseType === null || sessions.length === 0) {
-    return <p className="text-zinc-500">No workouts include {exerciseTitle} yet.</p>;
+    return (
+      <p className="text-zinc-500">
+        {t("exerciseDetail.history.empty", { exercise: exerciseTitle })}
+      </p>
+    );
   }
 
   return (
@@ -57,7 +66,7 @@ export async function ExerciseHistory({
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 py-3">
                 <span className="min-w-0 break-words font-medium">{session.title}</span>
                 <span className="shrink-0 text-xs text-zinc-500">
-                  {formatDateTimeInTimeZone(session.date, timeZone)}
+                  {formatDateTime(locale, session.date, timeZone)}
                 </span>
               </div>
 
@@ -68,8 +77,8 @@ export async function ExerciseHistory({
                       key={category}
                       className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800"
                     >
-                      <span className="font-semibold">PR</span>
-                      <span>{RECORD_CATEGORY_LABELS[category]}</span>
+                      <span className="font-semibold">{t("exerciseDetail.history.pr")}</span>
+                      <span>{recordCategoryLabel(category, locale)}</span>
                     </span>
                   ))}
                 </div>
@@ -82,10 +91,10 @@ export async function ExerciseHistory({
                     className="flex items-start justify-between gap-3 px-4 py-2 text-sm"
                   >
                     <span className="shrink-0 text-[11px] text-zinc-500">
-                      {SET_TYPE_LABELS[set.setType]}
+                      {t(SET_TYPE_KEYS[set.setType])}
                     </span>
                     <span className="min-w-0 break-words text-right tabular-nums">
-                      {formatSetValues(set, exerciseType)}
+                      {formatSetValues(set, exerciseType, locale)}
                     </span>
                   </li>
                 ))}
@@ -97,7 +106,7 @@ export async function ExerciseHistory({
 
       {sessions.length >= EXERCISE_HISTORY_SESSION_LIMIT ? (
         <p className="mt-4 text-center text-sm text-zinc-500">
-          Showing the {EXERCISE_HISTORY_SESSION_LIMIT} most recent sessions.
+          {t("exerciseDetail.history.limit", { count: EXERCISE_HISTORY_SESSION_LIMIT })}
         </p>
       ) : null}
     </>

@@ -114,6 +114,13 @@ const pg = adminUrl ? null : new EmbeddedPostgres({
   password: "postgres",
   port: PG_PORT,
   persistent: false,
+  // UTF8 explicitly. `initdb` on Windows defaults to the console code page
+  // (WIN1252 here), and a cluster in that encoding rejects the Chinese literals
+  // migration 0017 stores with "has no equivalent in encoding". On Linux UTF8 is
+  // already the default, so this only makes the two platforms agree. The locale
+  // itself is left alone on purpose: changing it would change collation and with
+  // it the order of anything sorted by text.
+  initdbFlags: ["--encoding=UTF8"],
 });
 
 if (pg) {
@@ -125,6 +132,7 @@ if (pg) {
 
 let server: ChildProcess | null = null;
 let browser: Browser | null = null;
+let localeClient: Pool | null = null;
 
 try {
   if (admin && adminUrl) {
@@ -135,6 +143,17 @@ try {
     DATABASE_URL = target.toString();
     console.log("using an isolated database on TEST_DATABASE_URL");
   }
+
+  // Reads the stored language straight from the account row, so the check cannot
+  // be satisfied by the cookie alone.
+  localeClient = new Pool({ connectionString: DATABASE_URL });
+  const storedLocale = async (): Promise<string | null> => {
+    const result = await localeClient!.query<{ locale: string }>(
+      "select locale from app_user where email = $1",
+      [DEMO_EMAIL],
+    );
+    return result.rows[0]?.locale ?? null;
+  };
 
   for (const [label, script] of [
     ["schema", "scripts/migrate.ts"],
@@ -193,6 +212,38 @@ try {
     "the dashboard no longer exposes the canonical user id",
     !dashboard.includes("app_user.id"),
   );
+
+  // ---- the interface language is a stored preference -----------------------
+  //
+  // Switching writes two places, and both are asserted here: the cookie, which
+  // renders the very next request, and `app_user.locale`, which owns the language
+  // of mail sent later from a background task. A regression in either is invisible
+  // until someone is reading a language they did not choose.
+  await page.goto("/account");
+  await page.locator('select[name="locale"]').selectOption("zh-CN");
+  await page.waitForFunction(() => document.documentElement.lang === "zh-CN", null, { timeout: 20_000 });
+  const chineseAccount = await text(page);
+  check(
+    "switching to Chinese re-renders the interface in Chinese",
+    chineseAccount.includes("账户") && !chineseAccount.includes("Sign out"),
+    JSON.stringify(chineseAccount.slice(0, 80)),
+  );
+  check(
+    "the chosen language is stored on the account",
+    (await storedLocale()) === "zh-CN",
+  );
+
+  // Back to English, so the rest of the journey — and the demo account — are left
+  // exactly as this run found them.
+  await page.locator('select[name="locale"]').selectOption("en");
+  await page.waitForFunction(() => document.documentElement.lang === "en", null, { timeout: 20_000 });
+  check("switching back re-renders in English", (await text(page)).includes("Sign out"));
+  check("the change back is stored on the account", (await storedLocale()) === "en");
+
+  // Return to the dashboard: the rest of the journey starts there, and leaving
+  // the page on /account would make it fail for a reason this block caused.
+  await page.goto("/");
+  await page.waitForSelector('h1:text-is("Dashboard")', { timeout: 20_000 });
 
   // ---- start a routine -----------------------------------------------------
   // Leg Day, not Push Day: the seed leaves a Push Day workout open, and starting
@@ -477,6 +528,7 @@ try {
 } finally {
   await browser?.close();
   server?.kill();
+  await localeClient?.end().catch(() => {});
   if (pg) {
     await pg.stop();
     await rm(dataDir, { recursive: true, force: true });

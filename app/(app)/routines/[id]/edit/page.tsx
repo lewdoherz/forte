@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getVocabularies, listExercises } from "@/lib/exercises";
 import { getRoutineTree } from "@/lib/routines";
 import { requireSessionUserId } from "@/lib/auth-session";
+import { getI18n } from "@/lib/i18n/server";
 import { RoutineEditor } from "@/components/routine-editor";
 
 export default async function EditRoutinePage({
@@ -11,6 +12,7 @@ export default async function EditRoutinePage({
   params: Promise<{ id: string }>;
 }) {
   const userId = await requireSessionUserId();
+  const { t } = await getI18n();
   const { id } = await params;
   const routine = await getRoutineTree(db, id, userId);
   if (!routine) redirect("/routines");
@@ -30,7 +32,7 @@ export default async function EditRoutinePage({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
-      <h1 className="text-2xl font-semibold">Edit routine</h1>
+      <h1 className="text-2xl font-semibold">{t("routines.edit")}</h1>
       <RoutineEditor library={library} muscles={muscles} equipment={equipment} initial={routine} />
     </main>
   );

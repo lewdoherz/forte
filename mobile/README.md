@@ -2,6 +2,10 @@
 
 These are native HTTPS browser shells, not bundled copies of the Next.js server or Capacitor live-reload configurations. Both load https://forte-delta.vercel.app by default. Native versions are independently set to 1.0.0/build 1 in the Android Gradle and Xcode project. Android uses the platform WebView; iPhone and iPad use WKWebView. The dark lowercase f launcher monogram follows the web mark.
 
+## Localization
+
+The shells carry only a few native strings of their own: the load-failure message and Retry. Everything else on screen is the web app, which localizes itself. Each shell reads its own platform resource files, and the platform selects the language from the device locale with no shell-side locale code: Android uses `app/src/main/res/values/strings.xml` (English) and `app/src/main/res/values-zh-rCN/strings.xml` (Simplified Chinese); iOS uses `Forte/en.lproj/Localizable.strings` and `Forte/zh-Hans.lproj/Localizable.strings`, declared through `CFBundleDevelopmentRegion` and `CFBundleLocalizations` in Info.plist and wired into the Forte target as a `Localizable.strings` variant group. The in-app language switcher governs the web content, not the fallback screen: a shell shown in Chinese on an English-language device is expected. iOS localization is checked in but cannot be built here because macOS/Xcode is unavailable, so it is unverified by a build.
+
 ## Android personal installation
 
 Requires JDK 21 (not the host's Java 25), Android SDK platform 36/build-tools 36.0.0, accepted SDK licenses, and ANDROID_HOME. Gradle 8.13 is downloaded by the checked-in official wrapper with a pinned distribution SHA-256; AGP is 8.13.2. Minimum Android version is 11/API 30. No local SDK paths or signing secrets belong in this directory.
@@ -56,6 +60,8 @@ JavaScript). APK Signature Scheme v2 verification passed.
 The emulator check is not deployed-server/native-device verification. A later
 production-web browser smoke verified signup, the new dashboard at phone width,
 workout start/resume, and deletion of its disposable test account.
-The iOS project and macOS build workflow are provided, but
-were not compiled or run here because macOS/Xcode is unavailable. Offline reload,
-Apple device behavior, and the GitHub workflow artifacts remain unverified.
+The iOS project and macOS build workflow are provided, but were not compiled or
+run here because macOS/Xcode is unavailable, including the new English and
+Simplified Chinese shell string resources and their project registration.
+Offline reload, Apple device behavior, and the GitHub workflow artifacts remain
+unverified.

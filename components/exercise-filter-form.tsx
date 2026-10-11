@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
+import { useI18n } from "@/lib/i18n/context";
 
 export interface VocabularyEntry {
   code: string;
@@ -38,6 +39,8 @@ export function ExerciseFilterForm({
   /** Omitted where clearing is not the parent's job (e.g. a plain picker). */
   onClear?: () => void;
 }) {
+  const { t } = useI18n();
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -58,24 +61,24 @@ export function ExerciseFilterForm({
       className="space-y-2 border-b border-zinc-200 p-4"
     >
       <label className="block">
-        <span className="sr-only">Search Exercises</span>
+        <span className="sr-only">{t("exercises.filter.searchLabel")}</span>
         <input
           name="q"
           type="search"
           defaultValue={values.q}
-          placeholder="Search Exercises"
+          placeholder={t("exercises.filter.searchLabel")}
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
         />
       </label>
       <div className="flex gap-2">
         <label className="min-w-0 flex-1">
-          <span className="sr-only">Equipment</span>
+          <span className="sr-only">{t("exercises.field.equipment")}</span>
           <select
             name="equipment"
             defaultValue={values.equipment}
             className="w-full rounded-md border border-zinc-300 px-2 py-2 text-sm"
           >
-            <option value="">All Equipment</option>
+            <option value="">{t("exercises.filter.allEquipment")}</option>
             {equipment.map((entry) => (
               <option key={entry.code} value={entry.code}>
                 {entry.display_name}
@@ -84,13 +87,13 @@ export function ExerciseFilterForm({
           </select>
         </label>
         <label className="min-w-0 flex-1">
-          <span className="sr-only">Muscle</span>
+          <span className="sr-only">{t("exercises.field.muscle")}</span>
           <select
             name="muscle"
             defaultValue={values.muscle}
             className="w-full rounded-md border border-zinc-300 px-2 py-2 text-sm"
           >
-            <option value="">All Muscles</option>
+            <option value="">{t("exercises.filter.allMuscles")}</option>
             {muscles.map((entry) => (
               <option key={entry.code} value={entry.code}>
                 {entry.display_name}
@@ -104,11 +107,11 @@ export function ExerciseFilterForm({
           type="submit"
           className="h-9 rounded-md border border-zinc-300 px-3 text-xs font-medium hover:bg-zinc-100"
         >
-          Search
+          {t("common.search")}
         </button>
         {onClear && hasFilters ? (
           <button type="button" onClick={onClear} className="text-xs text-zinc-500 underline">
-            Clear
+            {t("common.clear")}
           </button>
         ) : null}
       </div>

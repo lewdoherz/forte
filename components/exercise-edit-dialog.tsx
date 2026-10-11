@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getVisibleExercise, getVocabularies } from "@/lib/exercises";
 import { updateExercise } from "@/lib/exercise-actions";
 import { requireSessionUserId } from "@/lib/auth-session";
+import { getI18n } from "@/lib/i18n/server";
 import { ExerciseForm } from "@/components/exercise-form";
 import { ExerciseFormModal, type ExerciseDialogDismiss } from "@/components/exercise-form-modal";
 
@@ -30,14 +31,19 @@ export async function ExerciseEditDialog({
   }
 
   const { muscles, equipment } = await getVocabularies(db);
+  const { t } = await getI18n();
 
   return (
-    <ExerciseFormModal title="Edit exercise" dismiss={dismiss} fallbackHref={`/exercises/${id}`}>
+    <ExerciseFormModal
+      title={t("exercises.edit.title")}
+      dismiss={dismiss}
+      fallbackHref={`/exercises/${id}`}
+    >
       <ExerciseForm
         action={updateExercise.bind(null, id)}
         muscles={muscles}
         equipment={equipment}
-        submitLabel="Save changes"
+        submitLabel={t("common.saveChanges")}
         initial={{
           title: exercise.title,
           exercise_type: exercise.exercise_type,

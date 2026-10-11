@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { BodyHeatmap } from "@/components/body-heatmap";
+import { useI18n } from "@/lib/i18n/context";
 import { muscleDistribution, type MuscleExercise } from "@/lib/muscle-distribution";
 import { routineSummary, type SummaryExercise } from "@/lib/routine-summary";
 
@@ -43,6 +44,7 @@ export function RoutineSummaryCard({
   exercises: readonly (MuscleExercise & SummaryExercise)[];
   onOpen: () => void;
 }) {
+  const { t } = useI18n();
   const summary = useMemo(() => routineSummary(exercises), [exercises]);
   const distribution = useMemo(() => muscleDistribution(exercises), [exercises]);
 
@@ -51,21 +53,21 @@ export function RoutineSummaryCard({
       <button
         type="button"
         onClick={onOpen}
-        aria-label="Open routine summary"
+        aria-label={t("routines.summary.open")}
         className="absolute inset-0 z-10 rounded-xl group-hover:bg-zinc-50/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
       />
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Summary</h2>
+        <h2 className="text-sm font-semibold">{t("routines.summary.cardTitle")}</h2>
         <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" />
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-3">
         <div>
-          <dt className="text-xs text-zinc-500">Exercises</dt>
+          <dt className="text-xs text-zinc-500">{t("routines.summary.exercises")}</dt>
           <dd className="mt-0.5 text-xl font-semibold tabular-nums">{summary.exerciseCount}</dd>
         </div>
         <div>
-          <dt className="text-xs text-zinc-500">Total sets</dt>
+          <dt className="text-xs text-zinc-500">{t("routines.summary.totalSets")}</dt>
           <dd className="mt-0.5 text-xl font-semibold tabular-nums">{summary.totalSets}</dd>
         </div>
       </dl>

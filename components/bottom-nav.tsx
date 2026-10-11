@@ -1,9 +1,19 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useI18n } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n";
 
 type IconProps = { className?: string };
+
+/** A navigation entry: where it points, and which label it renders. */
+type NavItem = {
+  href: string;
+  label: MessageKey;
+  Icon: (props: IconProps) => ReactNode;
+};
 
 function HomeIcon({ className }: IconProps) {
   return (
@@ -52,12 +62,14 @@ function ExercisesIcon({ className }: IconProps) {
   );
 }
 
-const ITEMS = [
-  { href: "/", label: "Home", Icon: HomeIcon },
-  { href: "/routines", label: "Routines", Icon: RoutinesIcon },
-  { href: "/workouts", label: "Workouts", Icon: WorkoutsIcon },
-  { href: "/progress", label: "Progress", Icon: ProgressIcon },
-  { href: "/exercises", label: "Exercises", Icon: ExercisesIcon },
+/* Labels are keys into the shared `nav.*` vocabulary, shared with the desktop
+   sidebar so the two bars can never drift apart. */
+const ITEMS: NavItem[] = [
+  { href: "/", label: "nav.home", Icon: HomeIcon },
+  { href: "/routines", label: "nav.routines", Icon: RoutinesIcon },
+  { href: "/workouts", label: "nav.workouts", Icon: WorkoutsIcon },
+  { href: "/progress", label: "nav.progress", Icon: ProgressIcon },
+  { href: "/exercises", label: "nav.exercises", Icon: ExercisesIcon },
 ];
 
 function isActivePath(pathname: string, href: string): boolean {
@@ -71,11 +83,12 @@ function isActivePath(pathname: string, href: string): boolean {
  */
 export function BottomNav() {
   const pathname = usePathname();
+  const { t } = useI18n();
   if (/^\/workouts\/[^/]+/.test(pathname)) return null;
 
   return (
     <nav
-      aria-label="Primary"
+      aria-label={t("nav.primary")}
       className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 pb-[var(--app-safe-bottom)] pl-[var(--app-safe-left)] pr-[var(--app-safe-right)] backdrop-blur sm:hidden"
     >
       <ul className="mx-auto flex max-w-md">
@@ -91,7 +104,7 @@ export function BottomNav() {
                 }`}
               >
                 <Icon className={`h-6 w-6 ${active ? "text-zinc-900" : "text-zinc-400"}`} />
-                <span className="truncate">{label}</span>
+                <span className="truncate">{t(label)}</span>
               </Link>
             </li>
           );

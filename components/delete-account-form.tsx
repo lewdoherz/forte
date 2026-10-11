@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useCallback } from "react";
+import { useI18n } from "@/lib/i18n/context";
 import type { AccountActionState } from "@/lib/account-actions";
 import { clearOfflineClientData } from "@/lib/offline-store";
 
@@ -15,21 +16,23 @@ type FormAction = (
  * to end an account.
  */
 export function DeleteAccountForm({ action }: { action: FormAction }) {
+  const { t } = useI18n();
   const isolatedAction = useCallback<FormAction>(
     async (prev, formData) => {
       // Preserve the server action's validation for every other value. Once the
       // destructive confirmation is correct, private device data must be gone
-      // before the server account and session disappear.
+      // before the server account and session disappear. "DELETE" is the token
+      // the action compares against, so it is the same in every language.
       if (String(formData.get("confirmation") ?? "").trim() === "DELETE") {
         try {
           await clearOfflineClientData();
         } catch {
-          return { error: "Could not clear offline workout data. Account deletion was stopped." };
+          return { error: t("account.danger.offlineError") };
         }
       }
       return action(prev, formData);
     },
-    [action],
+    [action, t],
   );
   const [state, formAction, pending] = useActionState(isolatedAction, null);
   const error = state && "error" in state ? state.error : undefined;
@@ -43,7 +46,7 @@ export function DeleteAccountForm({ action }: { action: FormAction }) {
       ) : null}
 
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Type DELETE to confirm</span>
+        <span className="text-sm font-medium">{t("account.danger.confirmLabel")}</span>
         <input
           name="confirmation"
           required
@@ -57,7 +60,7 @@ export function DeleteAccountForm({ action }: { action: FormAction }) {
         disabled={pending}
         className="h-11 rounded-md border border-red-300 bg-white px-4 text-sm font-medium text-red-700 disabled:opacity-60"
       >
-        {pending ? "Deleting…" : "Delete account"}
+        {pending ? t("common.deleting") : t("account.danger.confirmSubmit")}
       </button>
     </form>
   );

@@ -3,10 +3,13 @@
 import { useActionState } from "react";
 import {
   DURATION_RECORD_DIRECTIONS,
+  EXERCISE_TYPES,
   type DurationRecordDirection,
   type ExerciseType,
 } from "@/schema/types";
-import { EXERCISE_TYPE_LABELS } from "@/lib/exercise-types";
+import { exerciseTypeLabel } from "@/lib/exercise-types";
+import { useI18n } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n";
 import type { ExerciseActionState } from "@/lib/exercise-actions";
 
 type FormAction = (
@@ -15,15 +18,14 @@ type FormAction = (
 ) => Promise<ExerciseActionState>;
 
 /**
- * The stored `duration_record_direction` values in the reader's words. "Higher"
- * and "lower" are the persisted vocabulary; a duration improves by getting
- * longer, so the labels say that instead of revealing the encoding.
+ * The message key for a stored `duration_record_direction`. The code is the key
+ * suffix, so the three labels are not listed a second time here — and the
+ * wording says what improves the record ("longer"/"shorter") rather than
+ * exposing the persisted encoding.
  */
-const DURATION_DIRECTION_LABELS: Record<DurationRecordDirection, string> = {
-  higher: "Longer is better",
-  lower: "Shorter is better",
-  none: "No duration record",
-};
+function durationDirectionKey(direction: DurationRecordDirection): MessageKey {
+  return `exercises.durationDirection.${direction}`;
+}
 
 interface ExerciseFormProps {
   action: FormAction;
@@ -56,6 +58,7 @@ interface ExerciseFormProps {
  */
 export function ExerciseForm({ action, muscles, equipment, submitLabel, initial }: ExerciseFormProps) {
   const [state, formAction, pending] = useActionState(action, null);
+  const { t, locale } = useI18n();
   const selectedSecondary = new Set(initial?.secondary_muscles ?? []);
 
   return (
@@ -67,7 +70,7 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
       ) : null}
 
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Add Image</span>
+        <span className="text-sm font-medium">{t("exercises.field.image")}</span>
         <input
           name="media_url"
           type="url"
@@ -75,13 +78,11 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
           placeholder="https://example.com/image.jpg"
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
         />
-        <span className="block text-xs text-zinc-500">
-          A link to an image of this exercise. Leave blank for none.
-        </span>
+        <span className="block text-xs text-zinc-500">{t("exercises.form.imageHint")}</span>
       </label>
 
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Exercise Name</span>
+        <span className="text-sm font-medium">{t("exercises.field.name")}</span>
         <input
           name="title"
           defaultValue={initial?.title}
@@ -92,16 +93,16 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
       </label>
 
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Exercise Type</span>
+        <span className="text-sm font-medium">{t("exercises.field.type")}</span>
         <select
           name="exercise_type"
           defaultValue={initial?.exercise_type ?? "weight_reps"}
           required
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
         >
-          {(Object.keys(EXERCISE_TYPE_LABELS) as ExerciseType[]).map((t) => (
-            <option key={t} value={t}>
-              {EXERCISE_TYPE_LABELS[t]}
+          {EXERCISE_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {exerciseTypeLabel(type, locale)}
             </option>
           ))}
         </select>
@@ -112,7 +113,7 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
           always submitted, so create and update write the same explicit value
           and the input schema's default is only a backstop. */}
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Duration record</span>
+        <span className="text-sm font-medium">{t("exercises.field.durationRecord")}</span>
         <select
           name="duration_record_direction"
           defaultValue={initial?.duration_record_direction ?? "higher"}
@@ -120,18 +121,17 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
         >
           {DURATION_RECORD_DIRECTIONS.map((direction) => (
             <option key={direction} value={direction}>
-              {DURATION_DIRECTION_LABELS[direction]}
+              {t(durationDirectionKey(direction))}
             </option>
           ))}
         </select>
         <span className="block text-xs text-zinc-500">
-          Which timed performance counts as a record. Only affects exercises measured by
-          duration.
+          {t("exercises.form.durationRecordHint")}
         </span>
       </label>
 
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Equipment</span>
+        <span className="text-sm font-medium">{t("exercises.field.equipment")}</span>
         <select
           name="equipment"
           defaultValue={initial?.equipment ?? ""}
@@ -139,7 +139,7 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
         >
           <option value="" disabled>
-            Select equipment
+            {t("exercises.form.selectEquipment")}
           </option>
           {equipment.map((e) => (
             <option key={e.code} value={e.code}>
@@ -150,7 +150,7 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
       </label>
 
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Primary Muscle Group</span>
+        <span className="text-sm font-medium">{t("exercises.field.primaryMuscle")}</span>
         <select
           name="primary_muscle"
           defaultValue={initial?.primary_muscle ?? ""}
@@ -158,7 +158,7 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
         >
           <option value="" disabled>
-            Select a muscle
+            {t("exercises.form.selectMuscle")}
           </option>
           {muscles.map((m) => (
             <option key={m.code} value={m.code}>
@@ -169,7 +169,7 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
       </label>
 
       <fieldset className="space-y-1">
-        <legend className="text-sm font-medium">Other Muscles</legend>
+        <legend className="text-sm font-medium">{t("exercises.field.secondaryMuscles")}</legend>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-md border border-zinc-300 p-3 sm:grid-cols-3">
           {muscles.map((m) => (
             <label key={m.code} className="flex items-center gap-2 text-sm">
@@ -186,7 +186,7 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
       </fieldset>
 
       <label className="block space-y-1">
-        <span className="text-sm font-medium">How to</span>
+        <span className="text-sm font-medium">{t("exercises.field.howTo")}</span>
         <textarea
           name="how_to"
           defaultValue={initial?.how_to ?? ""}
@@ -200,7 +200,7 @@ export function ExerciseForm({ action, muscles, equipment, submitLabel, initial 
         disabled={pending}
         className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
       >
-        {pending ? "Saving…" : submitLabel}
+        {pending ? t("common.saving") : submitLabel}
       </button>
     </form>
   );

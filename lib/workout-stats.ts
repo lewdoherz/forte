@@ -1,4 +1,6 @@
 import type { ExerciseType, Numeric, WorkoutSet } from "@/schema/types";
+import { getMessages, translate, type Locale, type MessageKey } from "./i18n";
+import { formatDecimal, formatNumber } from "./i18n/format";
 
 /**
  * Derived workout summaries and the display formatting that goes with them.
@@ -67,13 +69,40 @@ export function summarizeWorkout(workout: SummarizableWorkout): WorkoutStats {
 }
 
 /**
- * Volume as a headline figure: whole kilograms with thousands separators. The
- * separator is inserted by hand rather than with `toLocaleString`, whose output
- * depends on the runtime's locale — the history card is server-rendered and
- * then hydrated, and a locale difference would make those two disagree.
+ * Volume as a headline figure: whole kilograms, grouped the way the reader's
+ * locale groups them. `formatNumber` owns the grouping — not `toLocaleString`,
+ * whose output depends on the runtime's ambient locale, and the history card is
+ * server-rendered and then hydrated, so a difference would make those two
+ * disagree.
  */
-export function formatVolumeKg(volumeKg: number): string {
-  return `${Math.round(volumeKg).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")} kg`;
+export function formatVolumeKg(volumeKg: number, locale: Locale): string {
+  return quantity(locale, formatNumber(locale, Math.round(volumeKg)), "common.unit.kg");
+}
+
+/**
+ * A number and its unit, joined the way the locale writes them: English
+ * separates the two with a space, Chinese does not. Every set field goes
+ * through this, so no call site can invent its own spacing.
+ */
+function quantity(locale: Locale, value: string, unitKey: MessageKey): string {
+  const messages = getMessages(locale);
+  return translate(locale, messages, "common.quantity", {
+    value,
+    unit: translate(locale, messages, unitKey),
+  });
+}
+
+/**
+ * The same join for a unit English writes without a space. Seconds are the case
+ * that matters: the set line has always read "90s" and "1500s", and a spaced
+ * "90 s" would both change that and disagree with `formatDuration`.
+ */
+function tightQuantity(locale: Locale, value: string, unitKey: MessageKey): string {
+  const messages = getMessages(locale);
+  return translate(locale, messages, "common.quantityTight", {
+    value,
+    unit: translate(locale, messages, unitKey),
+  });
 }
 
 /**
@@ -120,37 +149,61 @@ export type FormattableSet = Pick<
   "weight_kg" | "reps" | "duration_seconds" | "distance_meters" | "rpe" | "metrics"
 >;
 
-function fieldText(field: SetField, set: FormattableSet): string | null {
+function fieldText(field: SetField, set: FormattableSet, locale: Locale): string | null {
   switch (field) {
     case "weight":
-      return set.weight_kg == null ? null : `${trimNumber(set.weight_kg)} kg`;
+      return set.weight_kg == null
+        ? null
+        : quantity(locale, formatDecimal(locale, Number(set.weight_kg)), "common.unit.kg");
     case "reps":
-      return set.reps == null ? null : `${set.reps} ${set.reps === 1 ? "rep" : "reps"}`;
+      return set.reps == null
+        ? null
+        : translate(locale, getMessages(locale), "common.plural.reps", { count: set.reps });
     case "duration":
-      return set.duration_seconds == null ? null : `${set.duration_seconds}s`;
+      // Seconds stay seconds: the set line is a dense readout of one set, and
+      // `formatDuration`'s "1m 30s" would make the columns jump. They are also
+      // joined without a space in English ("90s"), which is why this is the one
+      // field that uses the tight join.
+      return set.duration_seconds == null
+        ? null
+        : tightQuantity(locale, trimNumber(set.duration_seconds), "common.unit.seconds");
     case "distance":
-      return set.distance_meters == null ? null : `${trimNumber(set.distance_meters)} m`;
+      // Metres are rendered ungrouped, exactly as the set line always has: a
+      // distance here is a per-set figure, not a headline total.
+      return set.distance_meters == null
+        ? null
+        : quantity(locale, trimNumber(set.distance_meters), "common.unit.m");
     case "floors": {
       const floors = set.metrics.floors;
-      return typeof floors === "number" ? `${floors} ${floors === 1 ? "floor" : "floors"}` : null;
+      return typeof floors === "number"
+        ? translate(locale, getMessages(locale), "metrics.plural.floors", { count: floors })
+        : null;
     }
     case "steps": {
       const steps = set.metrics.steps;
-      return typeof steps === "number" ? `${steps} ${steps === 1 ? "step" : "steps"}` : null;
+      return typeof steps === "number"
+        ? translate(locale, getMessages(locale), "metrics.plural.steps", { count: steps })
+        : null;
     }
   }
 }
 
 /**
- * One set's recorded values, in the units the logger already uses (kg, reps,
+ * One set's recorded values, in the units the reader's locale writes (kg, reps,
  * seconds, metres, RPE). Fields the type does not use are simply absent, and a
  * type whose fields are all empty renders an em dash — the same convention the
  * logger's own set line uses.
  */
-export function formatSetValues(set: FormattableSet, exerciseType: ExerciseType): string {
+export function formatSetValues(
+  set: FormattableSet,
+  exerciseType: ExerciseType,
+  locale: Locale,
+): string {
   const parts = SET_FIELDS_BY_TYPE[exerciseType]
-    .map((field) => fieldText(field, set))
+    .map((field) => fieldText(field, set, locale))
     .filter((text): text is string => text !== null);
   const values = parts.length > 0 ? parts.join(" × ") : "—";
-  return set.rpe == null ? values : `${values} · RPE ${trimNumber(set.rpe)}`;
+  if (set.rpe == null) return values;
+  const rpe = translate(locale, getMessages(locale), "metrics.rpe", { value: trimNumber(set.rpe) });
+  return `${values} · ${rpe}`;
 }

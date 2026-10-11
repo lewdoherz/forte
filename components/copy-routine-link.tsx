@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createRoutineShareLink, revokeRoutineShareLink } from "@/lib/share-actions";
+import { useI18n } from "@/lib/i18n/context";
 
 type CopyStatus =
   | "idle"
@@ -31,6 +32,7 @@ type CopyStatus =
  * rejection is surfaced rather than swallowed.
  */
 export function CopyRoutineLinkButton({ routineId }: { routineId: string }) {
+  const { t } = useI18n();
   const [status, setStatus] = useState<CopyStatus>("idle");
 
   useEffect(() => {
@@ -76,7 +78,7 @@ export function CopyRoutineLinkButton({ routineId }: { routineId: string }) {
         disabled={busy}
         className="h-11 w-full rounded-md border border-zinc-300 bg-white px-4 text-sm font-medium hover:bg-zinc-50 disabled:opacity-60"
       >
-        Copy Routine Link
+        {t("routines.share.copy")}
       </button>
       <button
         type="button"
@@ -84,18 +86,18 @@ export function CopyRoutineLinkButton({ routineId }: { routineId: string }) {
         disabled={busy}
         className="mt-2 w-full text-center text-xs text-zinc-500 underline hover:text-zinc-700 disabled:opacity-60"
       >
-        Revoke share link
+        {t("routines.share.revoke")}
       </button>
       {/* Reserves one line so the confirmation appearing never shifts the card. */}
       <p role="status" aria-live="polite" className="mt-2 min-h-4 text-xs">
         {status === "copied" ? (
-          <span className="text-emerald-700">Public link copied to clipboard.</span>
+          <span className="text-emerald-700">{t("routines.share.copied")}</span>
         ) : status === "revoked" ? (
-          <span className="text-emerald-700">Share link revoked.</span>
+          <span className="text-emerald-700">{t("routines.share.revoked")}</span>
         ) : status === "copy_failed" ? (
-          <span className="text-red-700">Could not copy the link.</span>
+          <span className="text-red-700">{t("routines.share.copyFailed")}</span>
         ) : status === "revoke_failed" ? (
-          <span className="text-red-700">Could not revoke the link.</span>
+          <span className="text-red-700">{t("routines.share.revokeFailed")}</span>
         ) : null}
       </p>
     </div>

@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { sql, type Kysely } from "kysely";
 import type { Database } from "./db";
 import type { ExerciseType, SetMetrics, SetType } from "@/schema/types";
+import { pickText } from "./i18n/content";
+import { getLocaleSafe } from "./i18n/server";
 
 /**
  * Share links for routines.
@@ -196,6 +198,7 @@ interface ExerciseRow {
   rest_seconds: number | null;
   slug: string;
   title: string;
+  title_zh: string | null;
   exercise_type: ExerciseType;
   primary_muscle: string;
   secondary_muscles: string[];
@@ -240,7 +243,7 @@ export async function resolveRoutineShare(
   const exercises = (
     await sql<ExerciseRow>`
       select re.id as routine_exercise_id, re.superset_key, re.rest_seconds,
-             t.slug, t.title, t.exercise_type, t.primary_muscle, t.secondary_muscles
+             t.slug, t.title, t.title_zh, t.exercise_type, t.primary_muscle, t.secondary_muscles
       from routine_exercise re
       join exercise_template t on t.id = re.template_id
       where re.routine_id = ${target.routine_id}
@@ -280,6 +283,7 @@ export async function resolveRoutineShare(
     else setsByExercise.set(set.routine_exercise_id, [projected]);
   }
 
+  const locale = await getLocaleSafe();
   return {
     title: target.title,
     notes: target.notes,
@@ -290,7 +294,7 @@ export async function resolveRoutineShare(
         supersetKey: exercise.superset_key,
         restSeconds: exercise.rest_seconds,
         slug: exercise.slug,
-        title: exercise.title,
+        title: pickText(locale, exercise.title, exercise.title_zh),
         exerciseType: exercise.exercise_type,
         primaryMuscle: exercise.primary_muscle,
         secondaryMuscles: exercise.secondary_muscles,

@@ -1,8 +1,13 @@
-export function ProgressChart({
+import { formatNumber } from "@/lib/i18n/format";
+import { getI18n } from "@/lib/i18n/server";
+
+/** A single-series line chart. Values arrive already computed by the canonical
+ * statistics layer; this component only draws them. */
+export async function ProgressChart({
   title,
   unit,
   points,
-  formatValue = (value) => String(Math.round(value)),
+  formatValue,
 }: {
   title: string;
   unit: string;
@@ -11,6 +16,8 @@ export function ProgressChart({
   formatValue?: (value: number) => string;
 }) {
   if (points.length === 0) return null;
+
+  const { locale, t } = await getI18n();
 
   const width = 600;
   const height = 160;
@@ -28,16 +35,27 @@ export function ProgressChart({
     <section className="mt-6">
       <h2 className="text-sm font-medium text-zinc-500">{title}</h2>
       <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-3">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label={`${title} (${unit})`}>
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="w-full"
+          role="img"
+          aria-label={t("progress.chart.ariaLabel", { title, unit })}
+        >
           <polyline points={polyline} fill="none" stroke="#18181b" strokeWidth={2} />
           {coords.map((c, i) => (
             <circle key={i} cx={c.x} cy={c.y} r={3} fill="#18181b" />
           ))}
           <text x={pad} y={14} fontSize={10} fill="#a1a1aa">
-            {formatValue(max)} {unit}
+            {t("common.quantity", {
+              value: formatValue ? formatValue(max) : formatNumber(locale, max),
+              unit,
+            })}
           </text>
           <text x={pad} y={height - 6} fontSize={10} fill="#a1a1aa">
-            {formatValue(min)} {unit}
+            {t("common.quantity", {
+              value: formatValue ? formatValue(min) : formatNumber(locale, min),
+              unit,
+            })}
           </text>
         </svg>
         <div className="flex justify-between text-[10px] text-zinc-400">

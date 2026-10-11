@@ -6,11 +6,13 @@ import {
   type ExerciseRangeTotals,
   type ExerciseStatistics,
 } from "@/lib/exercise-statistics";
-import { PROGRESS_RANGES, RANGE_LABELS, type ProgressRange } from "@/lib/progress";
-import { RECORD_CATEGORY_LABELS, type RecordCategory } from "@/lib/records";
+import { PROGRESS_RANGES, rangeLabel, type ProgressRange } from "@/lib/progress";
+import { recordCategoryLabel, type RecordCategory } from "@/lib/records";
 import { formatVolumeKg } from "@/lib/workout-stats";
 import { ProgressChart } from "@/components/progress-chart";
-import { formatDateTimeInTimeZone } from "@/lib/timezone";
+import { formatDateTime, formatDecimal, formatNumber } from "@/lib/i18n/format";
+import { getI18n } from "@/lib/i18n/server";
+import type { Locale, Translate } from "@/lib/i18n";
 
 /**
  * One exercise's canonical statistics view.
@@ -112,15 +114,13 @@ const SUMMARY_BY_TYPE: Record<ExerciseType, readonly SummaryMetric[]> = {
 // Formatting (canonical units)
 // ---------------------------------------------------------------------------
 
-/** A recorded number without the noise of "\"70.00\"" — 70 is 70 kg. */
-function trimNumber(value: number): string {
-  return String(Number(value.toFixed(2)));
-}
-
 /** Canonical seconds, shown as a clock once the value passes a minute. */
-function formatSeconds(total: number): string {
+function formatSeconds(t: Translate, total: number): string {
   const rounded = Math.round(total);
-  if (rounded < 60) return `${rounded}s`;
+  if (rounded < 60) {
+    // Tight join: English writes "45s", not "45 s".
+    return t("common.quantityTight", { value: rounded, unit: t("common.unit.seconds") });
+  }
   const minutes = Math.floor(rounded / 60);
   return `${minutes}:${String(rounded % 60).padStart(2, "0")}`;
 }
@@ -130,35 +130,46 @@ function formatSeconds(total: number): string {
  * not exercise types, so two types that share a category (a heaviest weight is a
  * heaviest weight) format identically. It is display only — the value itself
  * stays canonical, which is what the verification asserts.
+ *
+ * Numbers and their unit are joined through the shared `common.quantity`
+ * template and the shared unit vocabulary rather than concatenated, so a locale
+ * whose convention differs (no space between value and unit) still reads right.
  */
-function formatCategoryValue(category: RecordCategory, value: number): string {
+function formatCategoryValue(
+  t: Translate,
+  locale: Locale,
+  category: RecordCategory,
+  value: number,
+): string {
+  const quantity = (formatted: string, unit: string) =>
+    t("common.quantity", { value: formatted, unit });
   switch (category) {
     case "heaviest_weight":
     case "heaviest_added_weight":
     case "lowest_assistance":
-      return `${trimNumber(value)} kg`;
+      return quantity(formatDecimal(locale, value), t("common.unit.kg"));
     case "best_e1rm":
     case "best_set_volume":
       // Estimates and set volumes are whole kilograms; a fractional part would
       // imply precision the Epley estimate does not have.
-      return `${Math.round(value)} kg`;
+      return quantity(formatNumber(locale, value), t("common.unit.kg"));
     case "most_reps":
-      return `${value} ${value === 1 ? "rep" : "reps"}`;
+      return t("common.plural.reps", { count: value });
     case "best_duration":
     case "longest_duration":
-      return formatSeconds(value);
+      return formatSeconds(t, value);
     case "longest_distance":
-      return `${trimNumber(value)} m`;
+      return quantity(formatDecimal(locale, value), t("common.unit.m"));
     case "best_pace":
-      return `${value.toFixed(2)} m/s`;
+      return quantity(value.toFixed(2), t("exerciseDetail.unit.metersPerSecond"));
     case "most_floors":
-      return `${value} ${value === 1 ? "floor" : "floors"}`;
+      return t("metrics.plural.floors", { count: value });
     case "best_floors_per_minute":
-      return `${value.toFixed(1)} floors/min`;
+      return quantity(value.toFixed(1), t("exerciseDetail.unit.floorsPerMinute"));
     case "most_steps":
-      return `${value} ${value === 1 ? "step" : "steps"}`;
+      return t("metrics.plural.steps", { count: value });
     case "best_steps_per_minute":
-      return `${value.toFixed(1)} steps/min`;
+      return quantity(value.toFixed(1), t("exerciseDetail.unit.stepsPerMinute"));
   }
 }
 
@@ -177,34 +188,39 @@ function summaryValue(metric: SummaryMetric, totals: ExerciseRangeTotals): numbe
   }
 }
 
-function summaryLabel(metric: SummaryMetric): string {
+function summaryLabel(t: Translate, locale: Locale, metric: SummaryMetric): string {
   switch (metric.kind) {
     // The category's wording comes from the Records vocabulary, so a tile and a
     // record badge never word the same metric differently.
     case "category":
-      return RECORD_CATEGORY_LABELS[metric.category];
+      return recordCategoryLabel(metric.category, locale);
     case "volume":
-      return "Total volume";
+      return t("exerciseDetail.stats.summary.volume");
     case "reps":
-      return "Total reps";
+      return t("exerciseDetail.stats.summary.reps");
     case "sessions":
-      return "Sessions";
+      return t("exerciseDetail.stats.summary.sessions");
     case "sets":
-      return "Completed sets";
+      return t("exerciseDetail.stats.summary.sets");
   }
 }
 
-function formatSummaryValue(metric: SummaryMetric, value: number): string {
-  if (metric.kind === "category") return formatCategoryValue(metric.category, value);
-  if (metric.kind === "volume") return formatVolumeKg(value);
-  if (metric.kind === "reps") return `${value} ${value === 1 ? "rep" : "reps"}`;
+function formatSummaryValue(
+  t: Translate,
+  locale: Locale,
+  metric: SummaryMetric,
+  value: number,
+): string {
+  if (metric.kind === "category") return formatCategoryValue(t, locale, metric.category, value);
+  if (metric.kind === "volume") return formatVolumeKg(value, locale);
+  if (metric.kind === "reps") return t("common.plural.reps", { count: value });
   return String(value);
 }
 
 /** The one estimate on the page, and the policy that makes it a record. */
-function summaryNote(metric: SummaryMetric): string | undefined {
+function summaryNote(t: Translate, metric: SummaryMetric): string | undefined {
   return metric.kind === "category" && metric.category === "best_e1rm"
-    ? "Epley, sets of 12 reps or fewer; a single is its load"
+    ? t("exerciseDetail.stats.e1rmNote")
     : undefined;
 }
 
@@ -236,58 +252,83 @@ interface ChartSpec {
  * the one-rep special case.
  */
 function chartSpecFor(
+  t: Translate,
   exerciseType: ExerciseType,
   direction: DurationRecordDirection,
 ): ChartSpec {
   switch (exerciseType) {
     case "weight_reps":
-      return { category: "best_e1rm", title: "Best e1RM per session", unit: "kg" };
+      return {
+        category: "best_e1rm",
+        title: t("exerciseDetail.chart.e1rm"),
+        unit: t("common.unit.kg"),
+      };
     case "bodyweight_reps":
-      return { category: "most_reps", title: "Best reps per session", unit: "reps" };
+      return {
+        category: "most_reps",
+        title: t("exerciseDetail.chart.reps"),
+        unit: t("common.unit.reps"),
+      };
     case "bodyweight_weighted":
-      return { category: "heaviest_added_weight", title: "Best added weight per session", unit: "kg" };
+      return {
+        category: "heaviest_added_weight",
+        title: t("exerciseDetail.chart.addedWeight"),
+        unit: t("common.unit.kg"),
+      };
     case "bodyweight_assisted":
       return {
         category: "lowest_assistance",
-        title: "Lowest assistance per session",
-        unit: "kg",
+        title: t("exerciseDetail.chart.assistance"),
+        unit: t("common.unit.kg"),
       };
     case "reps_only":
-      return { category: "most_reps", title: "Best reps per session", unit: "reps" };
+      return {
+        category: "most_reps",
+        title: t("exerciseDetail.chart.reps"),
+        unit: t("common.unit.reps"),
+      };
     case "duration":
       return {
         category: "best_duration",
         title:
           direction === "lower"
-            ? "Fastest time per session"
+            ? t("exerciseDetail.chart.fastest")
             : direction === "none"
-              ? "Duration per session"
-              : "Longest hold per session",
-        unit: "s",
+              ? t("exerciseDetail.chart.duration")
+              : t("exerciseDetail.chart.longestHold"),
+        unit: t("common.unit.seconds"),
       };
     case "weight_duration":
-      return { category: "heaviest_weight", title: "Best weight per session", unit: "kg" };
+      return {
+        category: "heaviest_weight",
+        title: t("exerciseDetail.chart.weight"),
+        unit: t("common.unit.kg"),
+      };
     case "distance_duration":
       return {
         category: "best_pace",
-        title: "Best pace per session",
-        unit: "m/s",
+        title: t("exerciseDetail.chart.pace"),
+        unit: t("exerciseDetail.unit.metersPerSecond"),
         formatValue: (value) => value.toFixed(2),
       };
     case "short_distance_weight":
-      return { category: "heaviest_weight", title: "Best weight per session", unit: "kg" };
+      return {
+        category: "heaviest_weight",
+        title: t("exerciseDetail.chart.weight"),
+        unit: t("common.unit.kg"),
+      };
     case "floors_duration":
       return {
         category: "best_floors_per_minute",
-        title: "Floors per minute per session",
-        unit: "/min",
+        title: t("exerciseDetail.chart.floorsPerMinute"),
+        unit: t("exerciseDetail.unit.perMinute"),
         formatValue: (value) => value.toFixed(1),
       };
     case "steps_duration":
       return {
         category: "best_steps_per_minute",
-        title: "Steps per minute per session",
-        unit: "/min",
+        title: t("exerciseDetail.chart.stepsPerMinute"),
+        unit: t("exerciseDetail.unit.perMinute"),
         formatValue: (value) => value.toFixed(1),
       };
   }
@@ -298,7 +339,15 @@ function chartSpecFor(
 // ---------------------------------------------------------------------------
 
 /** Range links, so a different window is one click and needs no client state. */
-function RangeLinks({ exerciseId, range }: { exerciseId: string; range: ProgressRange }) {
+function RangeLinks({
+  exerciseId,
+  range,
+  locale,
+}: {
+  exerciseId: string;
+  range: ProgressRange;
+  locale: Locale;
+}) {
   return (
     <div className="flex flex-wrap gap-2">
       {PROGRESS_RANGES.map((option) => {
@@ -314,7 +363,7 @@ function RangeLinks({ exerciseId, range }: { exerciseId: string; range: Progress
                 : "border-zinc-300 text-zinc-600 hover:bg-zinc-100"
             }`}
           >
-            {RANGE_LABELS[option]}
+            {rangeLabel(option, locale)}
           </Link>
         );
       })}
@@ -325,25 +374,34 @@ function RangeLinks({ exerciseId, range }: { exerciseId: string; range: Progress
 function PersonalRecords({
   stats,
   timeZone,
+  locale,
+  t,
 }: {
   stats: ExerciseStatistics;
   timeZone: string;
+  locale: Locale;
+  t: Translate;
 }) {
   if (stats.personalRecords.length === 0) return null;
   return (
     <section className="mt-8">
       <h2 className="text-sm font-medium text-zinc-500">
-        Personal records <span className="font-normal text-zinc-400">· all time</span>
+        {t("exerciseDetail.stats.recordsHeading")}{" "}
+        <span className="font-normal text-zinc-400">
+          · {t("exerciseDetail.stats.recordsAllTime")}
+        </span>
       </h2>
       <ul className="mt-2 divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white shadow-sm">
         {stats.personalRecords.map((record) => (
           <li key={record.category} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5">
-            <span className="text-xs text-zinc-500">{RECORD_CATEGORY_LABELS[record.category]}</span>
+            <span className="text-xs text-zinc-500">
+              {recordCategoryLabel(record.category, locale)}
+            </span>
             <span className="text-sm font-semibold">
-              {formatCategoryValue(record.category, record.value)}
+              {formatCategoryValue(t, locale, record.category, record.value)}
             </span>
             <span className="ml-auto text-xs text-zinc-400">
-              {formatDateTimeInTimeZone(record.achievedAt, timeZone)}
+              {formatDateTime(locale, record.achievedAt, timeZone)}
             </span>
             <Link
               href={`/workouts/${record.workoutId}`}
@@ -375,36 +433,39 @@ export async function ExerciseStats({
   range?: ProgressRange;
   timeZone: string;
 }) {
+  const { locale, t } = await getI18n();
   const stats = await getExerciseStatistics(db, userId, exercise, range, timeZone);
 
   // No finished performance: avoid presenting zeroes as measured results.
   if (stats.allTimeCompletedSets === 0) {
     return (
       <p className="text-zinc-500">
-        No workout history yet. Finish a workout containing {exercise.title} to see statistics
-        here.
+        {t("exerciseDetail.stats.empty", { exercise: exercise.title })}
       </p>
     );
   }
 
   const summary = SUMMARY_BY_TYPE[exercise.exercise_type];
-  const chart = chartSpecFor(exercise.exercise_type, exercise.duration_record_direction);
+  const chart = chartSpecFor(t, exercise.exercise_type, exercise.duration_record_direction);
   const chartPoints = stats.sessions.flatMap((session) => {
     const value = session.bests[chart.category];
     return value === undefined
       ? []
-      : [{ label: formatDateTimeInTimeZone(session.startedAt, timeZone), value }];
+      : [{ label: formatDateTime(locale, session.startedAt, timeZone), value }];
   });
 
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <RangeLinks exerciseId={exercise.id} range={range} />
+        <RangeLinks exerciseId={exercise.id} range={range} locale={locale} />
       </div>
 
       {stats.totals.completedSets === 0 ? (
         <p className="mt-6 text-zinc-500">
-          No completed sets for {exercise.title} in {RANGE_LABELS[range]}.
+          {t("exerciseDetail.stats.emptyRange", {
+            exercise: exercise.title,
+            range: rangeLabel(range, locale),
+          })}
         </p>
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -413,9 +474,9 @@ export async function ExerciseStats({
             return (
               <Stat
                 key={metric.kind === "category" ? metric.category : metric.kind}
-                label={summaryLabel(metric)}
-                value={value == null ? "—" : formatSummaryValue(metric, value)}
-                note={summaryNote(metric)}
+                label={summaryLabel(t, locale, metric)}
+                value={value == null ? "—" : formatSummaryValue(t, locale, metric, value)}
+                note={summaryNote(t, metric)}
               />
             );
           })}
@@ -424,7 +485,7 @@ export async function ExerciseStats({
 
       {stats.totals.completedSets > 0 && chartPoints.length > 0 ? (
         <ProgressChart
-          title={`${chart.title} · ${RANGE_LABELS[range]}`}
+          title={`${chart.title} · ${rangeLabel(range, locale)}`}
           unit={chart.unit}
           points={chartPoints}
           formatValue={chart.formatValue}
@@ -433,7 +494,7 @@ export async function ExerciseStats({
 
       {/* Records are all-time by definition, so this section is not filtered by
           the range control above. */}
-      <PersonalRecords stats={stats} timeZone={timeZone} />
+      <PersonalRecords stats={stats} timeZone={timeZone} locale={locale} t={t} />
     </>
   );
 }

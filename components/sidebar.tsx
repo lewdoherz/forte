@@ -1,10 +1,20 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ForteMark } from "@/components/forte-mark";
+import { useI18n } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n";
 
 type IconProps = { className?: string };
+
+/** A navigation entry: where it points, and which label it renders. */
+type NavItem = {
+  href: string;
+  label: MessageKey;
+  Icon: (props: IconProps) => ReactNode;
+};
 
 /** The slice of the in-progress workout the sidebar needs to link to it. */
 type ActiveWorkout = { id: string; title: string };
@@ -63,12 +73,14 @@ function ProgressIcon({ className }: IconProps) {
   );
 }
 
-const ITEMS = [
-  { href: "/", label: "Home", Icon: HomeIcon },
-  { href: "/routines", label: "Routines", Icon: RoutinesIcon },
-  { href: "/exercises", label: "Exercises", Icon: ExercisesIcon },
-  { href: "/workouts", label: "Workouts", Icon: WorkoutsIcon },
-  { href: "/progress", label: "Progress", Icon: ProgressIcon },
+/* Labels are keys into the shared `nav.*` vocabulary rather than literals: the
+   same wording is used by the mobile bar, the account page and the logger. */
+const ITEMS: NavItem[] = [
+  { href: "/", label: "nav.home", Icon: HomeIcon },
+  { href: "/routines", label: "nav.routines", Icon: RoutinesIcon },
+  { href: "/exercises", label: "nav.exercises", Icon: ExercisesIcon },
+  { href: "/workouts", label: "nav.workouts", Icon: WorkoutsIcon },
+  { href: "/progress", label: "nav.progress", Icon: ProgressIcon },
 ];
 
 /**
@@ -92,6 +104,7 @@ export function Sidebar({
   activeWorkout: ActiveWorkout | null;
 }) {
   const pathname = usePathname();
+  const { t } = useI18n();
   // There is no per-user avatar (`profile_pic_url` is null), so the account row
   // shows a monogram of the display name instead.
   const initial = displayName.charAt(0).toUpperCase() || "?";
@@ -102,10 +115,10 @@ export function Sidebar({
         <span className="h-8 w-8 shrink-0 overflow-hidden rounded-md">
           <ForteMark size={32} />
         </span>
-        <span className="text-base font-semibold">forte</span>
+        <span className="text-base font-semibold">{t("common.appName")}</span>
       </Link>
 
-      <nav aria-label="Primary" className="flex flex-col gap-1 px-2 py-1">
+      <nav aria-label={t("nav.primary")} className="flex flex-col gap-1 px-2 py-1">
         {ITEMS.map(({ href, label, Icon }) => {
           const active = isActivePath(pathname, href);
           return (
@@ -120,7 +133,7 @@ export function Sidebar({
               }`}
             >
               <Icon className="h-5 w-5 shrink-0" />
-              <span className="truncate">{label}</span>
+              <span className="truncate">{t(label)}</span>
             </Link>
           );
         })}

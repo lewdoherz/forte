@@ -91,6 +91,16 @@ analytics with personal records.
   Weekly totals use finish-time filtering and complete pagination, including
   sessions that started before the window. Counts, volume, and records reuse
   the canonical history and Records calculations; no goals or streaks are invented.
+- **Two languages, resolved on the server.** The interface ships in English and
+  Simplified Chinese. The choice lives in the `forte_locale` cookie (rendering,
+  including the signed-out pages, so a reader can switch before signing in) and in
+  `app_user.locale` (outgoing email, sent from a background task where no cookie
+  exists). Messages are typed flat dictionaries in `lib/i18n/dictionaries/`; the
+  Chinese set is checked against the English keys at compile time, so a missing
+  translation fails the build rather than falling back silently. Dates, numbers
+  and durations are formatted per locale, and catalog content — exercise titles,
+  instructions, muscle groups, equipment — is stored per language with English as
+  the authority and the fallback.
 
 
 ## Progress
@@ -113,6 +123,7 @@ analytics with personal records.
 | 15 | Auth hardening: database-backed rate limiting with per-endpoint rules, and session management | done |
 | 16 | First production deployment and Vercel/Neon verification | done |
 | Post-16 | Account lifecycle, offline logging, routine sharing, workout summaries, PRs, and exercise tabs | done |
+| 17 | Localization: English and Simplified Chinese, in-app language switcher, translated catalog and vocabulary, per-account email language | done |
 
 ## Android, iPhone, and iPad
 

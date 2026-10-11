@@ -1,3 +1,5 @@
+"use client";
+
 import {
   HEATMAP_ASPECT_RATIO,
   HEATMAP_BASE_ART,
@@ -7,8 +9,16 @@ import {
   type HeatmapSide,
 } from "@/lib/body-heatmap";
 import { heatmapOpacities } from "@/lib/muscle-distribution";
+import { useI18n } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n";
 
-const SIDE_LABELS: Record<HeatmapSide, string> = { front: "Front", back: "Back" };
+/**
+ * The message key for a side's caption. The side is the key suffix, so the two
+ * captions are not listed a second time here.
+ */
+function sideKey(side: HeatmapSide): MessageKey {
+  return `exercises.heatmap.${side}`;
+}
 
 /**
  * Front and back body heatmaps.
@@ -22,6 +32,11 @@ const SIDE_LABELS: Record<HeatmapSide, string> = { front: "Front", back: "Back" 
  * Both sides render from the same layer list; a muscle invisible from one side
  * resolves to its `(empty)` placeholder, a fully transparent no-op, which is why
  * one muscle list can drive two figures.
+ *
+ * A client component because the captions and the empty state come from the
+ * dictionary: it is rendered from server components (the workout summary) and
+ * from client ones (the routine editor's summary) alike, so neither `getI18n`
+ * nor a props-threaded translator would fit every caller.
  */
 export function BodyHeatmap({
   muscleValues,
@@ -30,6 +45,7 @@ export function BodyHeatmap({
   muscleValues: Record<string, number>;
   className?: string;
 }) {
+  const { t } = useI18n();
   const opacities = heatmapOpacities(muscleValues);
   const layers = Object.entries(MUSCLE_HEATMAP_ART).filter(
     ([muscle]) => (opacities[muscle] ?? 0) > 0,
@@ -75,13 +91,13 @@ export function BodyHeatmap({
               ))}
             </div>
             <figcaption className="mt-1 text-center text-xs text-zinc-500">
-              {SIDE_LABELS[side]}
+              {t(sideKey(side))}
             </figcaption>
           </figure>
         ))}
       </div>
       {hasData ? null : (
-        <p className="mt-2 text-center text-xs text-zinc-500">No muscle data yet.</p>
+        <p className="mt-2 text-center text-xs text-zinc-500">{t("exercises.heatmap.empty")}</p>
       )}
     </div>
   );

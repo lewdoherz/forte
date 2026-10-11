@@ -1,0 +1,95 @@
+/**
+ * Shared vocabulary: navigation, generic actions, units and the language
+ * picker. Area-specific copy lives in its own module.
+ */
+export const common = {
+  "common.appName": "forte",
+  "common.brandTagline": "Workout tracking",
+  "common.meta.description": "Workout tracker — routines, logging, history and progress.",
+  "common.meta.manifestShortName": "forte",
+
+  "nav.home": "Home",
+  "nav.routines": "Routines",
+  "nav.exercises": "Exercises",
+  "nav.workouts": "Workouts",
+  "nav.progress": "Progress",
+  "nav.account": "Account",
+  "nav.primary": "Primary",
+
+  "common.signIn": "Sign in",
+  "common.signOut": "Sign out",
+  "common.signUp": "Sign up",
+  "common.save": "Save",
+  "common.saveChanges": "Save changes",
+  "common.saving": "Saving…",
+  "common.saved": "Saved",
+  "common.cancel": "Cancel",
+  "common.delete": "Delete",
+  "common.deleting": "Deleting…",
+  "common.edit": "Edit",
+  "common.create": "Create",
+  "common.add": "Add",
+  "common.remove": "Remove",
+  "common.back": "Back",
+  "common.close": "Close",
+  "common.retry": "Retry",
+  "common.loading": "Loading…",
+  "common.search": "Search",
+  "common.filter": "Filter",
+  "common.clear": "Clear",
+  "common.clearFilters": "Clear filters",
+  "common.confirm": "Confirm",
+  "common.optional": "Optional",
+  "common.required": "Required",
+  "common.done": "Done",
+  "common.showMore": "Show more",
+  "common.showLess": "Show less",
+  "common.viewAll": "View all",
+  "common.all": "All",
+  "common.none": "None",
+  "common.copy": "Copy",
+  "common.copied": "Copied",
+  "common.download": "Download",
+  "common.open": "Open",
+  "common.today": "Today",
+  "common.yesterday": "Yesterday",
+  "common.yes": "Yes",
+  "common.no": "No",
+  "common.dismiss": "Dismiss",
+  "common.working": "Working…",
+
+  /* The join template for a number and its unit. English separates them with a
+     space; Chinese does not, which is exactly why this is a template and not a
+     `${value} ${unit}` concatenation at every call site. */
+  "common.quantity": "{value} {unit}",
+  /* The same join for units English writes without a space — seconds are "90s",
+     never "90 s", while kilograms, metres, floors and steps are spaced. Keeping
+     this as a second template is what lets both conventions come from the
+     dictionaries instead of from string surgery at the call site. */
+  "common.quantityTight": "{value}{unit}",
+  "common.unit.kg": "kg",
+  "common.unit.kgLong": "kilograms",
+  "common.unit.m": "m",
+  "common.unit.km": "km",
+  "common.unit.floors": "floors",
+  "common.unit.steps": "steps",
+  "common.unit.reps": "reps",
+  "common.unit.sets": "sets",
+  "common.unit.seconds": "s",
+  "common.unit.minutes": "min",
+  "common.unit.hours": "h",
+  "common.unit.perSide": "per side",
+
+  "common.plural.reps": "{count} rep|{count} reps",
+  "common.plural.sets": "{count} set|{count} sets",
+  "common.plural.exercises": "{count} exercise|{count} exercises",
+  "common.plural.workouts": "{count} workout|{count} workouts",
+  "common.plural.days": "{count} day|{count} days",
+
+  "common.language.title": "Language",
+  "common.language.label": "Interface language",
+  "common.language.description":
+    "Applies to the interface and to email forte sends you.",
+  "common.language.switchLabel": "Change language",
+  "common.language.error": "Could not change the language. Try again.",
+} as const;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
+import { useI18n } from "@/lib/i18n/context";
 
 /**
  * The app's overlay chrome.
@@ -22,6 +23,8 @@ export function Modal({
   /** Width/layout classes for the panel; defaults to the form dialog's width. */
   panelClassName?: string;
 }) {
+  const { t } = useI18n();
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -52,7 +55,7 @@ export function Modal({
             onClick={onClose}
             className="rounded-md px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100"
           >
-            Close
+            {t("common.close")}
           </button>
         </div>
         {children}

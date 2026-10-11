@@ -103,17 +103,27 @@ export type Patch<T extends Created> = Partial<
 export interface MuscleGroup {
   code: string;
   display_name: string;
+  /** Simplified Chinese name (0016). Null falls back to `display_name`. */
+  display_name_zh: string | null;
   sort_order: number;
 }
 
 export interface Equipment {
   code: string;
   display_name: string;
+  /** Simplified Chinese name (0016). Null falls back to `display_name`. */
+  display_name_zh: string | null;
   sort_order: number;
 }
 
-export type NewMuscleGroup = Omit<MuscleGroup, 'sort_order'> & { sort_order?: number };
-export type NewEquipment = Omit<Equipment, 'sort_order'> & { sort_order?: number };
+export type NewMuscleGroup = Omit<MuscleGroup, 'sort_order' | 'display_name_zh'> & {
+  sort_order?: number;
+  display_name_zh?: string | null;
+};
+export type NewEquipment = Omit<Equipment, 'sort_order' | 'display_name_zh'> & {
+  sort_order?: number;
+  display_name_zh?: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // Identity
@@ -203,6 +213,10 @@ export interface ExerciseTemplate extends Timestamped {
   equipment: string; // -> equipment.code
   media_url: string | null;
   how_to: string | null; // imported library's numbered "How to" body
+  /** Simplified Chinese title (0016). Null falls back to `title`. */
+  title_zh: string | null;
+  /** Simplified Chinese instructions (0016/0017). Null falls back to `how_to`. */
+  how_to_zh: string | null;
   is_custom: boolean;
   owner_id: Uuid | null; // null = global catalog
   archived_at: Date | null;
@@ -215,6 +229,8 @@ export type NewExerciseTemplate = New<
   | 'secondary_muscles'
   | 'media_url'
   | 'how_to'
+  | 'title_zh'
+  | 'how_to_zh'
   | 'is_custom'
   | 'owner_id'
   | 'archived_at'

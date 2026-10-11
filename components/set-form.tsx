@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useI18n } from "@/lib/i18n/context";
+import type { Translate } from "@/lib/i18n";
 
 export interface SetFormValues {
   reps: number | null;
@@ -21,8 +23,14 @@ function text(value: FormDataEntryValue | null): string | null {
  * weight is a non-negative decimal. The browser's `min`/`max`/`step` constraints
  * already block nearly all of this; validating again here keeps the form's error
  * presentation meaningful instead of being dead markup.
+ *
+ * The failures are worded from the dictionary, so they are reported in the
+ * reader's language rather than in the language of the validator.
  */
-function readValues(form: HTMLFormElement): { values: SetFormValues } | { error: string } {
+function readValues(
+  form: HTMLFormElement,
+  t: Translate,
+): { values: SetFormValues } | { error: string } {
   const data = new FormData(form);
   const repsRaw = text(data.get("reps"));
   const weightRaw = text(data.get("weight_kg"));
@@ -30,16 +38,16 @@ function readValues(form: HTMLFormElement): { values: SetFormValues } | { error:
 
   const reps = repsRaw === null ? null : Number(repsRaw);
   if (reps !== null && (!Number.isInteger(reps) || reps < 0)) {
-    return { error: "Reps must be a whole number of zero or more." };
+    return { error: t("workouts.setForm.errorReps") };
   }
 
   const rpe = rpeRaw === null ? null : Number(rpeRaw);
   if (rpe !== null && (!Number.isFinite(rpe) || rpe < 1 || rpe > 10)) {
-    return { error: "RPE must be between 1 and 10." };
+    return { error: t("workouts.setForm.errorRpe") };
   }
 
   if (weightRaw !== null && !/^\d{1,4}(\.\d{1,3})?$/.test(weightRaw)) {
-    return { error: "Weight must be a non-negative number." };
+    return { error: t("workouts.setForm.errorWeight") };
   }
 
   return { values: { reps, weight_kg: weightRaw, rpe: rpeRaw } };
@@ -62,12 +70,13 @@ export function SetForm({
   rpe: string | null;
   onSubmit: (values: SetFormValues) => void | Promise<void>;
 }) {
+  const { t } = useI18n();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const parsed = readValues(event.currentTarget);
+    const parsed = readValues(event.currentTarget, t);
     if ("error" in parsed) {
       setError(parsed.error);
       return;
@@ -92,8 +101,8 @@ export function SetForm({
         inputMode="numeric"
         min={0}
         defaultValue={reps ?? ""}
-        placeholder="reps"
-        aria-label="Reps"
+        placeholder={t("common.unit.reps")}
+        aria-label={t("workouts.setForm.repsLabel")}
         className="h-11 min-w-0 rounded-md border border-zinc-300 px-3 text-sm"
       />
       <input
@@ -103,8 +112,8 @@ export function SetForm({
         min={0}
         step="0.001"
         defaultValue={weight ?? ""}
-        placeholder="kg"
-        aria-label="Weight in kilograms"
+        placeholder={t("common.unit.kg")}
+        aria-label={t("workouts.setForm.weightLabel")}
         className="h-11 min-w-0 rounded-md border border-zinc-300 px-3 text-sm"
       />
       <input
@@ -115,8 +124,8 @@ export function SetForm({
         max={10}
         step="0.5"
         defaultValue={rpe ?? ""}
-        placeholder="RPE"
-        aria-label="Rate of perceived exertion"
+        placeholder={t("workouts.setForm.rpePlaceholder")}
+        aria-label={t("workouts.setForm.rpeLabel")}
         className="h-11 min-w-0 rounded-md border border-zinc-300 px-3 text-sm"
       />
       <button
@@ -124,7 +133,7 @@ export function SetForm({
         disabled={pending}
         className="h-11 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-60"
       >
-        {pending ? "…" : "Done"}
+        {pending ? "…" : t("common.done")}
       </button>
       {error ? (
         <span role="alert" className="col-span-full text-xs text-red-600">

@@ -14,7 +14,7 @@ import {
   getExerciseStatistics,
   type ExercisePersonalRecord,
 } from "../../lib/exercise-statistics";
-import { RANGE_LABELS } from "../../lib/progress";
+import { PROGRESS_RANGES, rangeLabel } from "../../lib/progress";
 import type { DurationRecordDirection, ExerciseType } from "../../schema/types";
 import { EXERCISE_TYPES } from "../../schema/types";
 
@@ -634,7 +634,10 @@ check(
     asMap(recentRange.personalRecords).get("heaviest_weight")?.workoutId === oldWorkout,
   JSON.stringify(recentRange.personalRecords),
 );
-check("every range has a label", Object.keys(RANGE_LABELS).length === 4);
+check(
+  "every range has a label",
+  PROGRESS_RANGES.every((range) => rangeLabel(range, "en") !== range),
+);
 
 // ---------------------------------------------------------------------------
 // 8. Efficiency: the series is bounded by sessions, not by sets

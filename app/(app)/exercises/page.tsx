@@ -1,8 +1,12 @@
+import { getI18n } from "@/lib/i18n/server";
+
 /**
  * The main pane when no exercise is selected. The Library panel beside it is
  * the actual navigation, so this only explains what a row does.
  */
-export default function ExercisesPage() {
+export default async function ExercisesPage() {
+  const { t } = await getI18n();
+
   return (
     <div className="flex min-h-[70vh] flex-col items-center justify-center px-6 py-16 text-center">
       <svg
@@ -20,10 +24,8 @@ export default function ExercisesPage() {
         <rect x="3" y="14" width="7" height="7" rx="1.5" />
         <rect x="14" y="14" width="7" height="7" rx="1.5" />
       </svg>
-      <h1 className="mt-4 text-lg font-medium">Select Exercise</h1>
-      <p className="mt-1 text-sm text-zinc-500">
-        Click on an exercise to see statistics about it.
-      </p>
+      <h1 className="mt-4 text-lg font-medium">{t("exercises.select.title")}</h1>
+      <p className="mt-1 text-sm text-zinc-500">{t("exercises.select.description")}</p>
     </div>
   );
 }

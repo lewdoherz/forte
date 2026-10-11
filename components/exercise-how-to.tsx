@@ -1,4 +1,5 @@
 import { ExerciseVideo } from "@/components/exercise-media";
+import { getI18n } from "@/lib/i18n/server";
 
 /**
  * Turns the imported library's numbered body ("1. …\n2. …") into its steps.
@@ -30,7 +31,7 @@ function splitNumberedSteps(howTo: string | null): string[] | null {
  * header, and only a video path reaches this component: an image URL in
  * `media_url` (a custom exercise) is the header's image.
  */
-export function ExerciseHowTo({
+export async function ExerciseHowTo({
   title,
   slug,
   videoUrl,
@@ -43,16 +44,18 @@ export function ExerciseHowTo({
   /** The raw `how_to` body, or null when the exercise has no instructions. */
   howTo: string | null;
 }) {
+  const { t } = await getI18n();
+
   // Neither a clip nor a body: say so on purpose, instead of leaving a blank
   // panel that reads as a rendering bug. Custom exercises land here until their
   // author writes instructions.
   if (!videoUrl && !howTo) {
     return (
       <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-6 py-10 text-center">
-        <p className="text-sm font-medium text-zinc-700">No instructions for {title} yet</p>
-        <p className="mt-1 text-sm text-zinc-500">
-          This exercise has no demonstration clip or written steps.
+        <p className="text-sm font-medium text-zinc-700">
+          {t("exerciseDetail.howTo.empty", { exercise: title })}
         </p>
+        <p className="mt-1 text-sm text-zinc-500">{t("exerciseDetail.howTo.emptyBody")}</p>
       </div>
     );
   }
@@ -76,7 +79,9 @@ export function ExerciseHowTo({
           {howTo}
         </p>
       ) : (
-        <p className="text-sm text-zinc-500">No written instructions for {title} yet.</p>
+        <p className="text-sm text-zinc-500">
+          {t("exerciseDetail.howTo.noWritten", { exercise: title })}
+        </p>
       )}
     </div>
   );

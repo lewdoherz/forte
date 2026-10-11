@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "./db";
 import { reportFailure } from "./log";
 import { requireSessionUserId } from "./auth-session";
+import { getI18n } from "./i18n/server";
 import { getOrCreateRoutineShareToken, revokeRoutineShareLinks } from "./share";
 
 export type RoutineShareLinkState = { token: string } | { error: string };
@@ -19,16 +20,17 @@ export async function createRoutineShareLink(
   routineId: string,
 ): Promise<RoutineShareLinkState> {
   const userId = await requireSessionUserId();
+  const { t } = await getI18n();
   const parsed = z.string().uuid().safeParse(routineId);
-  if (!parsed.success) return { error: "Invalid routine." };
+  if (!parsed.success) return { error: t("routines.error.invalidRoutine") };
 
   try {
     const token = await getOrCreateRoutineShareToken(db, userId, parsed.data);
-    if (!token) return { error: "That routine no longer exists." };
+    if (!token) return { error: t("routines.error.notFound") };
     return { token };
   } catch (error) {
     reportFailure("createRoutineShareLink", error);
-    return { error: "Could not create a share link." };
+    return { error: t("routines.share.createFailed") };
   }
 }
 
@@ -40,14 +42,15 @@ export async function revokeRoutineShareLink(
   routineId: string,
 ): Promise<RoutineShareActionState> {
   const userId = await requireSessionUserId();
+  const { t } = await getI18n();
   const parsed = z.string().uuid().safeParse(routineId);
-  if (!parsed.success) return { error: "Invalid routine." };
+  if (!parsed.success) return { error: t("routines.error.invalidRoutine") };
 
   try {
     await revokeRoutineShareLinks(db, userId, parsed.data);
     return {};
   } catch (error) {
     reportFailure("revokeRoutineShareLink", error);
-    return { error: "Could not revoke the link." };
+    return { error: t("routines.share.revokeFailed") };
   }
 }

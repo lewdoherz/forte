@@ -1,3 +1,6 @@
+import type { Locale } from "./i18n/config";
+import { formatDateTime } from "./i18n/format";
+
 /**
  * User-timezone handling.
  *
@@ -16,12 +19,16 @@
 export const DEFAULT_TIME_ZONE = "UTC";
 
 const partsFormatters = new Map<string, Intl.DateTimeFormat>();
-const displayFormatters = new Map<string, Intl.DateTimeFormat>();
 const validity = new Map<string, boolean>();
 
 /**
  * Formatter exposing the calendar fields of an instant in a given zone.
  * `hourCycle: "h23"` avoids the "24:00" midnight representation.
+ *
+ * The `en-US` tag here is NOT display: this formatter only ever extracts
+ * numeric fields with `formatToParts`, so its tag must not follow the reader's
+ * language — a localized calendar could reorder the fields or write them in
+ * another numbering system, and neither is wanted for a fixed machine read.
  */
 function partsFormatter(timeZone: string): Intl.DateTimeFormat {
   let formatter = partsFormatters.get(timeZone);
@@ -112,6 +119,10 @@ function localMidnightUtc(
  * Validates an IANA timezone name (e.g. `America/Chicago`) the way the runtime
  * itself resolves it. Results are memoised: the check relies on `Intl`
  * throwing, and exceptions are expensive on a hot validation path.
+ *
+ * The `en-US` tag is NOT display, for the same reason as in `partsFormatter`:
+ * only the zone name's validity is under test, so the tag is deliberately fixed
+ * rather than following the reader's language.
  */
 export function isValidTimeZone(timeZone: string): boolean {
   const cached = validity.get(timeZone);
@@ -156,18 +167,11 @@ export function startOfLocalDay(
 }
 
 /**
- * Formats an instant as a date and time in the user's zone. Same Medium/Short
- * shape as `format.ts`'s server-local `formatDateTime`, but timezone-correct.
+ * Formats an instant as a date and time in the reader's zone and language.
+ * Same Medium/Short shape as `format.ts`'s own `formatDateTime`, so the two
+ * agree; the zone comes from the owner's stored preference and the language
+ * from their locale, each owned by exactly one argument.
  */
-export function formatDateTimeInTimeZone(date: Date, timeZone: string): string {
-  let formatter = displayFormatters.get(timeZone);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat("en-GB", {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone,
-    });
-    displayFormatters.set(timeZone, formatter);
-  }
-  return formatter.format(date);
+export function formatDateTimeInTimeZone(date: Date, timeZone: string, locale: Locale): string {
+  return formatDateTime(locale, date, timeZone);
 }

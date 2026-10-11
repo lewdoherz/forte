@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getMessages, translate, type Locale, type MessageKey } from "./i18n";
 import { DEFAULT_TIME_ZONE, startOfLocalDay } from "./timezone";
 
 /**
@@ -13,12 +14,23 @@ import { DEFAULT_TIME_ZONE, startOfLocalDay } from "./timezone";
 export const PROGRESS_RANGES = ["all", "30d", "90d", "1y"] as const;
 export type ProgressRange = (typeof PROGRESS_RANGES)[number];
 
-export const RANGE_LABELS: Record<ProgressRange, string> = {
-  all: "All time",
-  "30d": "Last 30 days",
-  "90d": "Last 90 days",
-  "1y": "Last year",
+/**
+ * The range's wording: one dictionary key per range, resolved per locale. The
+ * values above are URL vocabulary and never change, so a stored
+ * `/progress?range=30d` link keeps resolving to the same window whatever
+ * language it is rendered in.
+ */
+const RANGE_KEYS: Record<ProgressRange, MessageKey> = {
+  all: "metrics.range.all",
+  "30d": "metrics.range.30d",
+  "90d": "metrics.range.90d",
+  "1y": "metrics.range.1y",
 };
+
+/** The range's name as the reader's language writes it. */
+export function rangeLabel(range: ProgressRange, locale: Locale): string {
+  return translate(locale, getMessages(locale), RANGE_KEYS[range]);
+}
 
 export const progressQuerySchema = z.object({
   templateId: z.string().uuid(),

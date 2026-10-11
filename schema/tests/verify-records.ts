@@ -11,7 +11,7 @@ import {
   estimatedOneRepMaxForRecord,
   extractSetRecordCandidates,
   RECORD_CATEGORIES,
-  RECORD_CATEGORY_LABELS,
+  recordCategoryLabel,
   type RecordCandidate,
   type RecordCategory,
   type RecordDirection,
@@ -151,7 +151,7 @@ check(
 
 check(
   "every category has display wording",
-  RECORD_CATEGORIES.every((category) => (RECORD_CATEGORY_LABELS[category] ?? "").length > 0),
+  RECORD_CATEGORIES.every((category) => recordCategoryLabel(category, "en").length > 0),
 );
 
 // Direction is fixed per category, except for duration's per-exercise setting.

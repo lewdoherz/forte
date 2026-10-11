@@ -5,13 +5,15 @@ import { redirect } from "next/navigation";
 import { db } from "./db";
 import { requireSessionUserId } from "./auth-session";
 import { reportFailure } from "./log";
+import { getI18n } from "./i18n/server";
+import type { MessageKey, Translate } from "./i18n";
 import {
   discardWorkout,
   listWorkouts,
   startEmptyWorkout,
   startWorkout,
   syncWorkoutDocument,
-  syncWorkoutInputSchema,
+  syncWorkoutInputSchemaFor,
 } from "./workouts";
 import { getPreviousPerformances, type PreviousPerformance } from "./previous-performance";
 import { enrichWorkoutPage, type WorkoutCardPage } from "./workout-history";
@@ -24,13 +26,19 @@ import type { WorkoutSyncInput } from "./workout-sync";
  */
 const uuidPattern = /^[0-9a-f-]{36}$/;
 
-function message(e: unknown, fallback: string): string {
-  if (!(e instanceof Error)) return fallback;
-  if (e.message === "not_authorized") return "You don't have permission to do that.";
-  if (e.message === "not_active") return "This workout is already finished.";
-  if (e.message === "already_finished") return "This workout is already finished.";
-  if (e.message === "invalid_ended_at") return "That finish time is outside the workout.";
-  return fallback;
+/**
+ * The reader-facing wording for a rejected write. The sentinel errors stay
+ * machine-readable (the sync caller classifies on them) while the text the
+ * reader sees comes from the dictionary, resolved inside the action so the
+ * message is in the language of the request that failed.
+ */
+function message(e: unknown, t: Translate, fallback: MessageKey): string {
+  if (!(e instanceof Error)) return t(fallback);
+  if (e.message === "not_authorized") return t("workouts.error.notAuthorized");
+  if (e.message === "not_active") return t("workouts.error.finished");
+  if (e.message === "already_finished") return t("workouts.error.finished");
+  if (e.message === "invalid_ended_at") return t("workouts.error.invalidEndedAt");
+  return t(fallback);
 }
 
 /**
@@ -109,12 +117,13 @@ export async function discardWorkoutAction(
   workoutId: string,
 ): Promise<{ ok: true } | { error: string }> {
   const userId = await requireSessionUserId();
-  if (!uuidPattern.test(workoutId)) return { error: "That workout could not be found." };
+  const { t } = await getI18n();
+  if (!uuidPattern.test(workoutId)) return { error: t("workouts.error.notFound") };
   try {
     await discardWorkout(db, userId, workoutId);
   } catch (e) {
     reportActionFailure("discardWorkout", e);
-    return { error: message(e, "Could not discard this workout.") };
+    return { error: message(e, t, "workouts.error.discardFailed") };
   }
   revalidatePath("/workouts");
   return { ok: true };
@@ -178,12 +187,16 @@ export async function syncWorkoutStateAction(
   input: WorkoutSyncInput,
 ): Promise<{ ok: true } | { error: string; code: SyncFailureCode }> {
   const userId = await requireSessionUserId();
-  const parsed = syncWorkoutInputSchema.safeParse(input);
+  const { t } = await getI18n();
+  const parsed = syncWorkoutInputSchemaFor(t).safeParse(input);
   if (!parsed.success) {
     // A malformed document is rejected identically on every attempt, so it is
-    // permanent for this revision; the next edit sends a fresh one.
+    // permanent for this revision; the next edit sends a fresh one. The schema
+    // is built for this request's translator, so its issue text is already in
+    // the reader's language; the dictionary supplies the fallback for an issue
+    // that carries none.
     return {
-      error: parsed.error.issues[0]?.message ?? "Invalid workout state.",
+      error: parsed.error.issues[0]?.message ?? t("workouts.error.invalidState"),
       code: "permanent",
     };
   }
@@ -192,7 +205,7 @@ export async function syncWorkoutStateAction(
   } catch (e) {
     reportActionFailure("syncWorkoutState", e);
     return {
-      error: message(e, "Could not sync this workout."),
+      error: message(e, t, "workouts.error.syncFailed"),
       code: e instanceof Error && PERMANENT_SYNC_ERRORS.has(e.message) ? "permanent" : "transient",
     };
   }

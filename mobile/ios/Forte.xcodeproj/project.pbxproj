@@ -4,19 +4,19 @@ archiveVersion = 1;
 classes = {};
 objectVersion = 56;
 objects = {
-A00000000000000000000001 = {isa = PBXProject; attributes = {LastUpgradeCheck = 1600;}; buildConfigurationList = A00000000000000000000002; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A00000000000000000000003; productRefGroup = A00000000000000000000004; projectDirPath = ""; projectRoot = ""; targets = (A00000000000000000000005);};
+A00000000000000000000001 = {isa = PBXProject; attributes = {LastUpgradeCheck = 1600;}; buildConfigurationList = A00000000000000000000002; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base, zh-Hans); mainGroup = A00000000000000000000003; productRefGroup = A00000000000000000000004; projectDirPath = ""; projectRoot = ""; targets = (A00000000000000000000005);};
 A00000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000006,A00000000000000000000007); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
 A00000000000000000000003 = {isa = PBXGroup; children = (A00000000000000000000008,A00000000000000000000004); sourceTree = "<group>";};
 A00000000000000000000004 = {isa = PBXGroup; children = (A00000000000000000000009); name = Products; sourceTree = "<group>";};
 A00000000000000000000005 = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000010; buildPhases = (A00000000000000000000011,A00000000000000000000012,A00000000000000000000013); buildRules = (); dependencies = (); name = Forte; productName = Forte; productReference = A00000000000000000000009; productType = "com.apple.product-type.application";};
 A00000000000000000000006 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 17.4;}; name = Debug;};
 A00000000000000000000007 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 17.4;}; name = Release;};
-A00000000000000000000008 = {isa = PBXGroup; children = (A00000000000000000000014,A00000000000000000000015,A00000000000000000000016); path = Forte; sourceTree = "<group>";};
+A00000000000000000000008 = {isa = PBXGroup; children = (A00000000000000000000014,A00000000000000000000015,A00000000000000000000016,A00000000000000000000023); path = Forte; sourceTree = "<group>";};
 A00000000000000000000009 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Forte.app; sourceTree = BUILT_PRODUCTS_DIR;};
 A00000000000000000000010 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000017,A00000000000000000000018); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
 A00000000000000000000011 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000019); runOnlyForDeploymentPostprocessing = 0;};
 A00000000000000000000012 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
-A00000000000000000000013 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000020); runOnlyForDeploymentPostprocessing = 0;};
+A00000000000000000000013 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000020,A00000000000000000000024); runOnlyForDeploymentPostprocessing = 0;};
 A00000000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>";};
 A00000000000000000000015 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>";};
 A00000000000000000000016 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>";};
@@ -24,6 +24,10 @@ A00000000000000000000017 = {isa = XCBuildConfiguration; buildSettings = {ASSETCA
 A00000000000000000000018 = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; FORTE_HOST = "forte-delta.vercel.app"; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Forte/Info.plist; MARKETING_VERSION = 1.0.0; PRODUCT_BUNDLE_IDENTIFIER = com.lewdoherz.forte; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_OPTIMIZATION_LEVEL = "-O";}; name = Release;};
 A00000000000000000000019 = {isa = PBXBuildFile; fileRef = A00000000000000000000014;};
 A00000000000000000000020 = {isa = PBXBuildFile; fileRef = A00000000000000000000016;};
+A00000000000000000000021 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>";};
+A00000000000000000000022 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>";};
+A00000000000000000000023 = {isa = PBXVariantGroup; children = (A00000000000000000000021,A00000000000000000000022); name = Localizable.strings; sourceTree = "<group>";};
+A00000000000000000000024 = {isa = PBXBuildFile; fileRef = A00000000000000000000023;};
 };
 rootObject = A00000000000000000000001;
 }

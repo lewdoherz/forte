@@ -2,12 +2,35 @@ import { betterAuth } from "better-auth";
 import { kyselyAdapter } from "@better-auth/kysely-adapter";
 import type { Kysely } from "kysely";
 import type { Database } from "@/lib/db";
+import { DEFAULT_LOCALE, isLocale, type Locale } from "@/lib/i18n";
 import { env, isProductionRuntime } from "./env";
 import { sendEmail } from "./email";
 import { passwordResetEmail, verificationEmail } from "./email-templates";
 
 /** Development-only fallback; production must set BETTER_AUTH_SECRET. */
 const DEV_AUTH_SECRET = "forte-dev-secret";
+
+/**
+ * The recipient's stored interface language.
+ *
+ * Mail is composed in a background task: there is no request, so no cookie can
+ * carry the language, and `app_user.locale` is the only durable record of the
+ * reader's choice. The id is Better Auth's own record for the account being
+ * mailed — never a value the caller supplies — so the read cannot be pointed at
+ * another account. A missing row, or a value that is not a supported locale,
+ * falls back to the default.
+ */
+async function recipientLocale(
+  instance: Kysely<Database>,
+  userId: string,
+): Promise<Locale> {
+  const row = await instance
+    .selectFrom("app_user")
+    .select("locale")
+    .where("id", "=", userId)
+    .executeTakeFirst();
+  return row !== undefined && isLocale(row.locale) ? row.locale : DEFAULT_LOCALE;
+}
 
 /**
  * Better Auth mapped onto the application's `app_user` table (single identity:
@@ -37,7 +60,11 @@ export function createAuth(instance: Kysely<Database>) {
       sendResetPassword: async ({ user, url }) => {
         await sendEmail({
           to: user.email,
-          ...passwordResetEmail({ name: user.name ?? null, url }),
+          ...passwordResetEmail({
+            name: user.name ?? null,
+            url,
+            locale: await recipientLocale(instance, user.id),
+          }),
         });
       },
       // A reset is the recovery path for an account someone else may hold, so
@@ -56,7 +83,11 @@ export function createAuth(instance: Kysely<Database>) {
       sendVerificationEmail: async ({ user, url }) => {
         await sendEmail({
           to: user.email,
-          ...verificationEmail({ name: user.name ?? null, url }),
+          ...verificationEmail({
+            name: user.name ?? null,
+            url,
+            locale: await recipientLocale(instance, user.id),
+          }),
         });
       },
     },

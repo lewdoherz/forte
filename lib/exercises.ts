@@ -3,29 +3,66 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { Kysely } from "kysely";
 import type { Database } from "./db";
-import { DURATION_RECORD_DIRECTIONS, EXERCISE_TYPES } from "@/schema/types";
+import { DURATION_RECORD_DIRECTIONS, EXERCISE_TYPES, type ExerciseTemplate } from "@/schema/types";
+import { pickNullableText, pickText } from "./i18n/content";
+import { DEFAULT_LOCALE, createTranslator, getMessages, type Translate } from "./i18n";
+import type { Locale } from "./i18n/config";
+import { getLocaleSafe } from "./i18n/server";
 
-export const exerciseInputSchema = z.object({
-  title: z.string().trim().min(1, "Title is required").max(120, "Title is too long"),
-  exercise_type: z.enum(EXERCISE_TYPES),
-  primary_muscle: z.string().min(1, "Primary muscle is required"),
-  secondary_muscles: z.array(z.string()).max(8).default([]),
-  equipment: z.string().min(1, "Equipment is required"),
-  // Custom-exercise extras. The library catalog's How to text is imported
-  // (migration 0010) and its media_url is a video path baked in by the uploader
-  // (migration 0012), so neither is authored through this form for system rows.
-  // An empty submission is normalised to NULL by the mutations below rather
-  // than stored as an empty string.
-  how_to: z.string().trim().max(20000, "How to is too long").optional(),
-  media_url: z
-    .union([z.literal(""), z.string().trim().max(2048).url("Image must be a valid URL")])
-    .optional(),
-  // Which duration is a record (0015). Optional, so an exercise type that has
-  // no duration (weight_reps, steps_duration, ...) never has to send it and no
-  // existing caller has to start sending it. Absent resolves to 'higher' at the
-  // write site below, next to the column's own default.
-  duration_record_direction: z.enum(DURATION_RECORD_DIRECTIONS).optional(),
-});
+/**
+ * The create/edit form's input. The title is trimmed to 1..120 characters; the
+ * type, primary muscle and equipment are persisted codes, so they are only
+ * checked for presence rather than re-validated against the vocabularies.
+ *
+ * The issues are rendered by the exercise form, so the messages come from the
+ * translator: a Chinese reader must not be answered by an English validation
+ * error.
+ */
+export function exerciseInputSchemaFor(t: Translate) {
+  return z.object({
+    title: z
+      .string()
+      .trim()
+      .min(1, t("exercises.validation.titleRequired"))
+      .max(120, t("exercises.validation.titleTooLong")),
+    exercise_type: z.enum(EXERCISE_TYPES),
+    primary_muscle: z.string().min(1, t("exercises.validation.primaryMuscleRequired")),
+    secondary_muscles: z
+      .array(z.string())
+      .max(8, t("exercises.validation.secondaryMusclesTooMany"))
+      .default([]),
+    equipment: z.string().min(1, t("exercises.validation.equipmentRequired")),
+    // Custom-exercise extras. The library catalog's How to text is imported
+    // (migration 0010) and its media_url is a video path baked in by the uploader
+    // (migration 0012), so neither is authored through this form for system rows.
+    // An empty submission is normalised to NULL by the mutations below rather
+    // than stored as an empty string.
+    how_to: z.string().trim().max(20000, t("exercises.validation.howToTooLong")).optional(),
+    media_url: z
+      .union([
+        z.literal(""),
+        z
+          .string()
+          .trim()
+          .max(2048, t("exercises.validation.imageUrlTooLong"))
+          .url(t("exercises.validation.imageUrlInvalid")),
+      ])
+      .optional(),
+    // Which duration is a record (0015). Optional, so an exercise type that has
+    // no duration (weight_reps, steps_duration, ...) never has to send it and no
+    // existing caller has to start sending it. Absent resolves to 'higher' at the
+    // write site below, next to the column's own default.
+    duration_record_direction: z.enum(DURATION_RECORD_DIRECTIONS).optional(),
+  });
+}
+
+/**
+ * The English-message instance, for callers that have no request locale — the
+ * verification suites drive this module directly, outside any request scope.
+ */
+export const exerciseInputSchema = exerciseInputSchemaFor(
+  createTranslator(DEFAULT_LOCALE, getMessages(DEFAULT_LOCALE)),
+);
 
 export type ExerciseInput = z.infer<typeof exerciseInputSchema>;
 
@@ -40,7 +77,7 @@ export interface ExerciseListFilters {
  * user's own custom exercises. Archived rows and other users' custom exercises
  * are excluded.
  */
-export function listExercises(
+export async function listExercises(
   db: Kysely<Database>,
   userId: string,
   filters: ExerciseListFilters = {},
@@ -61,12 +98,29 @@ export function listExercises(
     query = query.where("equipment", "=", filters.equipment);
   }
 
-  return query.orderBy("is_custom", "asc").orderBy("title", "asc").execute();
+  // Ordered by the English title, not the localized one: order must not depend
+  // on the reader's language. Only the returned text is translated.
+  const locale = await getLocaleSafe();
+  const rows = await query.orderBy("is_custom", "asc").orderBy("title", "asc").execute();
+  return rows.map((row) => localizeExercise(row, locale));
+}
+
+/**
+ * Swaps a catalog row's English text for the reader's language while keeping the
+ * returned field names (`title`, `how_to`) — so no caller learns about the pair
+ * of columns. A row with no translation (a custom exercise) keeps its English.
+ */
+function localizeExercise(row: ExerciseTemplate, locale: Locale): ExerciseTemplate {
+  return {
+    ...row,
+    title: pickText(locale, row.title, row.title_zh),
+    how_to: pickNullableText(locale, row.how_to, row.how_to_zh),
+  };
 }
 
 /** A single exercise, but only if it is visible to `userId`. */
-export function getVisibleExercise(db: Kysely<Database>, id: string, userId: string) {
-  return db
+export async function getVisibleExercise(db: Kysely<Database>, id: string, userId: string) {
+  const row = await db
     .selectFrom("exercise_template")
     .selectAll()
     .where("id", "=", id)
@@ -75,6 +129,8 @@ export function getVisibleExercise(db: Kysely<Database>, id: string, userId: str
     // archived exercises, and those links have to keep resolving.
     .where((eb) => eb.or([eb("owner_id", "is", null), eb("owner_id", "=", userId)]))
     .executeTakeFirst();
+  if (!row) return row;
+  return localizeExercise(row, await getLocaleSafe());
 }
 
 /**
@@ -86,11 +142,29 @@ export function getVisibleExercise(db: Kysely<Database>, id: string, userId: str
  * straight through, so nothing is retained between calls.
  */
 export const getVocabularies = cache(async (db: Kysely<Database>) => {
-  const [muscles, equipment] = await Promise.all([
+  const [muscles, equipment, locale] = await Promise.all([
     db.selectFrom("muscle_group").selectAll().orderBy("sort_order", "asc").execute(),
     db.selectFrom("equipment").selectAll().orderBy("sort_order", "asc").execute(),
+    getLocaleSafe(),
   ]);
-  return { muscles, equipment };
+  // Vocabulary order is `sort_order`, which the query above already applied;
+  // localizing the label never reorders. The `zh` column is only consulted for a
+  // Chinese reader, and a blank/null one falls back to English.
+  //
+  // Exactly `{ code, display_name }` is returned, not the raw row: these values
+  // are handed to client components (the filter form, the library), so spreading
+  // the row would ship `display_name_zh` and `sort_order` to the browser — the
+  // unused language would appear in every English page's payload and vice versa.
+  return {
+    muscles: muscles.map((m) => ({
+      code: m.code,
+      display_name: pickText(locale, m.display_name, m.display_name_zh),
+    })),
+    equipment: equipment.map((e) => ({
+      code: e.code,
+      display_name: pickText(locale, e.display_name, e.display_name_zh),
+    })),
+  };
 });
 
 function makeSlug(title: string): string {

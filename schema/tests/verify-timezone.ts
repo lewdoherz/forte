@@ -108,9 +108,9 @@ check(
 const midnightish = new Date("2026-01-15T03:00:00Z");
 check(
   "rendering differs between zones",
-  formatDateTimeInTimeZone(midnightish, "America/Chicago") !==
-    formatDateTimeInTimeZone(midnightish, "UTC"),
-  `${formatDateTimeInTimeZone(midnightish, "America/Chicago")} / ${formatDateTimeInTimeZone(midnightish, "UTC")}`,
+  formatDateTimeInTimeZone(midnightish, "America/Chicago", "en") !==
+    formatDateTimeInTimeZone(midnightish, "UTC", "en"),
+  `${formatDateTimeInTimeZone(midnightish, "America/Chicago", "en")} / ${formatDateTimeInTimeZone(midnightish, "UTC", "en")}`,
 );
 
 // ---- end-to-end: the stored zone drives statistics bucketing ---------------
