@@ -153,6 +153,8 @@ bun run build        # production build
 bun run typecheck    # tsc --noEmit
 bun run lint         # eslint
 bun run verify:service-worker  # exercise service-worker cache isolation policy
+bun run verify:browser  # critical path in a real browser (provisions its own database)
+bun run verify:committed  # verify the committed tree in a throwaway worktree
 bun run db:migrate   # apply SQL migrations
 bun run db:seed:dev  # OPT-IN demo account + ~4 months of history (local databases only)
 bun run db:verify    # run all schema/feature verification suites
@@ -165,14 +167,39 @@ Verification suites live in `schema/tests/` and run against a real PostgreSQL (P
 
 - `verify-schema` — core schema, constraints, triggers, cascade
 - `verify-social` — follows, likes, comments, shares
-- `verify-auth`, `verify-auth-flow` — auth tables + sign-up/sign-in/session/sign-out
+- `verify-auth`, `verify-auth-flow`, `verify-account-lifecycle` — auth tables,
+  sign-up/sign-in/session/sign-out, export and deletion
 - `verify-exercises` — library, search/filter, ownership
 - `verify-routines` — routine CRUD, ordering, transactions, visibility
-- `verify-workouts` — start/snapshot, set logging, completion, ownership, historical identity
+- `verify-workouts`, `verify-workout-sync` — start/snapshot, set logging,
+  completion, ownership, historical identity, offline reconciliation
 - `verify-history` — history list, ordering, read-only enforcement, summaries
+- `verify-records`, `verify-record-history`, `verify-previous-performance` — the
+  Records engine, the history window that decides which workout earned a record,
+  and the previous-performance lookup
+- `verify-exercise-stats`, `verify-exercise-history` — the per-exercise
+  Statistics and History tabs, per exercise type
 - `verify-timezone` — local day boundaries, DST transitions, range lower bounds, end-to-end bucketing
-- `verify:service-worker` — public/static cache separation, private workout fallback,
-  RSC exclusion, account cleanup, and in-flight response invalidation
+- `verify-sharing` — public routine links, revocation, expiry, payload hygiene
+
+Two checks sit outside the schema suites, because neither runs against a database:
+
+- `bun run verify:service-worker` — the worker's cache separation policy: the
+  public/static split, the private workout fallback, RSC exclusion, account
+  cleanup, and in-flight response invalidation.
+- `bun run verify:browser` — the critical path in a real browser. It provisions a
+  temporary PostgreSQL (via `embedded-postgres`), migrates and seeds it, builds
+  and starts the app with a production environment, then walks: sign in → start a
+  routine → log a set → go offline, log another, reload → reconnect → finish →
+  find the workout and its record in history → sign out and prove the next
+  account on that browser sees none of it. Needs a Chromium once:
+  `bunx playwright install chromium`.
+
+  Its offline leg asserts what it can observe: the private snapshot serves the
+  exact workout route while the network is gone. What the client restores from
+  its own local document after such a reload, and whether a change made offline
+  syncs once the network returns, are not asserted — the run reports what it
+  observed instead of passing judgement on it.
 
 ```bash
 bun run db:verify
@@ -184,8 +211,14 @@ the suites never read `DATABASE_URL`, so they cannot be aimed at a real database
 by accident. See [DEPLOYMENT.md](DEPLOYMENT.md) for deployment and the dialect
 differences this uncovered.
 
+`bun run verify:committed` checks the committed tree out into a throwaway
+worktree and runs typecheck, lint, the service-worker check, the build and
+`db:verify` there. It is the only run that can catch a tracked file importing an
+untracked one, so it is the gate before claiming a commit is good.
+
 CI (`.github/workflows/ci.yml`) runs typecheck, lint and the production build —
 deliberately with **no environment variables**, so a build that starts requiring
 secrets fails there rather than on someone's machine — plus the full suite on both
-PGlite and a PostgreSQL service container, and a run of the dev seed to prove it
-still works against a freshly migrated database.
+PGlite and a PostgreSQL service container, a run of the dev seed to prove it
+still works against a freshly migrated database, and the browser critical path
+against a PostgreSQL it provisions itself.

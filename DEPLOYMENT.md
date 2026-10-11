@@ -54,6 +54,16 @@ authority; no ORM owns or generates the schema.
 - **Framework:** Next.js 16 App Router. All data-backed routes are dynamic
   (server-rendered on demand); only the PWA metadata routes (`/icon`,
   `/apple-icon`, `/manifest.webmanifest`) and `/_not-found` are static.
+- **Turbopack aliases server externals through junctions.** Under `.next` it
+  creates `node_modules/<pkg>-<hash>` directory junctions for the packages it
+  keeps external (`better-auth`, `pg`, `@electric-sql/pglite`, ...). Windows
+  configurations that refuse to traverse a reparse point they did not create
+  ("the path cannot be traversed because it contains an untrusted mount point")
+  cannot resolve those imports, and then every server render fails with
+  `Cannot find package '<pkg>-<hash>'`. `next dev --webpack` and
+  `next build --webpack` take the alternative pipeline and are unaffected, which
+  is why `verify:browser` builds with webpack. CI runs on Linux and is not
+  affected.
 - **PWA assets are generated, not static files.** `next/og` renders the icons at
   request/build time, so no image binaries are committed.
 - **Service worker:** a hand-written, narrow runtime cache (`public/sw.js`),
@@ -135,9 +145,13 @@ import from that directory when it is present.
 
 Ten source exercises already existed as curated rows. Those collide on slug and
 gain only their `how_to` text — the curated muscles and types are left alone.
-Some curated rows are near-duplicates of imported ones under different titles
-(`Barbell Back Squat` versus `Squat (Barbell)`); both are kept deliberately,
-because the curated rows are what existing workouts and routines reference.
+Other curated rows are near-duplicates of imported ones under different titles
+(`Barbell Back Squat` versus `Squat (Barbell)`); `0013_archive_unmatched_catalog.sql`
+retires those from the Library by setting `archived_at`, because the imported
+library already carries the movement under the source's own name. The rows
+themselves are kept and stay readable: existing workouts and routines reference
+them, `getVisibleExercise` deliberately does not filter archived rows, and the
+foreign keys are `NO ACTION`, so a delete would fail rather than cascade.
 
 **Media is recorded per row as a relative path**, so switching hosts is a
 configuration change rather than a data migration.
