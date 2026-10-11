@@ -1,7 +1,8 @@
 name: CI
 
 # Every push to main is guarded: typecheck, lint and the production build, plus
-# the full verification suite on BOTH supported database dialects.
+# the full verification suite on BOTH supported database dialects, plus the
+# critical path in a real browser.
 on:
   push:
     branches: [main]
@@ -90,3 +91,19 @@ jobs:
           bun-version: "1.4.2"
       - run: bun install --frozen-lockfile
       - run: bun run db:verify
+
+  verify-browser:
+    name: critical path (browser)
+    runs-on: ubuntu-latest
+    # The suite provisions its own PostgreSQL, builds and starts the app, and
+    # drives Chromium through the journey no schema suite can see. No service
+    # container and no secrets: the demo seed is what it signs in with.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run verify:browser
