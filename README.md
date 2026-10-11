@@ -217,18 +217,22 @@ Verification suites live in `schema/tests/` and run against a real PostgreSQL (P
 - `verify-timezone` — local day boundaries, DST transitions, range lower bounds, end-to-end bucketing
 - `verify-sharing` — public routine links, revocation, expiry, payload hygiene
 
-Two checks sit outside the schema suites, because neither runs against a database:
+Two checks cover behavior beyond the schema suites:
 
 - `bun run verify:service-worker` — the worker's cache separation policy: the
   public/static split, the private workout fallback, RSC exclusion, account
   cleanup, and in-flight response invalidation.
-- `bun run verify:browser` — the critical path in a real browser. It provisions a
-  temporary PostgreSQL (via `embedded-postgres`), migrates and seeds it, builds
+- `bun run verify:browser` — the critical path in a real browser. It provisions
+  temporary embedded PostgreSQL by default, or creates an isolated database on
+  `TEST_DATABASE_URL` when supplied; it migrates and seeds that database, builds
   and starts the app with a production environment, then walks: sign in → start a
   routine → log a set → go offline, log another, reload → reconnect → finish →
   find the workout and its record in history → sign out and prove the next
   account on that browser sees none of it. Needs a Chromium once:
   `bunx playwright install chromium`.
+  CI supplies a PostgreSQL 18 service rather than depending on the embedded
+  Linux binaries' obsolete ICU dependency. The runner drops only its own scratch
+  database during cleanup; it never selects a database using `DATABASE_URL`.
 
   Its offline leg asserts what it can observe: the private snapshot serves the
   exact workout route while the network is gone. What the client restores from

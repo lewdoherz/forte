@@ -95,10 +95,26 @@ jobs:
   verify-browser:
     name: critical path (browser)
     runs-on: ubuntu-latest
-    # The suite provisions its own PostgreSQL, builds and starts the app, and
-    # drives Chromium through the journey no schema suite can see. No service
-    # container and no secrets: the demo seed is what it signs in with.
+    # Use the same PostgreSQL 18 service as the database verification job.
+    # The embedded Linux binaries require libicu60, absent on current runners.
+    # The browser runner creates/drops its own isolated database on this service.
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

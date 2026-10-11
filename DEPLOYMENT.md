@@ -278,6 +278,12 @@ Two things that run surfaced:
   migrations have just created.
 - **verify-postgres** — the same suites against a `postgres:18-alpine` service
   container, reached through `TEST_DATABASE_URL`.
+- **verify-browser** — the production browser journey against a separate
+  `postgres:18-alpine` service. `TEST_DATABASE_URL` is an admin connection; the
+  runner creates its own scratch database, migrates/seeds it, exercises the app,
+  and drops that database afterward. Local runs without this variable still use
+  embedded PostgreSQL. The service avoids the embedded Linux binaries' missing
+  `libicuuc.so.60` dependency on current GitHub runners.
 
 **No repository secrets are required.** The suites read `TEST_DATABASE_URL` and never
 `DATABASE_URL`, so CI cannot be pointed at a real database.

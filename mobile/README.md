@@ -53,7 +53,9 @@ workout volume, and system Back returning to the dashboard. `lintDebug` reports
 zero errors and two warnings (Gradle version availability and required WebView
 JavaScript). APK Signature Scheme v2 verification passed.
 
-This is not deployed-server verification. The cloud deployment was unreachable
-from the workstation. The iOS project and macOS build workflow are provided, but
+The emulator check is not deployed-server/native-device verification. A later
+production-web browser smoke verified signup, the new dashboard at phone width,
+workout start/resume, and deletion of its disposable test account.
+The iOS project and macOS build workflow are provided, but
 were not compiled or run here because macOS/Xcode is unavailable. Offline reload,
 Apple device behavior, and the GitHub workflow artifacts remain unverified.

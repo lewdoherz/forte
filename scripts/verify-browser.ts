@@ -1,4 +1,5 @@
 import EmbeddedPostgres from "embedded-postgres";
+import { Pool } from "pg";
 import { chromium, type Browser, type Page } from "playwright";
 import { spawn, type ChildProcess } from "node:child_process";
 import { rm } from "node:fs/promises";
@@ -15,9 +16,8 @@ import { fileURLToPath } from "node:url";
  * the next person on the browser sees none of it.
  *
  * It provisions the application the way production runs it:
- *   1. a temporary real PostgreSQL on a private port (embedded-postgres ships the
- *      binaries, so no Docker and no system install — the same harness
- *      `verify:postgres` uses);
+ *   1. an isolated database on TEST_DATABASE_URL when explicitly supplied, or
+ *      temporary embedded PostgreSQL on a private port for zero-config local runs;
  *   2. `db:migrate` and `db:seed:dev` against it, through the real scripts;
  *   3. `next build` and `next start` with a complete production environment,
  *      because the offline leg belongs to the service worker and the worker
@@ -32,7 +32,7 @@ const dataDir = join(root, ".pgdata-browser");
 const PG_PORT = 55433;
 const APP_PORT = 3111;
 const APP_URL = `http://localhost:${APP_PORT}`;
-const DATABASE_URL = `postgresql://postgres:postgres@localhost:${PG_PORT}/postgres`;
+let DATABASE_URL = `postgresql://postgres:postgres@localhost:${PG_PORT}/postgres`;
 
 const DEMO_EMAIL = "demo@forte.local";
 const DEMO_PASSWORD = "forte-demo-password";
@@ -104,7 +104,11 @@ async function startServer(command: string[], env: Record<string, string>): Prom
   throw new Error(`${command.join(" ")} never answered on ${APP_URL}`);
 }
 
-const pg = new EmbeddedPostgres({
+const adminUrl = process.env.TEST_DATABASE_URL;
+const externalDatabaseName = `forte_browser_${process.pid}`;
+const admin = adminUrl ? new Pool({ connectionString: adminUrl }) : null;
+let externalDatabaseCreated = false;
+const pg = adminUrl ? null : new EmbeddedPostgres({
   databaseDir: dataDir,
   user: "postgres",
   password: "postgres",
@@ -112,15 +116,26 @@ const pg = new EmbeddedPostgres({
   persistent: false,
 });
 
-console.log(`starting embedded PostgreSQL on :${PG_PORT} ...`);
-await rm(dataDir, { recursive: true, force: true });
-await pg.initialise();
-await pg.start();
+if (pg) {
+  console.log(`starting embedded PostgreSQL on :${PG_PORT} ...`);
+  await rm(dataDir, { recursive: true, force: true });
+  await pg.initialise();
+  await pg.start();
+}
 
 let server: ChildProcess | null = null;
 let browser: Browser | null = null;
 
 try {
+  if (admin && adminUrl) {
+    await admin.query(`create database ${externalDatabaseName}`);
+    externalDatabaseCreated = true;
+    const target = new URL(adminUrl);
+    target.pathname = `/${externalDatabaseName}`;
+    DATABASE_URL = target.toString();
+    console.log("using an isolated database on TEST_DATABASE_URL");
+  }
+
   for (const [label, script] of [
     ["schema", "scripts/migrate.ts"],
     ["demo seed", "scripts/seed-dev.ts"],
@@ -462,8 +477,19 @@ try {
 } finally {
   await browser?.close();
   server?.kill();
-  await pg.stop();
-  await rm(dataDir, { recursive: true, force: true });
+  if (pg) {
+    await pg.stop();
+    await rm(dataDir, { recursive: true, force: true });
+  }
+  if (admin) {
+    try {
+      if (externalDatabaseCreated) {
+        await admin.query(`drop database ${externalDatabaseName} with (force)`);
+      }
+    } finally {
+      await admin.end();
+    }
+  }
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
