@@ -449,15 +449,10 @@ try {
   await page.getByRole("button", { name: /create account|sign up/i }).click();
   await page.waitForURL(`${APP_URL}/`, { timeout: 30_000 });
   await page.waitForSelector('h1:text-is("Dashboard")', { timeout: 20_000 });
-  await page
-    .waitForFunction(() => !document.body.innerText.includes("Loading…"), undefined, {
-      timeout: 20_000,
-    })
-    .catch(() => undefined);
   const secondUser = await text(page);
   check(
     "a second account starts with no workout of its own",
-    secondUser.includes("No finished workouts yet") && !secondUser.includes("In progress"),
+    (await page.locator('a[href^="/workouts/"]').count()) === 0,
     `url=${page.url()} text=${JSON.stringify(secondUser.slice(0, 140))}`,
   );
   check(

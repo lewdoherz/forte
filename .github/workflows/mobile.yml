@@ -1,0 +1,50 @@
+name: Native mobile shells
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: HTTPS deployment hostname (no scheme, port, or path)
+        required: true
+        default: forte-delta.vercel.app
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Assemble personal-install APK
+        working-directory: mobile/android
+        env:
+          FORTE_HOST: ${{ inputs.host }}
+        run: |
+          [[ "$FORTE_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || exit 1
+          sh ./gradlew assembleDebug "-PforteOrigin=https://$FORTE_HOST"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forte-android-debug
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build unsigned iPhone and iPad simulator app
+        env:
+          FORTE_HOST: ${{ inputs.host }}
+        run: |
+          [[ "$FORTE_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || exit 1
+          xcodebuild -project mobile/ios/Forte.xcodeproj -scheme Forte -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath mobile/ios/build CODE_SIGNING_ALLOWED=NO "FORTE_HOST=$FORTE_HOST" build
+          ditto -c -k --keepParent mobile/ios/build/Build/Products/Debug-iphonesimulator/Forte.app mobile/ios/build/forte-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forte-ios-simulator
+          path: mobile/ios/build/forte-simulator.zip
+          if-no-files-found: error

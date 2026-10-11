@@ -64,8 +64,8 @@ authority; no ORM owns or generates the schema.
   `next build --webpack` take the alternative pipeline and are unaffected, which
   is why `verify:browser` builds with webpack. CI runs on Linux and is not
   affected.
-- **PWA assets are generated, not static files.** `next/og` renders the icons at
-  request/build time, so no image binaries are committed.
+- **Web PWA assets are generated, not static files.** `next/og` renders the web
+  icons at request/build time. Native launcher assets are versioned in `mobile/`.
 - **Service worker:** a hand-written, narrow runtime cache (`public/sw.js`),
   registered in production only. Immutable `/_next/static/*` assets and generated
   PWA metadata use a shared static cache. The exact `/workouts/[id]` HTML is the
@@ -82,6 +82,32 @@ authority; no ORM owns or generates the schema.
 - **Connection pooling:** a single `pg.Pool` per server process. If your platform
   runs many instances, use a pooler (e.g. PgBouncer) and set `DATABASE_URL`
   to it.
+
+## Native hosted clients
+
+Android and iPhone/iPad projects live in `mobile/`; build and installation
+commands are in [mobile/README.md](mobile/README.md). They load the same deployed
+HTTPS origin and use ordinary web authentication/server actions. The server and
+PostgreSQL are not bundled into an APK or Apple app.
+
+- Default host: `forte-delta.vercel.app`. Android accepts the Gradle property
+  `forteOrigin`; Apple uses the Xcode setting `FORTE_HOST`, shared with
+  `WKAppBoundDomains`. Changing host changes the cookie/storage origin.
+- Native clients expose no JavaScript/native bridge and do not bypass TLS or
+  permit HTTP. Keep `BETTER_AUTH_URL` equal to the hosted application's origin;
+  no cross-origin auth exception is needed.
+- Sign-out/deletion still runs the web app's private-data cleanup. Android app
+  backup is disabled. Uninstalling a client does not revoke its server session.
+- The manual `mobile.yml` workflow builds a debug APK and an unsigned simulator
+  app. These are not Play/App Store releases; Apple device installs need signing
+  and provisioning. Store approval is not guaranteed for a hosted-web client.
+- Web deployments update what both shells display without rebuilding them.
+  Native changes require a new binary/version; preserve Android signing identity
+  when installing updates.
+- The web worker's checks do not prove embedded-engine offline behavior. A live
+  logger and a cold/reloaded offline launch are distinct cases; verify on target
+  devices before promising either. The existing browser runner does not assert
+  restoration of the local document after its offline reload.
 
 ## Account lifecycle and email
 

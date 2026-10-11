@@ -63,10 +63,10 @@ analytics with personal records.
   the account and can end any of them, through Better Auth's own session APIs rather
   than direct SQL.
 - **Mobile shell.** Below `sm` the primary navigation is a fixed bottom bar
-  (`components/bottom-nav.tsx`); the desktop header nav is hidden. The bar is omitted
-  entirely on `/workouts/[id]` so the logger's sticky control bar owns the bottom of the
-  screen. Safe areas come from `viewportFit: "cover"` plus
-  `pb-[env(safe-area-inset-bottom)]`.
+  (`components/bottom-nav.tsx`); the desktop sidebar is hidden. The bar is omitted
+  on `/workouts/[id]` so the logger owns its controls. `viewportFit: "cover"` and
+  shared `--app-safe-*` CSS variables reserve top, bottom, and landscape side
+  insets; the logger's sticky controls remain below the top inset.
 - **Offline active workouts are account-isolated.** The logger writes its active
   document to an owner-scoped IndexedDB store and reconciles it when connectivity
   returns. The service worker caches immutable build assets plus the exact active
@@ -86,6 +86,12 @@ analytics with personal records.
   range lower bound, a rendered date — goes through `lib/timezone.ts` using
   `app_user.timezone`. The zone is a stored preference, never inferred per request
   from the browser, so analytics bucketing is stable and server-computable.
+- **Action-first dashboard.** Resume or start a workout, choose a routine, see
+  seven local calendar days of finished sessions, and open recent workouts or PRs.
+  Weekly totals use finish-time filtering and complete pagination, including
+  sessions that started before the window. Counts, volume, and records reuse
+  the canonical history and Records calculations; no goals or streaks are invented.
+
 
 ## Progress
 
@@ -107,6 +113,34 @@ analytics with personal records.
 | 15 | Auth hardening: database-backed rate limiting with per-endpoint rules, and session management | done |
 | 16 | First production deployment and Vercel/Neon verification | done |
 | Post-16 | Account lifecycle, offline logging, routine sharing, workout summaries, PRs, and exercise tabs | done |
+
+## Android, iPhone, and iPad
+
+The web app remains installable from supported browsers. Native hosted clients
+also live in [`mobile/`](mobile/README.md):
+
+| Platform | Implementation | Personal installation |
+|---|---|---|
+| Android 11+ | Java + platform WebView | Build/install the debug APK |
+| iOS/iPadOS 17.4+ | Swift + WKWebView | Build and sign with Xcode on macOS |
+
+Both load the configured HTTPS deployment, defaulting to
+`https://forte-delta.vercel.app`. They reuse web accounts and server behavior;
+they do not bundle Next.js or the database and do not promise offline startup.
+External HTTPS links open outside the app. There is no JavaScript/native bridge,
+cleartext allowance, or TLS-validation bypass.
+
+```bash
+# From mobile/android, with JDK 21 and Android SDK 36 installed:
+sh ./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+On Windows, use `gradlew.bat assembleDebug`. The manually triggered
+`.github/workflows/mobile.yml` produces Android debug APK and unsigned iOS
+simulator artifacts. A simulator `.app` is not an installable iPhone IPA;
+physical Apple devices require development signing/provisioning.
+See [mobile/README.md](mobile/README.md) for deployment overrides and limitations.
 
 ## Routes
 
@@ -173,7 +207,8 @@ Verification suites live in `schema/tests/` and run against a real PostgreSQL (P
 - `verify-routines` — routine CRUD, ordering, transactions, visibility
 - `verify-workouts`, `verify-workout-sync` — start/snapshot, set logging,
   completion, ownership, historical identity, offline reconciliation
-- `verify-history` — history list, ordering, read-only enforcement, summaries
+- `verify-history` — history list, ordering, read-only enforcement, summaries,
+  finish-time range boundaries and pagination beyond four pages
 - `verify-records`, `verify-record-history`, `verify-previous-performance` — the
   Records engine, the history window that decides which workout earned a record,
   and the previous-performance lookup

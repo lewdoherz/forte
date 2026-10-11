@@ -733,6 +733,9 @@ export interface WorkoutQuery {
   cursor?: string | null;
   /** Only workouts containing this exercise template. */
   exerciseId?: string | null;
+  /** Finished-workout interval, inclusive lower bound and exclusive upper bound. */
+  finishedFrom?: Date;
+  finishedBefore?: Date;
 }
 
 /**
@@ -803,6 +806,12 @@ export async function listWorkouts(
     .execute();
 
   let completed = summaryQuery(db, userId).where("w.ended_at", "is not", null);
+  if (query.finishedFrom) {
+    completed = completed.where("w.ended_at", ">=", query.finishedFrom);
+  }
+  if (query.finishedBefore) {
+    completed = completed.where("w.ended_at", "<", query.finishedBefore);
+  }
 
   // The id reaches SQL as a `::uuid` cast, so an unparseable value would throw
   // instead of filtering. Guarded here so every caller is protected rather than

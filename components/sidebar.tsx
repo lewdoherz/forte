@@ -97,7 +97,7 @@ export function Sidebar({
   const initial = displayName.charAt(0).toUpperCase() || "?";
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col overflow-y-auto border-r border-zinc-200 bg-white sm:flex">
+    <aside className="fixed bottom-[var(--app-safe-bottom)] left-[var(--app-safe-left)] top-[var(--app-safe-top)] z-40 hidden w-64 flex-col overflow-y-auto border-r border-zinc-200 bg-white sm:flex">
       <Link href="/" className="flex items-center gap-2 px-4 py-4">
         <span className="h-8 w-8 shrink-0 overflow-hidden rounded-md">
           <ForteMark size={32} />

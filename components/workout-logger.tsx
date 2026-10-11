@@ -893,7 +893,7 @@ export function WorkoutLogger({
     <main className="mx-auto max-w-2xl px-4 pb-8">
       {/* Sticky so the metrics, timer and finish action stay reachable while
           logging. */}
-      <div className="sticky top-0 z-30 -mx-4 border-b border-zinc-200 bg-zinc-50/95 px-4 py-2 backdrop-blur">
+      <div className="sticky top-[var(--app-safe-top)] z-30 -mx-4 border-b border-zinc-200 bg-zinc-50/95 px-4 py-2 backdrop-blur">
         <div className="flex items-center gap-2 sm:gap-3">
           <Link
             href="/workouts"

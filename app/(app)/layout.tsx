@@ -54,7 +54,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       {/* Bottom padding leaves room for the mobile bottom nav; from `sm` up the
           left padding matches the fixed sidebar (w-64) so content never sits
           under it and the page cannot scroll horizontally. */}
-      <div className="pb-24 sm:pb-0 sm:pl-64">{children}</div>
+      <div className="pb-[calc(6rem+var(--app-safe-bottom))] sm:pb-[var(--app-safe-bottom)] sm:pl-64">{children}</div>
 
       <BottomNav />
     </>

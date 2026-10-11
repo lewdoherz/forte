@@ -20,6 +20,19 @@ Cold/reload matters: opening the current logger with no signal must not produce
 the browser's generic error. The service worker therefore runtime-snapshots that
 exact route after it has been opened online — see below.
 
+### Current retention limitation
+
+The implementation does not yet meet the intended no-data-loss envelope:
+`components/workout-logger.tsx` treats a missing or invalid last successful sync
+timestamp as stale, and deletes a pending document during restoration. The same
+deletion applies when the timestamp is older than seven days. On a fresh device,
+edits made before any successful sync are therefore at risk on reload.
+This is a code-review finding, separate from the browser runner's unresolved
+offline-reload observation. Neither a passing cache-policy check nor the native
+clients proves pending edits survive a reload. Preserve pending data and surface
+recovery explicitly before advertising reliable offline restoration.
+
+
 ## The central decision: sync the document, not a log of operations
 
 Two ways to get local edits to the server:

@@ -356,6 +356,68 @@ check(
   carolLogged.map((e) => e.title).join(","),
 );
 
+// ---- finish-time ranges for the dashboard ----------------------------------
+const rangeOwner = await mkUser("dashboard-range@example.com");
+const finishedFrom = new Date("2026-04-01T00:00:00Z");
+const finishedBefore = new Date("2026-04-08T00:00:00Z");
+// More than four pages, with old start times: neither a page cap nor a start-
+// time cutoff is a valid way to determine a finish-time calendar window.
+await query(
+  `insert into workout (owner_id, title, started_at, ended_at)
+   select $1, 'Long-running session ' || n,
+     '2026-02-01T00:00:00Z'::timestamptz + n * interval '1 minute',
+     $2::timestamptz + n * interval '1 minute'
+   from generate_series(0, 122) n`,
+  [rangeOwner, finishedFrom.toISOString()],
+);
+await query(
+  `insert into workout (owner_id, title, started_at, ended_at) values
+   ($1, 'Before range', '2026-03-31T22:00:00Z', '2026-03-31T23:59:59Z'),
+   ($1, 'At excluded upper boundary', '2026-04-07T23:00:00Z', $2),
+   ($1, 'Still active', '2026-04-02T12:00:00Z', null),
+   ($3, 'Another owner in range', '2026-04-02T12:00:00Z', '2026-04-02T13:00:00Z')`,
+  [rangeOwner, finishedBefore.toISOString(), bob],
+);
+const rangeIds: string[] = [];
+let rangeCursor: string | null = null;
+let rangePages = 0;
+do {
+  const page = await listWorkouts(db, rangeOwner, {
+    finishedFrom,
+    finishedBefore,
+    cursor: rangeCursor,
+  });
+  rangeIds.push(...page.completed.map((row) => row.id));
+  rangeCursor = page.nextCursor;
+  rangePages++;
+} while (rangeCursor && rangePages < 10);
+const { rows: rangeOracle } = await query<{ id: string }>(
+  `select id from workout where owner_id = $1 and ended_at >= $2 and ended_at < $3
+   order by started_at desc, id desc`,
+  [rangeOwner, finishedFrom.toISOString(), finishedBefore.toISOString()],
+);
+check(
+  "finish-time range includes old-start workouts and every page without duplicates",
+  rangeIds.length === 123 && rangeIds.every((id, index) => id === rangeOracle[index]?.id),
+);
+check(
+  "finish-time range spans more than four pages and terminates",
+  rangePages === 5 && rangeCursor === null,
+);
+const lowerBoundary = await listWorkouts(db, rangeOwner, {
+  finishedFrom,
+  finishedBefore: new Date(finishedFrom.getTime() + 1),
+});
+check(
+  "finish-time lower boundary is inclusive",
+  lowerBoundary.completed.length === 1 && lowerBoundary.completed[0].title === "Long-running session 0",
+);
+const upperBoundary = await listWorkouts(db, rangeOwner, {
+  finishedFrom: new Date("2026-04-07T23:59:59Z"),
+  finishedBefore,
+});
+check("finish-time upper boundary is exclusive", upperBoundary.completed.length === 0);
+
 await close();
 console.log(out.join("\n"));
 console.log(`\n${out.length - failed}/${out.length} checks passed`);
