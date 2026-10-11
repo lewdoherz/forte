@@ -6,7 +6,7 @@ import {
   type DurationRecordDirection,
   type ExerciseType,
 } from "@/schema/types";
-import { EXERCISE_TYPE_LABELS } from "@/lib/exercises";
+import { EXERCISE_TYPE_LABELS } from "@/lib/exercise-types";
 import type { ExerciseActionState } from "@/lib/exercise-actions";
 
 type FormAction = (

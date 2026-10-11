@@ -1,7 +1,6 @@
 import Link from "next/link";
-import type { DurationRecordDirection, ExerciseType } from "@/schema/types";
+import type { DurationRecordDirection, ExerciseTemplate, ExerciseType } from "@/schema/types";
 import { db } from "@/lib/db";
-import { getVisibleExercise } from "@/lib/exercises";
 import {
   getExerciseStatistics,
   type ExerciseRangeTotals,
@@ -365,29 +364,25 @@ function PersonalRecords({
  */
 export async function ExerciseStats({
   userId,
-  exerciseId,
-  exerciseTitle,
+  exercise,
   range = "all",
   timeZone,
 }: {
   userId: string;
-  exerciseId: string;
-  exerciseTitle: string;
+  /** The visibility-checked row the page already loaded; the panel's type and
+   * record direction both come from it, so it is never read twice. */
+  exercise: ExerciseTemplate;
   range?: ProgressRange;
   timeZone: string;
 }) {
-  const exercise = await getVisibleExercise(db, exerciseId, userId);
-  // The page already resolved visibility; this is the defensive path for a
-  // directly-rendered panel, and it is what supplies the exercise's type.
-  if (!exercise) return null;
-
   const stats = await getExerciseStatistics(db, userId, exercise, range, timeZone);
 
   // No finished performance: avoid presenting zeroes as measured results.
   if (stats.allTimeCompletedSets === 0) {
     return (
       <p className="text-zinc-500">
-        No workout history yet. Finish a workout containing {exerciseTitle} to see statistics here.
+        No workout history yet. Finish a workout containing {exercise.title} to see statistics
+        here.
       </p>
     );
   }
@@ -404,12 +399,12 @@ export async function ExerciseStats({
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <RangeLinks exerciseId={exerciseId} range={range} />
+        <RangeLinks exerciseId={exercise.id} range={range} />
       </div>
 
       {stats.totals.completedSets === 0 ? (
         <p className="mt-6 text-zinc-500">
-          No completed sets for {exerciseTitle} in {RANGE_LABELS[range]}.
+          No completed sets for {exercise.title} in {RANGE_LABELS[range]}.
         </p>
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">

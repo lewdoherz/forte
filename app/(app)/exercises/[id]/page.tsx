@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { db } from "@/lib/db";
-import { EXERCISE_TYPE_LABELS, getVisibleExercise, getVocabularies } from "@/lib/exercises";
+import { EXERCISE_TYPE_LABELS } from "@/lib/exercise-types";
+import { getVisibleExercise, getVocabularies } from "@/lib/exercises";
 import { requireSessionUserId } from "@/lib/auth-session";
 import { getUserProfile } from "@/lib/users";
 import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
@@ -121,8 +122,7 @@ export default async function ExerciseDetailPage({
     statistics: (
       <ExerciseStats
         userId={userId}
-        exerciseId={exercise.id}
-        exerciseTitle={exercise.title}
+        exercise={exercise}
         timeZone={timeZone}
         range={range}
       />

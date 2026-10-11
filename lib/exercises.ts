@@ -1,22 +1,9 @@
+import { cache } from "react";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { Kysely } from "kysely";
 import type { Database } from "./db";
-import { DURATION_RECORD_DIRECTIONS, EXERCISE_TYPES, type ExerciseType } from "@/schema/types";
-
-export const EXERCISE_TYPE_LABELS: Record<ExerciseType, string> = {
-  weight_reps: "Weight × Reps",
-  bodyweight_reps: "Bodyweight × Reps",
-  bodyweight_weighted: "Weighted Bodyweight",
-  bodyweight_assisted: "Assisted Bodyweight",
-  reps_only: "Reps",
-  duration: "Duration",
-  weight_duration: "Weight × Duration",
-  distance_duration: "Distance × Duration",
-  short_distance_weight: "Short Distance × Weight",
-  floors_duration: "Floors × Duration",
-  steps_duration: "Steps × Duration",
-};
+import { DURATION_RECORD_DIRECTIONS, EXERCISE_TYPES } from "@/schema/types";
 
 export const exerciseInputSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(120, "Title is too long"),
@@ -90,13 +77,21 @@ export function getVisibleExercise(db: Kysely<Database>, id: string, userId: str
     .executeTakeFirst();
 }
 
-export async function getVocabularies(db: Kysely<Database>) {
+/**
+ * The muscle and equipment vocabularies.
+ *
+ * Memoised per request: the master-detail shell and the page it wraps both need
+ * them, and without this the pair of statements runs once per renderer. Outside
+ * a render — scripts and the verification suites — React's `cache` calls
+ * straight through, so nothing is retained between calls.
+ */
+export const getVocabularies = cache(async (db: Kysely<Database>) => {
   const [muscles, equipment] = await Promise.all([
     db.selectFrom("muscle_group").selectAll().orderBy("sort_order", "asc").execute(),
     db.selectFrom("equipment").selectAll().orderBy("sort_order", "asc").execute(),
   ]);
   return { muscles, equipment };
-}
+});
 
 function makeSlug(title: string): string {
   const base = title
