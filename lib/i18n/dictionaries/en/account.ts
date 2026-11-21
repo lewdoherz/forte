@@ -13,6 +13,8 @@ export const account = {
     "Your display name is shown across the app; your timezone controls how dates and progress are bucketed.",
 
   "account.form.email": "Email",
+  "account.form.noEmailProvided": "No email provided",
+  "account.providerFallbackName": "Linked account",
   "account.form.displayName": "Display name",
   "account.form.timeZone": "Timezone",
   "account.form.timeZonePlaceholder": "America/Chicago",
@@ -26,6 +28,32 @@ export const account = {
   "account.email.notVerifiedBody":
     "{email} has not been confirmed yet. The account works without it — nothing is blocked — but confirming the address proves we can reach you. An address mistyped at sign-up is one that a password reset would never arrive at.",
   "account.email.resend": "Send verification email",
+  "account.email.noContactBody":
+    "No contact email was provided by your sign-in method. An identity address is not a contact email and cannot receive password reset messages.",
+
+  "account.methods.title": "Sign-in methods",
+  "account.methods.description": "These methods access this same account and its workout data.",
+  "account.methods.emailPassword": "Email and password",
+  "account.methods.otherProvider": "Linked sign-in provider",
+  "account.methods.connected": "Connected",
+  "account.methods.resetPassword": "Reset password by email",
+  "account.methods.setPassword": "Set a password by email",
+  "account.methods.passwordNeedsEmail": "Password recovery or setup requires a real, verified contact email. A provider identity address is not a recovery address.",
+  "account.methods.linkDescription": "Connect another provider while signed in to this account. You must authenticate with that provider; matching email addresses alone never link accounts.",
+  "account.methods.link": "Connect {provider}",
+  "account.methods.linking": "Opening {provider}…",
+  "account.methods.linkFailed": "Linking was cancelled or could not be completed. Your existing sign-in methods have not been removed. Try again.",
+  "account.methods.nativeInstructions": "Open your account in the system browser and sign in to the same Forte account before connecting a provider. Your app session is not shared with the browser. Then return to the app and refresh this list, or sign in with your newly linked method.",
+  "account.methods.manageInBrowser": "Manage sign-in methods in browser",
+  "account.methods.refresh": "Refresh methods",
+  "account.methods.addEmailDescription": "Add a contact email to this same account for password recovery. Your email changes only after you confirm the new address; your linked sign-in methods stay connected.",
+  "account.methods.contactEmail": "Contact email",
+  "account.methods.sendEmailVerification": "Send verification",
+  "account.methods.emailSending": "Sending…",
+  "account.methods.emailSent": "If this address can be used, a verification link is on its way. Confirm the new address, then refresh this page to set a password by email for this same account.",
+  "account.methods.emailError": "Could not send the verification request. Try again. Your existing sign-in methods have not changed.",
+  "account.methods.emailReauth": "Your sign-in needs to be renewed. Sign out, then sign in again with an existing method before retrying this request.",
+  "account.methods.refreshEmail": "Refresh after verifying email",
 
   "account.sessions.title": "Where you are signed in",
   "account.sessions.description":

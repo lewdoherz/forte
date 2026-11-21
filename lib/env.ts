@@ -25,6 +25,18 @@ const envSchema = z.object({
     .min(32, "must be at least 32 characters")
     .optional(),
   BETTER_AUTH_URL: z.string().url("must be an absolute URL").optional(),
+  GOOGLE_CLIENT_ID: z.string().trim().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().trim().min(1).optional(),
+  GOOGLE_VERIFIED: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
+  APPLE_CLIENT_ID: z.string().trim().min(1).optional(),
+  APPLE_CLIENT_SECRET: z.string().trim().min(1).optional(),
+  APPLE_VERIFIED: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
+  FACEBOOK_CLIENT_ID: z.string().trim().min(1).optional(),
+  FACEBOOK_CLIENT_SECRET: z.string().trim().min(1).optional(),
+  FACEBOOK_VERIFIED: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
+  LINKEDIN_CLIENT_ID: z.string().trim().min(1).optional(),
+  LINKEDIN_CLIENT_SECRET: z.string().trim().min(1).optional(),
+  LINKEDIN_VERIFIED: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
   /**
    * Resend API key. Required in production, because verification and
    * password-reset mail are part of the account lifecycle: a deployment that
@@ -74,6 +86,15 @@ const envSchema = z.object({
     })
     .optional()
     .transform((value) => value === "true"),
+}).superRefine((value, context) => {
+  for (const provider of ["GOOGLE", "APPLE", "FACEBOOK", "LINKEDIN"] as const) {
+    if (value[`${provider}_VERIFIED`] && (!value[`${provider}_CLIENT_ID`] || !value[`${provider}_CLIENT_SECRET`])) {
+      context.addIssue({
+        code: "custom", path: [`${provider}_VERIFIED`],
+        message: `${provider} readiness requires both client credentials`,
+      });
+    }
+  }
 });
 
 // Parsed from the whole environment, not from a hand-listed subset of it.

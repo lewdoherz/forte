@@ -12,3 +12,43 @@ body {
   padding-right: var(--app-safe-right);
   padding-left: var(--app-safe-left);
 }
+
+/* Forte training surfaces: a quiet forest palette, independent of auth pages. */
+.training {
+  color-scheme: dark;
+  color: #eef5ef;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  --training-border: #34463a;
+}
+.training-panel { border: 1px solid #34463a; background: #17221c; }
+.training-muted { color: #b0c0b4; }
+.training-action { background: #d6f077; color: #142017; }
+.training-action:hover:not(:disabled) { background: #e1f69b; }
+.training-input { border: 1px solid #34463a; background: #0d1512; color: #eef5ef; }
+.training :is(input, select, textarea) { font-size: max(16px, 1em); }
+.training :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid #d6f077;
+  outline-offset: 3px;
+}
+.training input { scroll-margin-block: 10rem 8rem; }
+.training-dialog-backdrop { top: var(--dialog-top, 0px); height: var(--dialog-vh, 100dvh); }
+.training-picker-modal { display: flex; flex-direction: column; min-height: 0; }
+.training-picker-modal > div:first-child { flex-shrink: 0; }
+body:has(.training) { background: #0d1512; }
+/* Existing routes remain readable inside the new shell; auth is not re-themed. */
+.training :is(.bg-white, .bg-zinc-50, .bg-zinc-100) { background-color: #17221c; }
+.training :is(.border-zinc-100, .border-zinc-200, .border-zinc-300) { border-color: #34463a; }
+.training :is(.text-zinc-700, .text-zinc-800, .text-zinc-900) { color: #eef5ef; }
+.training :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) { color: #b0c0b4; }
+.training :is(input, select, textarea) { background-color: #0d1512; color: #eef5ef; border-color: #34463a; }
+.training :is(button, a).bg-zinc-900 { background-color: #d6f077; color: #142017; }
+.training :is(.hover\:bg-zinc-50, .hover\:bg-zinc-100):hover { background-color: #25382c; }
+/* Any active logger, including an older draft, owns its entire screen. */
+.app-frame:has([data-active-logger]) > :is(aside, header, nav) { display: none; }
+.app-frame:has([data-active-logger]) > .app-content { padding: 0; }
+.app-frame:has([data-active-logger]) .resume-outside-logger { display: none; }
+@media (max-height: 500px) {
+  .training-logger > header { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+  .training-logger > header dl { margin-top: 0.125rem; }
+  .training-logger > header dl dd { font-size: 1rem; line-height: 1.25rem; }
+}

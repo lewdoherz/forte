@@ -1,67 +1,70 @@
 # forte native hosted shells
 
-These are native HTTPS browser shells, not bundled copies of the Next.js server or Capacitor live-reload configurations. Both load https://forte-delta.vercel.app by default. Native versions are independently set to 1.0.0/build 1 in the Android Gradle and Xcode project. Android uses the platform WebView; iPhone and iPad use WKWebView. The dark lowercase f launcher monogram follows the web mark.
+These native HTTPS shells load https://forte-delta.vercel.app, not a bundled Next.js server. Android uses WebView; iPhone and iPad use WKWebView. Native version 1.1.0/build 2 is independent of the web package version. The lowercase f launcher monogram follows the web mark.
 
 ## Localization
 
-The shells carry only a few native strings of their own: the load-failure message and Retry. Everything else on screen is the web app, which localizes itself. Each shell reads its own platform resource files, and the platform selects the language from the device locale with no shell-side locale code: Android uses `app/src/main/res/values/strings.xml` (English) and `app/src/main/res/values-zh-rCN/strings.xml` (Simplified Chinese); iOS uses `Forte/en.lproj/Localizable.strings` and `Forte/zh-Hans.lproj/Localizable.strings`, declared through `CFBundleDevelopmentRegion` and `CFBundleLocalizations` in Info.plist and wired into the Forte target as a `Localizable.strings` variant group. The in-app language switcher governs the web content, not the fallback screen: a shell shown in Chinese on an English-language device is expected. iOS localization is checked in but cannot be built here because macOS/Xcode is unavailable, so it is unverified by a build.
+Native load, retry and authentication-error strings use Android `values`/`values-zh-rCN` and iOS `en.lproj`/`zh-Hans.lproj` platform resources. The device locale selects these strings. The shared web UI has its own EN/zh-CN language setting; changing it does not change the native fallback language.
 
 ## Android personal installation
 
-Requires JDK 21 (not the host's Java 25), Android SDK platform 36/build-tools 36.0.0, accepted SDK licenses, and ANDROID_HOME. Gradle 8.13 is downloaded by the checked-in official wrapper with a pinned distribution SHA-256; AGP is 8.13.2. Minimum Android version is 11/API 30. No local SDK paths or signing secrets belong in this directory.
+Requires JDK 21, Android SDK platform 36/build-tools 36.0.0, accepted SDK licenses and `ANDROID_HOME`. The official Gradle 8.13 wrapper pins its distribution SHA-256; AGP is 8.13.2. Minimum Android version is 11/API 30. Keep SDK paths and signing secrets outside Git.
 
-From mobile/android:
+From `mobile/android`:
 
-- Windows: `gradlew.bat assembleDebug`
-- Linux/macOS: `sh ./gradlew assembleDebug`
+- Debug: `gradlew.bat assembleDebug` on Windows, `sh ./gradlew assembleDebug` on Linux/macOS.
+- Release: set `FORTE_KEYSTORE_PATH`, `FORTE_KEYSTORE_PASSWORD`, `FORTE_KEY_ALIAS`, `FORTE_KEY_PASSWORD` through your secret manager/shell, then run `gradlew.bat assembleRelease` or `sh ./gradlew assembleRelease`. Missing signing configuration fails the build; no unsigned fallback is published.
 - Own deployment: append `-PforteOrigin=https://your-host.example` (origin only, standard HTTPS port).
-- Install: `adb install -r app/build/outputs/apk/debug/app-debug.apk`
+- Install Release: `adb install -r app/build/outputs/apk/release/app-release.apk`.
 
-The debug APK is personally installable, not a Play release. Debug signing is local; keep the signing identity to install future updates without clearing local data. A different CI runner's debug identity can require uninstalling the previous app. Release publication needs your own protected signing setup.
+The release workflow reuses the original personal-install signing identity, which is an Android debug certificate. This preserves update compatibility; it is **not a Play distribution identity**. Release WebView inspection is disabled. Never replace the identity or uninstall an existing personal installation merely to work around a signing mismatch.
 
 ## iPhone and iPad
 
-Requires macOS and Xcode 15.3+ with an installed iOS simulator runtime. Minimum iOS/iPadOS version is 17.4: the existing web offline/auth cleanup uses `Promise.withResolvers`, introduced in [WebKit for Safari 17.4](https://webkit.org/blog/15063/webkit-features-in-safari-17-4/). Open ios/Forte.xcodeproj and select the shared Forte scheme. For an unsigned simulator build from the repository root:
+Requires macOS, Xcode 15.3+ and an installed simulator runtime. Minimum iOS/iPadOS version is 17.4: the existing offline/auth cleanup uses `Promise.withResolvers`, introduced in [WebKit 17.4](https://webkit.org/blog/15063/webkit-features-in-safari-17-4/).
+
+Open `ios/Forte.xcodeproj` and select the shared Forte scheme. From the repository root:
 
 ```sh
-xcodebuild -project mobile/ios/Forte.xcodeproj -scheme Forte -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath mobile/ios/build CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project mobile/ios/Forte.xcodeproj -scheme Forte -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath mobile/ios/build CODE_SIGNING_ALLOWED=NO build
 ```
 
-Configure another deployment with the build setting `FORTE_HOST=your-host.example` (DNS hostname only). This single setting expands both the HTTPS launch origin and WKAppBoundDomains. For a personal physical-device install, select your Apple development team in Xcode Signing & Capabilities and run on the attached iPhone/iPad. Apple provisioning, device trust and Developer Mode are required; free-team provisioning expires and must be renewed. The unsigned simulator .app is not an IPA and cannot install on a physical device. App Store acceptance of a hosted website wrapper is not guaranteed.
+`FORTE_HOST=your-host.example` changes both the HTTPS origin and `WKAppBoundDomains`. Physical installation requires the existing owner's Apple Team ID, signing certificate/private key and matching provisioning profile for `com.lewdoherz.forte`, plus device trust/Developer Mode where applicable. An unsigned simulator app runs only in Simulator; an unsigned device app ZIP is **not an installable IPA**. Hosted-wrapper App Store acceptance and guideline 4.8 compliance are not implied by compilation.
 
-## Automation
+## System-browser authentication
 
-Manually run the Native mobile shells GitHub Actions workflow, optionally changing its hostname input. Separate Linux and macOS jobs publish a debug APK and unsigned simulator .app ZIP respectively. No distribution keys are needed. Workflows are not evidence of device testing until they have actually run.
+Email/username and password remain ordinary same-origin web authentication, independent of social providers. Google authorization never runs inside WebView/WKWebView.
 
-## Privacy, navigation and limitations
+For an enabled social provider, Android launches Custom Tabs and iOS uses `ASWebAuthenticationSession`. The app generates a random verifier/state and SHA-256 PKCE challenge. The authenticated browser returns a single-use, 60-second code through `forte://auth/callback`; only the pending app can exchange it over HTTPS, bound to its platform and verifier. The shell installs only the configured host's Secure/HttpOnly session cookie. Session tokens never enter URLs or JavaScript. Cancellation clears the pending flow and sends a nonsecret event to reset the web button without discarding a workout draft.
 
-- Cookies and website data persist in private application storage. Auth remains ordinary same-origin web auth; there is no JS/native bridge or native account database. Android disables cloud backups and excludes application data from device transfers with Android 12+ extraction rules; third-party cookies are disabled.
-- Only the configured HTTPS origin stays in the shell; other HTTPS top-level links open the system browser, with its separate cookie jar. Unsafe navigation schemes and credential-bearing URLs are rejected. HTTP/mixed content and Android file/content access are disabled. TLS failures are never bypassed. No universal links or native deep-link handlers are registered.
-- Native safe-area and keyboard layout keeps the web page outside system bars. Android system Back uses AndroidX's `OnBackPressedDispatcher` for legacy buttons and predictive Back; activity recreation retains the current same-origin route. iOS supports back gestures. Loading/network/server/process failures show a generic message and Retry without leaking URLs or credentials. Android WebView inspection is enabled only in debug builds.
-- Hosting, authentication and the Internet remain required. Existing account-scoped web offline behavior may work where the embedded engine supports it, but these shells do not guarantee offline operation. WKAppBoundDomains plus the persistent WKWebsiteDataStore provides the best available WKWebView service-worker path; behavior must be verified on target devices. Android WebView must remain updated.
-- Changing deployment changes the security origin; cookies/data do not migrate. Sign out through the web app to revoke its session. Uninstalling removes local shell data; it does not revoke a server session.
-- No native camera, file picker, notifications, payments, browser download manager, or OAuth callback integration is supplied. The current email/password web login is the intended auth path. No camera, location, or storage permissions or runtime permission prompts are added.
+Account linking opens the normal account page in the system browser. Its cookie jar is separate: authenticate the same Forte account there before linking. Matching email is never sufficient to merge accounts. Missing provider credentials/readiness keep the button and backend provider disabled; see [DEPLOYMENT.md](../DEPLOYMENT.md).
 
-## Verification status
+## Automation and artifacts
 
-The Android debug APK was built with the checked-in wrapper and exercised on an
-API 35 emulator. A production-built forte server with disposable PostgreSQL was
-served through an isolated HTTPS test proxy; its one-day test certificate was
-trusted only by that disposable emulator. The app's TLS handling was not changed.
-Verified: login, dashboard rendering, routine start, a completed set synced to the
-server, system Back, persisted authentication after process restart, and route/
-set preservation through portrait-to-landscape recreation. The disconnected
-deployment path displayed the native Retry screen.
-The final AndroidX-backed APK was reinstalled and checked for sign-in, restored
-workout volume, and system Back returning to the dashboard. `lintDebug` reports
-zero errors and two warnings (Gradle version availability and required WebView
-JavaScript). APK Signature Scheme v2 verification passed.
+Run **Native mobile shells** (`mobile.yml`) manually, optionally choosing another hostname. GitHub Secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` supply the existing Android identity; temporary key material is removed after building.
 
-The emulator check is not deployed-server/native-device verification. A later
-production-web browser smoke verified signup, the new dashboard at phone width,
-workout start/resume, and deletion of its disposable test account.
-The iOS project and macOS build workflow are provided, but were not compiled or
-run here because macOS/Xcode is unavailable, including the new English and
-Simplified Chinese shell string resources and their project registration.
-Offline reload, Apple device behavior, and the GitHub workflow artifacts remain
-unverified.
+- `forte-android-release-signed`: signed personal-install Release APK, verified with `apksigner`.
+- `forte-ios-simulator-release`: unsigned Release simulator app ZIP.
+- `forte-ios-device-release-UNSIGNED-NOT-INSTALLABLE`: unsigned Release device app ZIP, not an IPA.
+- `forte-ios-build-logs`: Xcode build logs.
+- `forte-ios-sign-in-smoke`: booted Simulator installation/launch, screenshots and OCR evidence of the actual Email/Password sign-in screen. A Retry/error screen does not pass.
+
+The simulator smoke is not authentication, workout, keyboard, physical-device or App Store verification. Consult the release notes for the jobs and runtime checks that actually succeeded for a particular commit.
+
+## Privacy and navigation
+
+- Cookies and website data persist in private app storage; there is no native account database or token-bearing JavaScript bridge. Android disables backups/device transfers and third-party cookies.
+- Only the configured HTTPS origin remains inside the shell. Other HTTPS links open externally; unsafe schemes, credential-bearing URLs, HTTP/mixed content and Android file/content access are rejected. TLS failures are never bypassed. The custom auth callback is state/PKCE-bound, not a general navigation bypass.
+- Native safe-area/keyboard layout excludes system bars and the software keyboard. Android system Back uses AndroidX `OnBackPressedDispatcher`; activity recreation retains a same-origin route. iOS supports back gestures. Load/server/process failures offer a generic Retry without exposing credentials.
+- Existing account-scoped web offline storage/sync is shared. A fresh installation still requires connectivity; service-worker behavior must be tested on each embedded engine.
+- Changing deployment changes the storage origin. Sign-out revokes the web session and clears private web data. Uninstalling removes local data but does not revoke a server session.
+- No native camera, location, storage permissions, notifications, payments or general browser download manager are added.
+
+## Workout verification evidence
+
+The local redesign check used an Android 15/API 35 emulator, WebView 124.0.6367.219, a 412 × 842 CSS-pixel WebView and a production-built server with disposable PostgreSQL. Its isolated HTTPS test CA is trusted only by the debug fixture, never by Release configuration.
+
+Actual WebView interactions covered system-browser credential-broker return/session installation, keyboard-open multi-selection with a reachable Add action, manual barbell input, system Back hiding the keyboard then minimizing, draft resume, set-type selection, rest adjustment/reload/Skip, and Play/Pause with explicit timed-set completion. Finish explicitly retained one unchecked set as uncompleted. History showed only the three completed sets: 60 kg × 8, 12 reps and an actually stopped 2-second plank, with 480 kg volume. Deterministic elapsed-time hydration and filter-result scroll reset have browser regressions. Screenshots are in `screenshots/native-review/`.
+
+These fixture checks are distinct from a production-targeted Release APK install and from browser viewport checks in `screenshots/training-review/`. Release notes report production artifact and macOS CI results separately. Real Google/Apple/Facebook/LinkedIn approval and iOS auth return still require verified provider setup; no physical iPhone/iPad result is claimed here.
+

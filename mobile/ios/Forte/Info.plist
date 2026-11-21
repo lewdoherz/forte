@@ -12,6 +12,7 @@
 <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
 <key>ForteHost</key><string>$(FORTE_HOST)</string>
 <key>WKAppBoundDomains</key><array><string>$(FORTE_HOST)</string></array>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>com.lewdoherz.forte.auth</string><key>CFBundleURLSchemes</key><array><string>forte</string></array></dict></array>
 <key>UILaunchScreen</key><dict/>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 <key>UISupportedInterfaceOrientations~ipad</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>

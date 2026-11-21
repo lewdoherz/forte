@@ -1,149 +1,149 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { formatStopwatch } from "@/lib/i18n/format";
+import {
+  adjustRestCountdown,
+  advanceRestCountdown,
+  dismissRestCountdown,
+  parseRestCountdown,
+  reconcileRestCountdown,
+  restCountdownStorageKey,
+  type RestCountdownState,
+} from "@/lib/rest-countdown";
 
-/**
- * Rest countdown for the active workout.
- *
- * The countdown is anchored to the SERVER's completion timestamp for the most
- * recently completed set, so it stays correct across a reload, a re-render, or
- * the revalidation that follows every server action — no client state has to
- * survive those. Rest therefore needs no server-side session state of its own:
- * `workout_set.completed_at` already records when the set finished.
- *
- * sessionStorage holds only the user's OVERRIDES — a manual restart, or a
- * skipped rest — keyed by workout. A closed tab ends them, matching the intent
- * that rest is not persisted beyond the session.
- *
- * Alerting is visual only. Audio would be blocked without a user gesture and a
- * vibration could not be made opt-out without a preferences screen, so neither
- * is triggered; the remaining time is announced with aria-live instead.
- */
 interface RestTimerProps {
   workoutId: string;
-  /** When the most recently completed set finished, or null if none yet. */
   anchor: string | null;
-  /** Rest target snapshotted on that set's exercise; null when unset. */
   restSeconds: number | null;
-  /** False once the workout has been finished — clears any stored override. */
   workoutActive: boolean;
+  anchorId?: string | null;
+  validAnchorIds?: string[];
+  userId?: string;
 }
 
-interface RestOverride {
-  manualStart: number | null;
-  skippedAnchor: string | null;
+interface TimerSnapshot {
+  storageKey: string;
+  state: RestCountdownState;
+  now: number;
 }
 
-const storageKey = (workoutId: string) => `forte:rest:${workoutId}`;
-
-function readOverride(workoutId: string): RestOverride {
+function readSession(key: string): RestCountdownState {
   try {
-    const raw = window.sessionStorage.getItem(storageKey(workoutId));
-    if (!raw) return { manualStart: null, skippedAnchor: null };
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return { manualStart: null, skippedAnchor: null };
-    const { manualStart, skippedAnchor } = parsed as Record<string, unknown>;
-    return {
-      manualStart: typeof manualStart === "number" ? manualStart : null,
-      skippedAnchor: typeof skippedAnchor === "string" ? skippedAnchor : null,
-    };
+    return parseRestCountdown(window.sessionStorage.getItem(key));
   } catch {
-    // Private mode or storage disabled: the timer still runs, it just cannot
-    // remember an override across a reload.
-    return { manualStart: null, skippedAnchor: null };
+    return parseRestCountdown(null);
   }
 }
 
-function writeOverride(workoutId: string, value: RestOverride): void {
+function writeSession(key: string, state: RestCountdownState, active: boolean): void {
   try {
-    if (value.manualStart === null && value.skippedAnchor === null) {
-      window.sessionStorage.removeItem(storageKey(workoutId));
-      return;
-    }
-    window.sessionStorage.setItem(storageKey(workoutId), JSON.stringify(value));
+    if (active) window.sessionStorage.setItem(key, JSON.stringify(state));
+    else window.sessionStorage.removeItem(key);
   } catch {
-    // As above — overrides are an enhancement, never a requirement.
+    // Storage may be disabled in a WebView; the in-memory countdown still works.
   }
 }
 
-export function RestTimer({ workoutId, anchor, restSeconds, workoutActive }: RestTimerProps) {
+/** A wall-clock countdown whose persisted identity is the completed set. */
+export function RestTimer({
+  workoutId,
+  anchor,
+  restSeconds,
+  workoutActive,
+  anchorId,
+  validAnchorIds,
+  userId,
+}: RestTimerProps) {
   const { t } = useI18n();
-  // Both sessionStorage and the wall clock are client-only. Neither is touched
-  // until just after paint, so the first client render matches the server's and
-  // no state is assigned synchronously inside an effect.
-  const [now, setNow] = useState<number | null>(null);
-  const [override, setOverride] = useState<RestOverride>({ manualStart: null, skippedAnchor: null });
+  const storageKey = restCountdownStorageKey(workoutId, userId);
+  const snapshotRef = useRef<TimerSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<TimerSnapshot | null>(null);
+  const validIdsKey = JSON.stringify(validAnchorIds ?? null);
 
   useEffect(() => {
-    const task = setTimeout(() => {
-      setNow(Date.now());
-      setOverride(readOverride(workoutId));
+    const validIds = JSON.parse(validIdsKey) as string[] | null;
+    const initialize = setTimeout(() => {
+      const previous = snapshotRef.current;
+      const initialEntry = previous?.storageKey !== storageKey;
+      const state = previous?.storageKey === storageKey ? previous.state : readSession(storageKey);
+      const now = Date.now();
+      const next = reconcileRestCountdown(state, {
+        anchor, anchorId, restSeconds, workoutActive,
+        validAnchorIds: validIds ?? undefined,
+      }, now, initialEntry);
+      const value = { storageKey, state: next, now };
+      snapshotRef.current = value;
+      writeSession(storageKey, next, workoutActive);
+      setSnapshot(value);
     }, 0);
-    return () => clearTimeout(task);
-  }, [workoutId]);
 
-  // A finished workout leaves nothing to rest for.
-  useEffect(() => {
-    if (!workoutActive) writeOverride(workoutId, { manualStart: null, skippedAnchor: null });
-  }, [workoutActive, workoutId]);
+    const tick = () => {
+      const previous = snapshotRef.current;
+      if (previous?.storageKey !== storageKey || !workoutActive || previous.state.current?.phase !== "running") return;
+      const now = Date.now();
+      const state = advanceRestCountdown(previous.state, now);
+      if (state !== previous.state) writeSession(storageKey, state, true);
+      const value = { storageKey, state, now };
+      snapshotRef.current = value;
+      setSnapshot(value);
+    };
+    const interval = setInterval(tick, 1000);
+    window.addEventListener("focus", tick);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearTimeout(initialize);
+      clearInterval(interval);
+      window.removeEventListener("focus", tick);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [storageKey, anchor, anchorId, restSeconds, workoutActive, validIdsKey]);
 
-  const hasTarget = typeof restSeconds === "number" && restSeconds > 0;
-  const skipping = override.skippedAnchor !== null && override.skippedAnchor === anchor;
-  const startedAt = override.manualStart ?? (anchor ? Date.parse(anchor) : null);
-  const remaining =
-    now !== null && hasTarget && startedAt !== null
-      ? restSeconds - Math.floor((now - startedAt) / 1000)
-      : 0;
-  const running = workoutActive && hasTarget && !skipping && remaining > 0;
-
-  useEffect(() => {
-    if (!workoutActive) return;
-    const tick = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(tick);
-  }, [workoutActive]);
-
-  const apply = (next: RestOverride) => {
-    setOverride(next);
-    writeOverride(workoutId, next);
+  const apply = (change: (state: RestCountdownState, now: number) => RestCountdownState) => {
+    const previous = snapshotRef.current;
+    if (previous?.storageKey !== storageKey) return;
+    const now = Date.now();
+    const state = change(previous.state, now);
+    const value = { storageKey, state, now };
+    snapshotRef.current = value;
+    writeSession(storageKey, state, workoutActive);
+    setSnapshot(value);
   };
 
-  if (now === null || !workoutActive) return null;
+  const timer = snapshot?.storageKey === storageKey ? snapshot.state.current : null;
+  const anchorTime = anchor ? Date.parse(anchor) : Number.NaN;
+  const expectedKey = JSON.stringify([anchorId ?? null, anchorTime]);
+  if (
+    !workoutActive || !snapshot || !timer || timer.phase === "dismissed" ||
+    timer.key !== expectedKey ||
+    (anchorId && validAnchorIds && !validAnchorIds.includes(anchorId))
+  ) return null;
 
-  if (!running) {
-    // Offer a manual rest even when the last set is long finished: people rest
-    // without completing a set.
-    return (
-      <button
-        type="button"
-        onClick={() => apply({ manualStart: Date.now(), skippedAnchor: null })}
-        disabled={!hasTarget}
-        className="h-9 shrink-0 rounded-md border border-zinc-300 px-3 text-xs font-medium text-zinc-700 disabled:opacity-40"
-      >
-        {t("workouts.rest.rest", {
-          time: typeof restSeconds === "number" ? formatStopwatch(restSeconds) : "—",
-        })}
-      </button>
-    );
-  }
+  const finished = timer.phase === "finished";
+  const remaining = Math.max(0, Math.ceil((timer.deadline - snapshot.now) / 1000));
 
   return (
-    <span className="flex shrink-0 items-center gap-2">
-      <span
-        className="rounded-md bg-sky-100 px-2 py-1 text-xs font-medium tabular-nums text-sky-900"
-        aria-live="polite"
-      >
-        {t("workouts.rest.rest", { time: formatStopwatch(remaining) })}
-      </span>
-      <button
-        type="button"
-        onClick={() => apply({ manualStart: null, skippedAnchor: anchor })}
-        aria-label={t("workouts.rest.skipLabel")}
-        className="h-9 rounded-md px-2 text-xs font-medium text-zinc-600 underline"
-      >
-        {t("workouts.rest.skip")}
-      </button>
-    </span>
+    <section aria-label={t("training.rest.label")}
+      className={`training fixed left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-40 mx-auto max-w-xl rounded-2xl border px-3 py-2 shadow-2xl ${finished ? "border-[#7db89c] bg-[#203e30]" : "border-[#50705b] bg-[#17221c]"}`}>
+      {finished ? <div className="flex min-h-14 items-center gap-3">
+        <span aria-hidden="true" className="text-2xl text-[#d6f077]">✓</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold" role="status">{t("training.rest.finished")}</p>
+          <p className="text-xs text-[#b0c0b4]">{t("training.rest.ready")}</p>
+        </div>
+        <button type="button" onClick={() => apply(dismissRestCountdown)} aria-label={t("training.rest.dismiss")} className="h-11 w-11 rounded-xl text-[#b0c0b4]">✕</button>
+      </div> : <div className="grid grid-cols-[44px_minmax(0,1fr)_44px_auto] items-center gap-2">
+        <button type="button" onClick={() => apply((state, now) => adjustRestCountdown(state, -15, now))} aria-label={t("training.rest.subtract")}
+          className="h-11 rounded-xl border border-[#34463a] text-sm font-semibold">−{t("common.quantityTight", { value: 15, unit: t("common.unit.seconds") })}</button>
+        <div className="text-center">
+          <p className="text-[11px] text-[#b0c0b4]">{t("training.rest.label")}</p>
+          <p className="text-2xl font-semibold tabular-nums" role="timer" aria-live="off">{formatStopwatch(remaining)}</p>
+        </div>
+        <button type="button" onClick={() => apply((state, now) => adjustRestCountdown(state, 15, now))} aria-label={t("training.rest.add")}
+          className="h-11 rounded-xl border border-[#34463a] text-sm font-semibold">+{t("common.quantityTight", { value: 15, unit: t("common.unit.seconds") })}</button>
+        <button type="button" onClick={() => apply(dismissRestCountdown)} className="training-action h-11 rounded-xl px-3 text-sm font-semibold">{t("training.rest.skip")}</button>
+      </div>}
+    </section>
   );
 }

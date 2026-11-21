@@ -150,7 +150,7 @@ function ExerciseLibraryPanel({
         <h2 className="text-sm font-semibold">{t("exercises.library.title")}</h2>
         <Link
           href="/exercises/new"
-          className="flex h-9 items-center rounded-md bg-zinc-900 px-3 text-xs font-medium text-white"
+          className="flex min-h-11 items-center rounded-xl bg-zinc-900 px-3 text-sm font-medium text-white"
         >
           {t("exercises.library.newExercise")}
         </Link>

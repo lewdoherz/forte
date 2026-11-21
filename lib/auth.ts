@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { kyselyAdapter } from "@better-auth/kysely-adapter";
 import type { Kysely } from "kysely";
 import type { Database } from "@/lib/db";
@@ -6,6 +7,10 @@ import { DEFAULT_LOCALE, isLocale, type Locale } from "@/lib/i18n";
 import { env, isProductionRuntime } from "./env";
 import { sendEmail } from "./email";
 import { passwordResetEmail, verificationEmail } from "./email-templates";
+import { isPlaceholderEmail } from "./auth-email";
+import { socialProviderOptions } from "./social-provider-config";
+import { nativeAuth } from "./native-auth";
+import { isEmbeddedAuthUserAgent } from "./social-auth";
 
 /** Development-only fallback; production must set BETTER_AUTH_SECRET. */
 const DEV_AUTH_SECRET = "forte-dev-secret";
@@ -53,11 +58,35 @@ export function createAuth(instance: Kysely<Database>) {
     // so Better Auth derives it from the incoming request; required in
     // production by assertProductionEnv().
     baseURL: env.BETTER_AUTH_URL,
+    socialProviders: socialProviderOptions,
+    trustedOrigins: socialProviderOptions.apple ? ["https://appleid.apple.com"] : undefined,
+    plugins: [nativeAuth(instance)],
+    // Non-deliverable provider identities cannot be claimed or recovered by mail.
+    hooks: {
+      before: createAuthMiddleware(async (context) => {
+        if (["/sign-in/social", "/link-social"].includes(context.path) &&
+          isEmbeddedAuthUserAgent(context.headers?.get("user-agent") ?? "")) {
+          throw new APIError("BAD_REQUEST", { message: "Use the system browser for social sign-in." });
+        }
+        for (const email of [context.body?.email, context.body?.newEmail]) {
+          if (typeof email === "string" && isPlaceholderEmail(email)) {
+            throw new APIError("BAD_REQUEST", {
+              code: "INVALID_EMAIL",
+              message: "Enter a deliverable email address.",
+            });
+          }
+        }
+      }),
+    },
+    // Invalid/missing OAuth state cannot recover the request's error callback.
+    // Keep that fallback on the localized login page as well.
+    onAPIError: { errorURL: "/sign-in?social=error" },
     emailAndPassword: {
       enabled: true,
       // Sends the reset link. The URL is absolute and already carries the token,
       // so the template only presents it.
       sendResetPassword: async ({ user, url }) => {
+        if (isPlaceholderEmail(user.email)) return;
         await sendEmail({
           to: user.email,
           ...passwordResetEmail({
@@ -81,6 +110,7 @@ export function createAuth(instance: Kysely<Database>) {
       sendOnSignUp: true,
       autoSignInAfterVerification: true,
       sendVerificationEmail: async ({ user, url }) => {
+        if (isPlaceholderEmail(user.email)) return;
         await sendEmail({
           to: user.email,
           ...verificationEmail({
@@ -96,6 +126,7 @@ export function createAuth(instance: Kysely<Database>) {
       // Off by default in Better Auth. The account page offers deletion, and
       // `app_user` cascades to every table the user owns, so this cascades too.
       deleteUser: { enabled: true },
+      changeEmail: { enabled: true, updateEmailWithoutVerification: false },
       fields: {
         name: "display_name",
         email: "email",
@@ -118,6 +149,13 @@ export function createAuth(instance: Kysely<Database>) {
     },
     account: {
       modelName: "account",
+      storeStateStrategy: "database",
+      // Linking requires an authenticated session plus fresh provider proof.
+      // Matching (even verified) emails never implicitly merge identities.
+      accountLinking: {
+        enabled: true, disableImplicitLinking: true, allowDifferentEmails: true,
+        trustedProviders: ["google", "apple", "facebook", "linkedin"],
+      },
       fields: {
         userId: "user_id",
         accountId: "account_id",
@@ -164,6 +202,7 @@ export function createAuth(instance: Kysely<Database>) {
         // first two through its own path matcher; stating them here keeps the
         // policy visible in one place instead of resting on an internal default.
         "/request-password-reset": { window: 60, max: 3 },
+        "/change-email": { window: 60, max: 3 },
         "/send-verification-email": { window: 60, max: 3 },
         // Sends no mail, but it consumes a reset token, so it is throttled
         // rather than left on the global allowance.
@@ -171,6 +210,11 @@ export function createAuth(instance: Kysely<Database>) {
       },
     },
     advanced: {
+      // Apple returns by cross-site form POST. Only its short-lived state cookie
+      // needs SameSite=None; the application session remains HttpOnly/Lax.
+      ...(socialProviderOptions.apple ? {
+        cookies: { state: { attributes: { sameSite: "none" as const, secure: true } } },
+      } : {}),
       database: {
         generateId: "uuid",
         validateSchema: false,

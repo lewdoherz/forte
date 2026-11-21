@@ -3,3 +3,7 @@
 
 /* Button that reloads the hosted forte app. */
 "retry" = "重试";
+
+"auth_error_title" = "登录未完成";
+"auth_error" = "您现有的账户和数据未改变。请重新尝试登录。";
+"dismiss" = "好";

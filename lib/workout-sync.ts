@@ -1,5 +1,6 @@
 import type {
   ExerciseTemplate,
+  JsonObject,
   SetType,
   Workout,
   WorkoutExercise,
@@ -10,9 +11,9 @@ import type {
  * One set as the client believes it is, sent to reconcile a workout it owns.
  *
  * The id is client-generated so a replayed sync addresses the same row; the
- * rest are the fields the client models. `duration_seconds`, `distance_meters`,
- * `metrics` and `set_type` are deliberately absent: the logging screen does not
- * carry them, and a sync must not erase values it never saw.
+ * rest are the fields the client models. Typed metric fields are optional for
+ * old documents: omission preserves their stored values, while explicit null
+ * clears a field. New logger documents send the complete metric projection.
  */
 export interface SyncSet {
   id: string;
@@ -22,6 +23,9 @@ export interface SyncSet {
   reps: number | null;
   weight_kg: string | null;
   rpe: string | null;
+  duration_seconds?: number | null;
+  distance_meters?: number | null;
+  metrics?: JsonObject;
   completed_at: string | null;
 }
 
@@ -56,9 +60,8 @@ export interface LoggedWorkout extends Workout {
  *
  * The client generates the id when an exercise is added mid-workout, so a
  * replayed sync addresses the same row; `template_id` is identity and never
- * changes. `duration_seconds`/`distance_meters`/`metrics` are absent for the
- * same reason they are on a set: the logging screen does not carry them, so a
- * sync must not erase values it never saw.
+ * changes. Rest targets and notes belong to this workout snapshot, not to the
+ * routine the workout originally came from.
  */
 export interface SyncExercise {
   id: string;
@@ -96,13 +99,31 @@ function sameInstant(a: string | null, b: Date | null): boolean {
   return !Number.isNaN(time) && time === b.getTime();
 }
 
+function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length &&
+      a.every((value, index) => sameJson(value, b[index]));
+  }
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length &&
+    keys.every((key) => Object.hasOwn(right, key) && sameJson(left[key], right[key]));
+}
+
 /** Whether a stored row already carries every value the client is the source of. */
 export function sameClientValues(desired: SyncSet, existing: WorkoutSet): boolean {
   return (
     desired.position === existing.position &&
+    desired.set_type === existing.set_type &&
     desired.reps === existing.reps &&
     sameNumeric(desired.weight_kg, existing.weight_kg) &&
     sameNumeric(desired.rpe, existing.rpe) &&
+    (desired.duration_seconds === undefined || desired.duration_seconds === existing.duration_seconds) &&
+    (desired.distance_meters === undefined || desired.distance_meters === existing.distance_meters) &&
+    (desired.metrics === undefined || sameJson(desired.metrics, existing.metrics)) &&
     sameInstant(desired.completed_at, existing.completed_at)
   );
 }

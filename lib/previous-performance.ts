@@ -12,11 +12,9 @@ import type { WorkoutSet } from "@/schema/types";
  * provisional and prevents a routine prescription from becoming a previous
  * performance.
  *
- * One statement for the whole exercise list. A `distinct on` subquery picks the
- * most recent completed session per template (indexed by
- * `workout_exercise_template_idx`), and the outer join reads that session's sets
- * by `workout_set_workout_exercise_idx`. The result is bounded by one session's
- * sets per requested exercise, however long the user's history is.
+ * The last-session query is bounded by that session's sets. A second projection
+ * selects only the latest valid candidate per set type and metric; older
+ * compatible values can fill a gap without shipping the user's whole history.
  */
 
 /**
@@ -33,6 +31,8 @@ export type PreviousSetValues = Pick<
 export interface PreviousPerformance {
   performedAt: Date;
   sets: PreviousSetValues[];
+  /** Latest valid completed candidates per set type/metric, for empty defaults. */
+  fallbackSets?: PreviousSetValues[];
 }
 
 /**
@@ -110,7 +110,7 @@ export async function getPreviousPerformances(
   for (const row of rows) {
     let performance = performances.get(row.template_id);
     if (!performance) {
-      performance = { performedAt: row.started_at, sets: [] };
+      performance = { performedAt: row.started_at, sets: [], fallbackSets: [] };
       performances.set(row.template_id, performance);
     }
     performance.sets.push({
@@ -122,6 +122,38 @@ export async function getPreviousPerformances(
       rpe: row.rpe,
       metrics: row.metrics,
     });
+  }
+  // At most one row per (template, set type, metric). A recent session can
+  // contain only reps, for example; that must not hide an earlier valid load.
+  const fallback = await sql<PreviousSetValues & { template_id: string; id: string }>`
+    select distinct on (we.template_id, ws.set_type, candidate.field)
+      we.template_id, ws.id, ws.set_type, ws.reps, ws.weight_kg,
+      ws.duration_seconds, ws.distance_meters, ws.rpe, ws.metrics
+    from workout_set ws
+    join workout_exercise we on we.id = ws.workout_exercise_id
+    join workout w on w.id = we.workout_id
+    cross join lateral (values
+      ('weight', ws.weight_kg is not null),
+      ('reps', ws.reps is not null and ws.reps > 0),
+      ('duration', ws.duration_seconds is not null and ws.duration_seconds > 0),
+      ('distance', ws.distance_meters is not null and ws.distance_meters > 0),
+      ('rpe', ws.rpe is not null),
+      ('floors', jsonb_typeof(ws.metrics -> 'floors') = 'number'),
+      ('steps', jsonb_typeof(ws.metrics -> 'steps') = 'number')
+    ) candidate(field, present)
+    where w.owner_id = ${userId}::uuid
+      and w.ended_at is not null and ws.completed_at is not null
+      and we.template_id in (${sql.join(templateIds.map((id) => sql`${id}::uuid`))})
+      and candidate.present
+    order by we.template_id, ws.set_type, candidate.field,
+      w.started_at desc, w.id desc, we.position asc, ws.position asc
+  `.execute(db);
+  const seen = new Set<string>();
+  for (const row of fallback.rows) {
+    const key = `${row.template_id}:${row.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    performances.get(row.template_id)?.fallbackSets?.push(row);
   }
   return performances;
 }

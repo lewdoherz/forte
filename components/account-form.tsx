@@ -11,7 +11,7 @@ type FormAction = (
 
 interface AccountFormProps {
   action: FormAction;
-  initial: { email: string; displayName: string; timeZone: string };
+  initial: { email: string | null; displayName: string; timeZone: string };
 }
 
 export function AccountForm({ action, initial }: AccountFormProps) {
@@ -31,7 +31,7 @@ export function AccountForm({ action, initial }: AccountFormProps) {
       <label className="block space-y-1">
         <span className="text-sm font-medium">{t("account.form.email")}</span>
         <input
-          value={initial.email}
+          value={initial.email ?? t("account.form.noEmailProvided")}
           readOnly
           className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500"
         />

@@ -62,7 +62,7 @@ const routine = await createRoutine(db, alice, {
       notes: "warm",
       sets: [
         { set_type: "warmup", reps: 10, weight_kg: "40" },
-        { set_type: "normal", reps: 5, weight_kg: "100" },
+        { set_type: "normal", reps: 5, weight_kg: "100", duration_seconds: 90, distance_meters: 500, metrics: { floors: 12, steps: 800 } },
       ],
     },
     {
@@ -74,6 +74,14 @@ const routine = await createRoutine(db, alice, {
     },
   ],
 });
+// Range targets are supported by stored routines even though the editor's input
+// currently supplies an exact rep count.
+await query(
+  `update routine_set set rep_range_start = 4, rep_range_end = 8
+   where routine_exercise_id in (select id from routine_exercise where routine_id = $1)
+     and position = 1`,
+  [routine.id],
+);
 
 // ---- start workout ---------------------------------------------------------
 const started = await startWorkout(db, alice, routine.id);
@@ -107,6 +115,24 @@ check(
   "superset grouping snapshotted onto the workout",
   workout.exercises[0].superset_key === "ss-workouts" &&
     workout.exercises[1].superset_key === "ss-workouts",
+);
+const targetSnapshot = workout.exercises[0].sets[1].metrics.forte_target as {
+  reps: number; rep_range_start: number; rep_range_end: number; weight_kg: string;
+  duration_seconds: number; distance_meters: number; metrics: { floors: number; steps: number };
+};
+check(
+  "full exact, range, timed, distance and metric targets are snapshotted",
+  targetSnapshot?.reps === 5 && targetSnapshot.rep_range_start === 4 &&
+    targetSnapshot.rep_range_end === 8 && Number(targetSnapshot.weight_kg) === 100 &&
+    targetSnapshot.duration_seconds === 90 && targetSnapshot.distance_meters === 500 &&
+    targetSnapshot.metrics.floors === 12 && targetSnapshot.metrics.steps === 800,
+);
+check(
+  "planned typed targets are not actual completed results",
+  workout.exercises[0].sets[1].duration_seconds === null &&
+    workout.exercises[0].sets[1].distance_meters === null &&
+    workout.exercises[0].sets[1].completed_at === null &&
+    workout.exercises[0].sets[1].metrics.floors === undefined,
 );
 
 // ---- cross-user start + duplicate prevention ------------------------------
@@ -145,6 +171,11 @@ check(
   afterRoutineChange?.exercises[0].superset_key === "ss-workouts",
   `${afterRoutineChange?.exercises[0].superset_key}`,
 );
+check(
+  "full target snapshot survives replacement of routine sets",
+  JSON.stringify(afterRoutineChange?.exercises[0].sets[1].metrics.forte_target) ===
+    JSON.stringify(targetSnapshot),
+);
 
 // ---- log actual set values -------------------------------------------------
 const set0 = workout.exercises[0].sets[1];
@@ -178,6 +209,16 @@ await expectThrow("another user cannot finish the workout", () => finishWorkout(
 // ---- finish active workout -------------------------------------------------
 const finished = await finishWorkout(db, alice, started.id);
 check("finish workout sets ended_at", finished.ended_at != null);
+const completedHistory = await getWorkoutTree(db, started.id, alice);
+check(
+  "completed history contains actual load and reps without turning targets into actuals",
+  completedHistory?.exercises[0].sets[1].reps === 6 &&
+    Number(completedHistory.exercises[0].sets[1].weight_kg) === 105 &&
+    completedHistory.exercises[0].sets[1].duration_seconds === null &&
+    completedHistory.exercises[0].sets[1].distance_meters === null &&
+    completedHistory.exercises[0].sets[1].metrics.floors === undefined &&
+    JSON.stringify(completedHistory.exercises[0].sets[1].metrics.forte_target) === JSON.stringify(targetSnapshot),
+);
 await expectThrow("finishing a completed workout is rejected", () => finishWorkout(db, alice, started.id));
 
 // ---- invalid input (Zod) ---------------------------------------------------

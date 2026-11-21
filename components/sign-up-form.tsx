@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import { prepareOfflineDataForUser } from "@/lib/offline-store";
 import { useI18n } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n";
+import { SocialSignIn } from "@/components/social-sign-in";
+import type { SocialProviderId } from "@/lib/social-auth";
 
 /**
  * Better Auth replies with an English `message` and a stable `code` — the latter
@@ -29,14 +31,18 @@ function signUpErrorKey(error: unknown): MessageKey {
   }
 }
 
-export function SignUpForm() {
+export function SignUpForm({ providers = [] }: { providers?: SocialProviderId[] }) {
   const router = useRouter();
   const { t } = useI18n();
   const [errorKey, setErrorKey] = useState<MessageKey | null>(null);
   const [loading, setLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState(false);
+  const pending = useRef(false);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending.current) return;
+    pending.current = true;
     setErrorKey(null);
     setLoading(true);
 
@@ -46,11 +52,13 @@ export function SignUpForm() {
 
     if (!email) {
       setErrorKey("auth.error.emailRequired");
+      pending.current = false;
       setLoading(false);
       return;
     }
     if (password.length < 8) {
       setErrorKey("auth.error.passwordTooShort");
+      pending.current = false;
       setLoading(false);
       return;
     }
@@ -70,6 +78,7 @@ export function SignUpForm() {
 
     if (result.error) {
       setErrorKey(signUpErrorKey(result.error));
+      pending.current = false;
       setLoading(false);
       return;
     }
@@ -79,6 +88,7 @@ export function SignUpForm() {
     } catch {
       await authClient.signOut();
       setErrorKey("auth.error.offlineAfterSignUp");
+      pending.current = false;
       setLoading(false);
       return;
     }
@@ -88,10 +98,7 @@ export function SignUpForm() {
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="w-full max-w-sm space-y-4 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm"
-    >
+    <section className="w-full max-w-sm space-y-4 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
       <h1 className="text-xl font-semibold">{t("auth.signUp.title")}</h1>
 
       {errorKey ? (
@@ -99,6 +106,15 @@ export function SignUpForm() {
           {t(errorKey)}
         </p>
       ) : null}
+
+      <SocialSignIn
+        providers={providers}
+        disabled={loading}
+        busyRef={pending}
+        onPendingChange={setSocialLoading}
+      />
+
+      <form onSubmit={onSubmit} className="space-y-4">
 
       <label className="block space-y-1">
         <span className="text-sm font-medium">{t("auth.field.email")}</span>
@@ -126,11 +142,13 @@ export function SignUpForm() {
 
       <button
         type="submit"
-        disabled={loading}
-        className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+        disabled={loading || socialLoading}
+        className="min-h-11 w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
       >
         {loading ? t("auth.signUp.submitting") : t("common.signUp")}
       </button>
+
+      </form>
 
       <p className="text-sm text-zinc-500">
         {t("auth.signUp.haveAccount")}{" "}
@@ -138,6 +156,6 @@ export function SignUpForm() {
           {t("common.signIn")}
         </Link>
       </p>
-    </form>
+    </section>
   );
 }

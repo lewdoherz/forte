@@ -20,17 +20,17 @@ Cold/reload matters: opening the current logger with no signal must not produce
 the browser's generic error. The service worker therefore runtime-snapshots that
 exact route after it has been opened online — see below.
 
-### Current retention limitation
+### Pending-draft retention
 
-The implementation does not yet meet the intended no-data-loss envelope:
-`components/workout-logger.tsx` treats a missing or invalid last successful sync
-timestamp as stale, and deletes a pending document during restoration. The same
-deletion applies when the timestamp is older than seven days. On a fresh device,
-edits made before any successful sync are therefore at risk on reload.
-This is a code-review finding, separate from the browser runner's unresolved
-offline-reload observation. Neither a passing cache-policy check nor the native
-clients proves pending edits survive a reload. Preserve pending data and surface
-recovery explicitly before advertising reliable offline restoration.
+Pending documents are restored only after account ownership has been claimed,
+but a missing or old successful-sync timestamp no longer deletes them. They may
+be the user's only copy. Every reconciliation still authorizes the session and
+workout owner on the server; an ownership/finished-state rejection keeps the
+draft and surfaces the failure instead of silently replacing local edits.
+
+The production browser journey asserts edited values and set types after an
+offline reload, then verifies the actual database rows after reconnect. Cache
+policy checks and native viewport/device checks are separate evidence.
 
 
 ## The central decision: sync the document, not a log of operations
@@ -69,9 +69,8 @@ IndexedDB, one database per origin, hand-written (no new dependency):
 for a different owner clears every local workout before returning a store, and
 sign-out or account deletion clears the store explicitly. The private route
 cache follows the same lifecycle. Without both, the next person to use the
-device could see the previous user's training — the worst failure this feature
-can have. Rendering also refuses a pending document whose last successful sync
-is older than 7 days.
+device could see the previous user's training. Pending data is retained even when
+its successful-sync timestamp is absent; it is never an offline authorization grant.
 
 ## Server changes
 
@@ -174,8 +173,8 @@ The page keeps its server-rendered first paint, then hands over:
 - Offline start, history, progress, routines or account.
 - Background Sync API and push — not needed, and patchy across browsers.
 - Multi-device merge. Last writer wins, as stated above.
-- Offline auth. The session is not verifiable offline; the cached store is
-  trusted for its 7-day window and cleared on sign-out.
+- Offline auth. The session is not verifiable offline; account-scoped pending
+  edits can be retained, but the server re-authorizes them before accepting sync.
 - Caching the RSC payloads for arbitrary routes. Fragile and unnecessary: the
   offline surface renders from IndexedDB.
 
@@ -211,3 +210,31 @@ functioning app rather than a half-migrated one.
    and the staleness refusal.
 6. **Acceptance test in a real browser.** Offline mode, log sets, reload while
    offline, reconnect, confirm the database matches and the indicator clears.
+
+## Typed logger state and timers
+
+New sync documents send `set_type`, duration, distance and the set's metric
+sidecar as well as weight/reps/RPE. Omitted typed fields in older documents
+preserve stored values; explicit scalar `null` and an empty metric object clear
+them. Equality checks compare JSON structurally, so a replay with reordered keys
+does not rewrite the row.
+
+Routine prescriptions remain snapshots: `metrics.forte_target` preserves exact
+and range reps, load, duration, distance and counter targets. `forte_blank_fields`
+and `forte_edited_fields` retain manual intent without treating an empty edit as
+an invitation to reapply history. `forte_timer` records a duration set's start
+timestamp and accumulated seconds. Pausing records actual elapsed time without
+marking the set complete.
+
+Rest is independent of the timed-set stopwatch. The dock's session-storage state
+is account/workout keyed and identifies each completion by set id plus timestamp.
+Adjusted deadlines and skipped anchors survive reload; undo does not revive an
+older countdown. The dock mounts only after draft hydration, so an initial
+loading state cannot erase that persisted override. Default rest lives in
+account-keyed localStorage on this device; per-exercise overrides use the
+existing snapshotted `rest_seconds` column, with zero meaning Off.
+
+Every Finish opens a review. Save persists one frozen finish timestamp and
+joins any in-flight reconciliation; a failure retains that final draft for
+retry, with no automatic completion of unchecked rows. The read-only recap is
+shown only after server acknowledgement. Replayed finishes remain idempotent.

@@ -20,31 +20,155 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-      - name: Assemble personal-install APK
+      - name: Restore required release signing identity
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::Required signing secret $variable is unavailable; unsigned releases are forbidden."
+              exit 1
+            fi
+          done
+          keystore="$RUNNER_TEMP/forte-release.keystore"
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          [[ -s "$keystore" ]] || { echo "::error::The release keystore is empty."; exit 1; }
+          printf '%s\n' "FORTE_KEYSTORE_PATH=$keystore" \
+            "FORTE_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" \
+            "FORTE_KEY_ALIAS=$ANDROID_KEY_ALIAS" \
+            "FORTE_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
+      - name: Assemble signed Release APK
         working-directory: mobile/android
         env:
           FORTE_HOST: ${{ inputs.host }}
+        shell: bash
         run: |
+          set -euo pipefail
           [[ "$FORTE_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || exit 1
-          sh ./gradlew assembleDebug "-PforteOrigin=https://$FORTE_HOST"
+          sh ./gradlew assembleRelease "-PforteOrigin=https://$FORTE_HOST"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+      - name: Remove runner signing material
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/forte-release.keystore"
       - uses: actions/upload-artifact@v4
         with:
-          name: forte-android-debug
-          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: forte-android-release-signed
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
   ios:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build unsigned iPhone and iPad simulator app
+      - name: Build Release simulator app
         env:
           FORTE_HOST: ${{ inputs.host }}
+        shell: bash
         run: |
+          set -euo pipefail
           [[ "$FORTE_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || exit 1
-          xcodebuild -project mobile/ios/Forte.xcodeproj -scheme Forte -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath mobile/ios/build CODE_SIGNING_ALLOWED=NO "FORTE_HOST=$FORTE_HOST" build
-          ditto -c -k --keepParent mobile/ios/build/Build/Products/Debug-iphonesimulator/Forte.app mobile/ios/build/forte-simulator.zip
+          mkdir -p mobile/ios/build
+          xcodebuild -project mobile/ios/Forte.xcodeproj -scheme Forte -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath mobile/ios/build/simulator CODE_SIGNING_ALLOWED=NO \
+            "FORTE_HOST=$FORTE_HOST" build 2>&1 | tee mobile/ios/build/simulator-build.log
+          ditto -c -k --keepParent mobile/ios/build/simulator/Build/Products/Release-iphonesimulator/Forte.app \
+            mobile/ios/build/forte-ios-simulator-release.zip
+      - name: Build unsigned device Release app (not installable)
+        env:
+          FORTE_HOST: ${{ inputs.host }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -project mobile/ios/Forte.xcodeproj -scheme Forte -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath mobile/ios/build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            "FORTE_HOST=$FORTE_HOST" build 2>&1 | tee mobile/ios/build/device-build.log
+          ditto -c -k --keepParent mobile/ios/build/device/Build/Products/Release-iphoneos/Forte.app \
+            mobile/ios/build/forte-ios-device-release-UNSIGNED-NOT-INSTALLABLE.zip
+          {
+            echo '## iOS build scope'
+            echo 'Release simulator app and unsigned iphoneos Release .app compiled.'
+            echo 'The device artifact is NOT INSTALLABLE: no Apple signing certificate, private key, provisioning profile, or Team ID is configured.'
+            echo 'No IPA, TestFlight, or App Store readiness is claimed.'
+            echo 'Builds do not prove WKWebView logger behavior, provider OAuth, or system-browser callback/cookie installation at runtime.'
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: forte-ios-simulator
-          path: mobile/ios/build/forte-simulator.zip
+          name: forte-ios-simulator-release
+          path: mobile/ios/build/forte-ios-simulator-release.zip
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forte-ios-device-release-UNSIGNED-NOT-INSTALLABLE
+          path: mobile/ios/build/forte-ios-device-release-UNSIGNED-NOT-INSTALLABLE.zip
+          if-no-files-found: error
+      - name: Smoke rendered production sign-in in an iPhone simulator
+        timeout-minutes: 8
+        env:
+          FORTE_HOST: ${{ inputs.host }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$PWD/mobile/ios/build/sign-in-smoke"
+          mkdir -p "$evidence"
+          xcrun swiftc mobile/ios/verification/SignInScreenshot.swift -o "$RUNNER_TEMP/forte-sign-in-ocr"
+          xcrun simctl list devices available --json > "$evidence/available-devices.json"
+          udid="$(jq -r '[.devices | to_entries[] |
+            select(.key | startswith("com.apple.CoreSimulator.SimRuntime.iOS-")) |
+            .value[] | select(.isAvailable == true and .state == "Shutdown" and
+            (.name | startswith("iPhone")))] | first | .udid // empty' "$evidence/available-devices.json")"
+          [[ -n "$udid" ]] || { echo "::error::No available shutdown iPhone iOS simulator exists."; exit 1; }
+          xcrun simctl boot "$udid"
+          printf 'IOS_SMOKE_UDID=%s\n' "$udid" >> "$GITHUB_ENV"
+          printf 'Simulator: %s\nConfigured host: https://%s\n' "$udid" "$FORTE_HOST" > "$evidence/run.txt"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" mobile/ios/build/simulator/Build/Products/Release-iphonesimulator/Forte.app
+          xcrun simctl launch "$udid" com.lewdoherz.forte -AppleLanguages '(en)' -AppleLocale en_US \
+            | tee "$evidence/launch.txt"
+          for attempt in $(seq 1 24); do
+            xcrun simctl io "$udid" screenshot "$evidence/attempt-$attempt.png"
+            set +e
+            "$RUNNER_TEMP/forte-sign-in-ocr" "$evidence/attempt-$attempt.png" "$evidence/attempt-$attempt.txt" \
+              > "$evidence/attempt-$attempt-result.txt" 2>&1
+            status=$?
+            set -e
+            cat "$evidence/attempt-$attempt-result.txt"
+            if [[ "$status" -eq 0 ]]; then
+              {
+                echo '## iPhone simulator sign-in smoke'
+                echo 'A launched Release simulator app screenshot rendered Sign in, Email, and Password, verified by Vision OCR.'
+                echo 'Screenshot and recognized-text evidence are uploaded as forte-ios-sign-in-smoke.'
+                echo 'This proves only the rendered signed-out screen, not login, workout logging, keyboard behavior, provider OAuth, or native auth return.'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            [[ "$status" -eq 1 ]] || exit "$status"
+            if [[ "$attempt" -lt 24 ]]; then sleep 5; fi
+          done
+          echo "::error::The hosted sign-in form did not render all required screenshot/OCR markers within 24 attempts."
+          exit 1
+      - name: Shut down only the simulator booted by this job
+        if: always() && env.IOS_SMOKE_UDID != ''
+        shell: bash
+        run: xcrun simctl shutdown "$IOS_SMOKE_UDID"
+      - name: Publish sign-in screenshot and OCR evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forte-ios-sign-in-smoke
+          path: mobile/ios/build/sign-in-smoke/
+          if-no-files-found: ignore
+      - name: Publish Xcode build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forte-ios-build-logs
+          path: mobile/ios/build/*-build.log
+          if-no-files-found: ignore

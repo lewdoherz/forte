@@ -13,7 +13,7 @@ analytics with personal records.
 | Framework | Next.js 16 (App Router, Turbopack) |
 | Language | TypeScript (strict) |
 | Styling | Tailwind CSS v4 |
-| Auth | Better Auth (email + password) |
+| Auth | Better Auth (independent email/password; readiness-gated Google, Apple, Facebook and LinkedIn) |
 | Query layer | Kysely (type-safe SQL query builder — **no ORM**) |
 | Database (dev) | PGlite (PostgreSQL compiled to WASM) |
 | Database (prod) | PostgreSQL |
@@ -62,11 +62,20 @@ analytics with personal records.
 - **Sessions are visible and revocable.** `/account` lists the devices that can reach
   the account and can end any of them, through Better Auth's own session APIs rather
   than direct SQL.
-- **Mobile shell.** Below `sm` the primary navigation is a fixed bottom bar
-  (`components/bottom-nav.tsx`); the desktop sidebar is hidden. The bar is omitted
-  on `/workouts/[id]` so the logger owns its controls. `viewportFit: "cover"` and
-  shared `--app-safe-*` CSS variables reserve top, bottom, and landscape side
-  insets; the logger's sticky controls remain below the top inset.
+- **Provider access is opt-in and explicitly linked.** Google is the primary social
+  option; Apple, Facebook and LinkedIn use Better Auth's built-in providers.
+  Credentials alone do not expose a button: each provider also needs its verified
+  readiness flag. Matching emails never merge users. Linking requires an existing
+  authenticated account and provider proof; provider subjects preserve that same
+  account on every platform. Missing-email identities can verify a contact address,
+  then enroll an independent password through recovery. See
+  [provider setup and retirement safety](DEPLOYMENT.md#social-sign-in-and-account-linking).
+- **Three mobile destinations.** Home retains recent activity/history; `/workout`
+  owns start/resume and routine choice; `/profile` links progress, the library and
+  account settings. Desktop keeps secondary routes in a width-appropriate sidebar.
+  The active logger owns the whole screen and minimizes without discarding its
+  draft. Completed details retain ordinary navigation and a compact resume entry.
+  Safe-area insets protect the sticky Finish header and the independent rest dock.
 - **Offline active workouts are account-isolated.** The logger writes its active
   document to an owner-scoped IndexedDB store and reconciles it when connectivity
   returns. The service worker caches immutable build assets plus the exact active
@@ -132,25 +141,28 @@ also live in [`mobile/`](mobile/README.md):
 
 | Platform | Implementation | Personal installation |
 |---|---|---|
-| Android 11+ | Java + platform WebView | Build/install the debug APK |
+| Android 11+ | Java + platform WebView | Signed personal-install Release APK, existing identity |
 | iOS/iPadOS 17.4+ | Swift + WKWebView | Build and sign with Xcode on macOS |
 
 Both load the configured HTTPS deployment, defaulting to
 `https://forte-delta.vercel.app`. They reuse web accounts and server behavior;
 they do not bundle Next.js or the database and do not promise offline startup.
-External HTTPS links open outside the app. There is no JavaScript/native bridge,
-cleartext allowance, or TLS-validation bypass.
+External HTTPS links open outside the app. Social sign-in uses the system browser,
+an expiring PKCE-bound one-time code, and native HttpOnly cookie installation.
+Session tokens never cross URLs or JavaScript. There is no cleartext allowance,
+TLS-validation bypass or general-purpose JavaScript/native token bridge.
 
 ```bash
 # From mobile/android, with JDK 21 and Android SDK 36 installed:
-sh ./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+sh ./gradlew assembleRelease  # requires FORTE_KEYSTORE_* and FORTE_KEY_* secrets
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-On Windows, use `gradlew.bat assembleDebug`. The manually triggered
-`.github/workflows/mobile.yml` produces Android debug APK and unsigned iOS
-simulator artifacts. A simulator `.app` is not an installable iPhone IPA;
-physical Apple devices require development signing/provisioning.
+On Windows, use `gradlew.bat assembleRelease`. The manually triggered
+`.github/workflows/mobile.yml` uses the original signing identity from GitHub
+Secrets and produces a signed Android Release APK, an iOS Release simulator app,
+and an explicitly unsigned/noninstallable device `.app`. No installable IPA or
+App Store readiness is implied; Apple devices need signing and provisioning.
 See [mobile/README.md](mobile/README.md) for deployment overrides and limitations.
 
 ## Routes
@@ -164,6 +176,8 @@ See [mobile/README.md](mobile/README.md) for deployment overrides and limitation
 | `/workouts`, `/workouts/[id]` | History list / active logger or completed detail |
 | `/progress` | Exercise picker for the canonical Statistics view |
 | `/account` | Account settings (display name, IANA timezone) |
+| `/workout` | Start/resume a workout and choose a routine |
+| `/profile` | Progress, exercise library and account/settings shortcuts |
 | `/api/auth/[...all]` | Better Auth handler |
 | `/manifest.webmanifest`, `/icon`, `/apple-icon`, `/pwa-icon/[size]` | Generated PWA manifest and icons |
 
@@ -228,6 +242,27 @@ Verification suites live in `schema/tests/` and run against a real PostgreSQL (P
 - `verify-timezone` — local day boundaries, DST transitions, range lower bounds, end-to-end bucketing
 - `verify-sharing` — public routine links, revocation, expiry, payload hygiene
 
+Focused client-state checks:
+
+```bash
+bun run scripts/verify-set-suggestions.ts
+bun run scripts/verify-rest-countdown.ts
+```
+
+The compact logger offers type-specific fields and muted suggestions: explicit
+edits, snapshotted routine targets, compatible checked sets in this exercise, then
+completed historical performance. Suggestions never mark a set done. A type sheet
+keeps Normal/Warm-up/Failure/Drop set separate from removal; previous performance
+is displayed independently. Duration-only sets use a recoverable elapsed timer,
+with an explicit completion check after Play/Pause.
+
+Default rest is an account-keyed **device** preference; per-exercise overrides are
+saved in the workout snapshot (`null` inherits, `0` is Off). No migration is needed.
+Typed metrics, deliberate blank/edit intent, routine targets and running timer
+timestamps use the existing set `metrics` sidecar. Finish reviews completed totals,
+leaves unchecked sets uncompleted, and retains a failed final draft for idempotent
+retry. History/records continue to use only actual completed sets.
+
 Two checks cover behavior beyond the schema suites:
 
 - `bun run verify:service-worker` — the worker's cache separation policy: the
@@ -245,11 +280,11 @@ Two checks cover behavior beyond the schema suites:
   Linux binaries' obsolete ICU dependency. The runner drops only its own scratch
   database during cleanup; it never selects a database using `DATABASE_URL`.
 
-  Its offline leg asserts what it can observe: the private snapshot serves the
-  exact workout route while the network is gone. What the client restores from
-  its own local document after such a reload, and whether a change made offline
-  syncs once the network returns, are not asserted — the run reports what it
-  observed instead of passing judgement on it.
+  The journey now asserts that offline values and set-type changes survive a
+  reload, reconcile after reconnect, and reach completed history. It also checks
+  rest-deadline adjustment/skip across reload and the explicit Finish → review →
+  Save flow. An immutable-asset build is required for the offline leg; do not
+  reuse a production worker's cache while previewing unversioned development chunks.
 
 ```bash
 bun run db:verify

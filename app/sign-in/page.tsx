@@ -1,11 +1,17 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth-session";
+import { enabledSocialProviders } from "@/lib/auth-server";
 import { SignInForm } from "@/components/sign-in-form";
 import { LanguageSwitcher } from "@/components/language-switcher";
 
-export default async function SignInPage() {
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ social?: string | string[] }>;
+}) {
   const session = await getSession();
   if (session) redirect("/");
+  const query = await searchParams;
 
   return (
     <>
@@ -15,7 +21,7 @@ export default async function SignInPage() {
         <LanguageSwitcher compact />
       </div>
       <main className="flex min-h-screen items-center justify-center px-4">
-        <SignInForm />
+        <SignInForm providers={enabledSocialProviders} socialError={query.social === "error"} />
       </main>
     </>
   );

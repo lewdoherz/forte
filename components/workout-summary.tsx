@@ -62,24 +62,27 @@ export async function WorkoutSummary({
 
   return (
     <>
-      <BodyHeatmap muscleValues={distribution.roles} className="mt-4" />
+      <BodyHeatmap
+        muscleValues={distribution.roles}
+        className="mt-4 rounded-xl bg-[#eef1e9] p-4 text-[#455349] [&_figcaption]:text-[#455349] [&_p]:text-[#455349]"
+      />
 
       <div className="mt-6">
         <h3 className="text-sm font-medium">{t("workouts.summary.muscleDistribution")}</h3>
         {rows.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-500">{t("workouts.summary.noSets")}</p>
+          <p className="mt-2 text-sm text-[#b0c0b4]">{t("workouts.summary.noSets")}</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {rows.map((row) => (
               <li key={row.code} className="flex items-center gap-3">
-                <span className="w-28 shrink-0 truncate text-sm">{row.label}</span>
-                <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-zinc-100">
+                <span className="w-28 shrink-0 break-words text-sm text-[#eef5ef]">{row.label}</span>
+                <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-[#34463a]">
                   <span
-                    className="block h-full rounded-full bg-sky-600"
+                    className="block h-full rounded-full bg-[#d6f077]"
                     style={{ width: `${row.percent}%` }}
                   />
                 </span>
-                <span className="w-12 shrink-0 text-right text-sm tabular-nums text-zinc-600">
+                <span className="w-12 shrink-0 text-right text-sm tabular-nums text-[#b0c0b4]">
                   {row.setsLabel}
                 </span>
               </li>

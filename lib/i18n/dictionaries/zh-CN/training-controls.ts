@@ -1,0 +1,26 @@
+import type { trainingControls as en } from "../en/training-controls";
+
+export const trainingControls = {
+  "training.rest.label": "组间休息",
+  "training.rest.finished": "休息结束",
+  "training.rest.ready": "可以开始下一组了",
+  "training.rest.subtract": "减少 15 秒休息时间",
+  "training.rest.add": "增加 15 秒休息时间",
+  "training.rest.skip": "跳过",
+  "training.rest.dismiss": "关闭休息计时器",
+  "training.picker.search": "搜索动作",
+  "training.picker.muscle": "全部肌群",
+  "training.picker.equipment": "全部器械",
+  "training.picker.clearFilters": "清除筛选",
+  "training.picker.selected": "已选 {count} 项",
+  "training.picker.clearSelection": "清空已选",
+  "training.picker.select": "选择{title}",
+  "training.picker.deselect": "取消选择{title}",
+  "training.picker.details": "查看{title}的详情与历史记录（在新标签页打开）",
+  "training.picker.empty": "没有可添加的动作。",
+  "training.picker.emptyFiltered": "没有符合筛选条件的动作。",
+  "training.picker.loadError": "无法加载动作，请重试。",
+  "training.picker.retry": "重试",
+  "training.picker.cancel": "取消",
+  "training.picker.add": "添加 {count} 个动作",
+} as const satisfies Record<keyof typeof en, string>;

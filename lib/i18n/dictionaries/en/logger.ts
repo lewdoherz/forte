@@ -6,6 +6,22 @@
  * the form with Intl.PluralRules for the active locale.
  */
 export const logger = {
+  "logger.session": "Training",
+  "logger.minimize": "Minimize workout",
+  "logger.exercise.notes": "Exercise notes",
+  "logger.exercise.emptyTitle": "Make this session yours",
+  "logger.rest.setting": "Rest · {value}",
+  "logger.rest.off": "Off",
+  "logger.rest.defaults": "Rest settings",
+  "logger.rest.deviceDefault": "Default rest on this device",
+  "logger.rest.override": "Rest after this exercise's sets",
+  "logger.rest.duration": "Rest duration",
+  "logger.rest.inherit": "Use default ({value})",
+  "logger.rest.scope": "The default is remembered for your account on this device. Exercise overrides stay with this workout; the source routine is unchanged.",
+  "logger.finish.review": "Review workout",
+  "logger.finish.save": "Save workout",
+  "logger.finish.unchecked": "{count} unchecked set stays uncompleted and does not count toward history, volume or records.|{count} unchecked sets stay uncompleted and do not count toward history, volume or records.",
+  "logger.finish.pending": "Your finished draft is kept on this device. Retry Save to confirm it reached history; no sets will be completed for you.",
   /* The sticky header: navigation, the live session metrics and the finish
      action. */
   "logger.nav.back": "Back to {label}",

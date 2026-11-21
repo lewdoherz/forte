@@ -8,6 +8,22 @@ import type { Messages } from "../../index";
  * the form with Intl.PluralRules for the active locale.
  */
 export const logger = {
+  "logger.session": "训练",
+  "logger.minimize": "最小化本次训练",
+  "logger.exercise.notes": "动作备注",
+  "logger.exercise.emptyTitle": "开始你的训练",
+  "logger.rest.setting": "休息 · {value}",
+  "logger.rest.off": "关闭",
+  "logger.rest.defaults": "休息设置",
+  "logger.rest.deviceDefault": "本设备上的默认休息时长",
+  "logger.rest.override": "此动作每组结束后的休息",
+  "logger.rest.duration": "休息时长",
+  "logger.rest.inherit": "使用默认值（{value}）",
+  "logger.rest.scope": "默认值按账户保存在本设备上。动作的休息设置随本次训练保存，不会修改原训练计划。",
+  "logger.finish.review": "检查本次训练",
+  "logger.finish.save": "保存训练",
+  "logger.finish.unchecked": "{count} 组未勾选的组仍为未完成状态，不计入历史记录、训练量或个人纪录。|{count} 组未勾选的组仍为未完成状态，不计入历史记录、训练量或个人纪录。",
+  "logger.finish.pending": "已结束的草稿保存在本设备上。请重试保存，以确认训练已同步到历史记录；系统不会替你勾选任何组。",
   /* 顶部栏：返回、实时指标和结束操作。 */
   "logger.nav.back": "返回{label}",
   "logger.metric.duration": "时长",

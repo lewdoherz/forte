@@ -434,6 +434,9 @@ function exercisesOf(workoutId: string): Promise<StoredExercise[]> {
       reps: 3,
       weight_kg: "60",
       rpe: "9",
+      duration_seconds: 60,
+      distance_meters: 250,
+      metrics: { floors: 4, steps: 300 },
     }),
   ];
 
@@ -444,7 +447,9 @@ function exercisesOf(workoutId: string): Promise<StoredExercise[]> {
   check(
     "a set added locally is inserted under its client id",
     rows.some(
-      (s) => s.id === addedId && s.set_type === "dropset" && Number(s.weight_kg) === 60 && Number(s.rpe) === 9,
+      (s) => s.id === addedId && s.set_type === "dropset" && Number(s.weight_kg) === 60 &&
+        Number(s.rpe) === 9 && s.duration_seconds === 60 && s.distance_meters === 250 &&
+        s.metrics.floors === 4 && s.metrics.steps === 300,
     ),
   );
   check(
@@ -454,14 +459,13 @@ function exercisesOf(workoutId: string): Promise<StoredExercise[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Server-owned columns survive a sync
+// Typed client fields persist; omitted legacy fields preserve stored values
 // ---------------------------------------------------------------------------
 
 {
   const tree = await freshAliceWorkout();
   const target = tree.exercises[0].sets[0];
-  // Give the row values the client never models, the way a machine or another
-  // code path would.
+  // Seed typed values, then send the legacy shape without those optional fields.
   await query(
     `update workout_set
        set set_type = 'warmup', duration_seconds = 42, distance_meters = 100, metrics = $2::jsonb
@@ -480,7 +484,38 @@ function exercisesOf(workoutId: string): Promise<StoredExercise[]> {
       row.distance_meters === 100 &&
       (row.metrics["steps"] as number) === 10,
   );
-  check("sync does not overwrite set_type", row.set_type === "warmup");
+  check("sync persists a changed set_type", row.set_type === "normal");
+  const typed = desired.map((s) => s.id === target.id ? {
+    ...s,
+    set_type: "dropset" as const,
+    duration_seconds: 90,
+    distance_meters: 750,
+    metrics: { floors: 12, steps: 800, geospatial: { latitude: 1, longitude: 2 } },
+  } : s);
+  await syncWorkoutDocument(db, alice, doc(tree, typed));
+  const persisted = (await setsOf(tree.id)).find((s) => s.id === target.id)!;
+  check(
+    "typed duration, distance, floors, steps and changed type persist",
+    persisted.set_type === "dropset" && persisted.duration_seconds === 90 &&
+      persisted.distance_meters === 750 && persisted.metrics.floors === 12 &&
+      persisted.metrics.steps === 800,
+  );
+  const beforeReplay = await snapshot(tree.id);
+  const reordered = typed.map((s) => s.id === target.id ? {
+    ...s,
+    metrics: { geospatial: { longitude: 2, latitude: 1 }, steps: 800, floors: 12 },
+  } : s);
+  await syncWorkoutDocument(db, alice, doc(tree, reordered));
+  check("JSON key order replay does not mutate rows", await snapshot(tree.id) === beforeReplay);
+  await syncWorkoutDocument(db, alice, doc(tree, typed.map((s) => s.id === target.id ? {
+    ...s, duration_seconds: null, distance_meters: null, metrics: {},
+  } : s)));
+  const cleared = (await setsOf(tree.id)).find((s) => s.id === target.id)!;
+  check(
+    "explicit null clears scalar metrics and an empty sidecar clears counters",
+    cleared.duration_seconds === null && cleared.distance_meters === null &&
+      Object.keys(cleared.metrics).length === 0,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -567,9 +602,11 @@ function exercisesOf(workoutId: string): Promise<StoredExercise[]> {
 
   await syncWorkoutDocument(db, alice, doc(tree, desired, endedAt));
   check("endedAt stamps ended_at", (await endedAtOf(tree.id)) === endedAt);
+  const finishedSnapshot = await snapshot(tree.id);
 
   await syncWorkoutDocument(db, alice, doc(tree, desired, endedAt));
   check("a replayed finish does not move ended_at", (await endedAtOf(tree.id)) === endedAt);
+  check("a replayed finish mutates no set columns", await snapshot(tree.id) === finishedSnapshot);
 
   const refused = await errorMessage(() =>
     syncWorkoutDocument(db, alice, doc(tree, desired)),

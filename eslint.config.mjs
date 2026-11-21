@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "mobile/**/.native-review-tmp/**",
+    "mobile/**/build/**",
+    "mobile/**/.gradle/**",
   ]),
 ]);
 

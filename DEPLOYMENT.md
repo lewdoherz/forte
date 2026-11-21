@@ -129,21 +129,93 @@ PostgreSQL are not bundled into an APK or Apple app.
 - Default host: `forte-delta.vercel.app`. Android accepts the Gradle property
   `forteOrigin`; Apple uses the Xcode setting `FORTE_HOST`, shared with
   `WKAppBoundDomains`. Changing host changes the cookie/storage origin.
-- Native clients expose no JavaScript/native bridge and do not bypass TLS or
-  permit HTTP. Keep `BETTER_AUTH_URL` equal to the hosted application's origin;
-  no cross-origin auth exception is needed.
+- Native social sign-in uses the system browser/auth session, never embedded
+  Google authorization. A one-time code bound to the app's SHA-256 PKCE proof,
+  platform and pending state returns by `forte://auth/callback`. The app exchanges
+  it over HTTPS and installs only the host-only Secure/HttpOnly session cookie;
+  no session token crosses a URL or JavaScript. A nonsecret cancellation event
+  resets the existing web form without discarding its account-scoped draft.
 - Sign-out/deletion still runs the web app's private-data cleanup. Android app
   backup is disabled. Uninstalling a client does not revoke its server session.
-- The manual `mobile.yml` workflow builds a debug APK and an unsigned simulator
-  app. These are not Play/App Store releases; Apple device installs need signing
-  and provisioning. Store approval is not guaranteed for a hosted-web client.
+- The manual `mobile.yml` workflow builds a signed personal-install Release APK
+  using the original certificate, plus Release simulator and unsigned device iOS
+  apps. GitHub Secrets hold `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+  `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`; runner key material is removed after
+  building. Unsigned Apple device apps are NOT installable IPAs. Physical iOS
+  distribution requires an Apple Team ID, certificate/private key and matching
+  provisioning profile. Store approval is not claimed.
 - Web deployments update what both shells display without rebuilding them.
   Native changes require a new binary/version; preserve Android signing identity
   when installing updates.
-- The web worker's checks do not prove embedded-engine offline behavior. A live
-  logger and a cold/reloaded offline launch are distinct cases; verify on target
-  devices before promising either. The existing browser runner does not assert
-  restoration of the local document after its offline reload.
+- The browser runner asserts offline reload/reconciliation, but that does not
+  prove embedded-engine offline startup or real software-keyboard behavior.
+  Native build, simulator runtime, device runtime and browser viewport results
+  must be reported separately.
+
+## Social sign-in and account linking
+
+Email/password registration, sign-in and recovery remain independent. Google,
+Apple, Facebook and LinkedIn use the existing Better Auth providers: no web SDK
+dependency or provider-specific user table is added. Instagram is not included.
+
+Store each `*_CLIENT_ID` and `*_CLIENT_SECRET` in Vercel's server-only environment,
+never `NEXT_PUBLIC_` or Git. Keep production `*_VERIFIED=false` while staging.
+For real end-to-end testing, use an isolated Preview database/auth origin,
+register its exact callback URLs and enable the provider there. Promote the
+production flag only after authorization, returning login, cancellation, explicit
+linking, sign-out, native return and preserved account/workout data are verified.
+Missing credentials/readiness leave both UI and backend provider unavailable.
+
+| Provider | Required owner setup | Exact production callback | Requested scopes |
+|---|---|---|---|
+| Google | Web OAuth client, consent screen and allowed origin | `https://forte-delta.vercel.app/api/auth/callback/google` | `openid email` |
+| Apple | Service ID, verified domain/return URL, Team ID, Key ID and `.p8` to generate an expiring client-secret JWT | `https://forte-delta.vercel.app/api/auth/callback/apple` | `email` |
+| Facebook | Web Login app ID/secret, valid OAuth redirect and production permissions/review | `https://forte-delta.vercel.app/api/auth/callback/facebook` | `public_profile email` |
+| LinkedIn | Application approved for Sign In with LinkedIn using OpenID Connect | `https://forte-delta.vercel.app/api/auth/callback/linkedin` | `openid email` |
+
+The corresponding gates are `GOOGLE_VERIFIED`, `APPLE_VERIFIED`,
+`FACEBOOK_VERIFIED` and `LINKEDIN_VERIFIED`. Apple JWTs expire and must be rotated
+in the secret store before expiration. Apple form-post callbacks use a Secure
+SameSite=None OAuth state cookie and the documented Apple trusted origin; the
+application session remains HttpOnly/SameSite=Lax.
+
+**No email-based merges.** Implicit linking is disabled, including verified
+matching emails and Apple relay addresses. A user signs in to the existing
+account, then links from Account settings through authenticated provider proof.
+Different or omitted provider emails do not re-key ownership. Missing contact
+emails use reserved subject-derived identities, never displayed or mailed.
+An authenticated user can verify a new contact email before it replaces that
+internal address; password recovery then enrolls a credential on the SAME user.
+An email already owned by another account is not merged or reassigned.
+
+**WeChat retirement is fail-closed.** Migration `0018_auth_retirement_audit.sql`
+audits the production accounts before the replacement deployment starts. Any
+legacy identity without an independently enrolled password blocks deployment;
+the previous deployment stays active. The prerequisite audit commit
+`821af672e3e6ab34630b764d8e18b464b7daf37e` deployed successfully before removing
+access, establishing zero dependent identities. No account, routine, workout or
+setting is deleted/re-keyed. The retired provider's UI, configuration and copy
+are removed; no new dependency was needed for its replacement.
+
+**Native sessions.** The shell intercepts `/auth/native/start?provider=...`, adds
+random state and SHA-256 PKCE challenge, then opens Custom Tabs/system browser or
+ASWebAuthenticationSession. The authenticated `/api/auth/native/authorize` issues
+a code expiring in 60 seconds. `/api/auth/native/exchange` atomically consumes it
+only for the original verifier and platform, creates a normal app session and
+sets its HttpOnly cookie. Replay, wrong proof/platform and expired codes fail.
+`/auth/complete` prepares owner-scoped offline storage after cookie installation.
+Account linking in native clients opens the normal browser account page and
+requires authenticating the same account there.
+
+**Not App Store Ready.** Reviewed [App Review guideline 4.8](https://developer.apple.com/app-store/review/guidelines/#login-services):
+primary social login generally requires an equivalent privacy-preserving login
+option unless a listed exemption applies. An unconfigured/unverified Apple
+button is not compliance. Apple signing, real-device checks and review remain
+separate gates; personal-install binaries are not App Store submissions.
+
+`schema/tests/verify-social-auth.ts` uses real Better Auth handlers, signed
+identity tokens, cookies and SQL, with simulated remote-provider HTTP only.
+It is not evidence of real provider credentials, permissions or live consent.
 
 ## Account lifecycle and email
 
@@ -153,7 +225,7 @@ it sends, the pages that drive it, and the rules around both.
 | Flow | Endpoints | Surfaces |
 |---|---|---|
 | Verification | `/send-verification-email` | Sent at sign-up; resendable from `/account` |
-| Password reset | `/forget-password`, `/reset-password` | `/forgot-password`, `/reset-password` |
+| Password reset | `/request-password-reset`, `/reset-password` | `/forgot-password`, `/reset-password` |
 | Deletion | `deleteUser` | `/account`, behind a typed confirmation |
 | Export | `/account/export` | A JSON download of everything the account owns |
 

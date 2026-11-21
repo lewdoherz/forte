@@ -94,6 +94,16 @@ export function syncWorkoutInputSchemaFor(t: Translate) {
     reps: z.number().int().min(0).max(100_000).nullable(),
     weight_kg: weightString.nullable(),
     rpe: rpeString.nullable(),
+    duration_seconds: z.number().int().min(0).max(2_147_483_647).nullable().optional(),
+    distance_meters: z.number().int().min(0).max(2_147_483_647).nullable().optional(),
+    metrics: z.record(z.string().max(100), z.json()).refine(
+      (value) => JSON.stringify(value).length <= 16_384,
+      t("workouts.error.invalidState"),
+    ).refine(
+      (value) => ["floors", "steps"].every((key) => value[key] === undefined ||
+        (typeof value[key] === "number" && Number.isSafeInteger(value[key]) && value[key] >= 0 && value[key] <= 2_147_483_647)),
+      t("workouts.error.invalidState"),
+    ).optional(),
     completed_at: z.string().datetime().nullable(),
   });
 
@@ -216,6 +226,19 @@ export async function startWorkout(db: Kysely<Database>, userId: string, routine
             duration_seconds: null,
             distance_meters: null,
             rpe: null,
+            // A prescription is not a logged result. Preserve every target in
+            // the snapshot sidecar; the row offers it as an editable suggestion.
+            metrics: {
+              forte_target: {
+                reps: rs.reps,
+                rep_range_start: rs.rep_range_start,
+                rep_range_end: rs.rep_range_end,
+                weight_kg: rs.weight_kg,
+                duration_seconds: rs.duration_seconds,
+                distance_meters: rs.distance_meters,
+                metrics: rs.metrics,
+              },
+            },
             completed_at: null,
           })
           .execute();
@@ -686,14 +709,16 @@ export async function syncWorkoutDocument(
       await trx
         .updateTable("workout_set")
         .set({
-          // Only the fields the client is the source of. duration_seconds,
-          // distance_meters, metrics and set_type are deliberately untouched:
-          // the client does not carry them, so writing them would erase values
-          // it never saw.
+          // Optional metrics preserve old offline documents; explicit null is
+          // an intentional clear. Type changes now follow the same draft flow.
           position: set.position,
+          set_type: set.set_type,
           reps: set.reps,
           weight_kg: set.weight_kg,
           rpe: set.rpe,
+          ...(set.duration_seconds !== undefined ? { duration_seconds: set.duration_seconds } : {}),
+          ...(set.distance_meters !== undefined ? { distance_meters: set.distance_meters } : {}),
+          ...(set.metrics !== undefined ? { metrics: set.metrics } : {}),
           completed_at: set.completed_at === null ? null : new Date(set.completed_at),
         })
         .where("id", "=", set.id)
@@ -712,8 +737,9 @@ export async function syncWorkoutDocument(
           set_type: set.set_type,
           reps: set.reps,
           weight_kg: set.weight_kg,
-          duration_seconds: null,
-          distance_meters: null,
+          duration_seconds: set.duration_seconds ?? null,
+          distance_meters: set.distance_meters ?? null,
+          metrics: set.metrics ?? {},
           rpe: set.rpe,
           completed_at: set.completed_at === null ? null : new Date(set.completed_at),
         })

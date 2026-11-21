@@ -82,6 +82,8 @@ export default async function WorkoutPage({
         title: exercise.title,
         primary_muscle: exercise.primary_muscle,
         exercise_type: exercise.exercise_type,
+        equipment: exercise.equipment,
+        secondary_muscles: exercise.secondary_muscles,
       }))}
       previous={previous}
     />

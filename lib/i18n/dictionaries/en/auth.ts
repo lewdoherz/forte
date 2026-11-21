@@ -37,6 +37,19 @@ export const auth = {
     "Your account was created, but offline workout data could not be prepared. Sign in again.",
   "auth.error.offlineClearFailed":
     "Could not clear offline workout data. Sign-out was stopped.",
+  "auth.error.socialFailed": "Sign-in was cancelled or could not be completed. Choose a sign-in method to try again.",
+  "auth.error.completionSignOutFailed":
+    "Could not safely finish signing in or sign out. Retry signing out before continuing.",
+
+  "auth.social.methods": "Social sign-in methods",
+  "auth.social.continue": "Continue with {provider}",
+  "auth.social.redirecting": "Opening {provider}…",
+  "auth.social.orEmail": "or use email",
+  "auth.native.body": "Continue in this secure browser. Successful sign-in returns to Forte without sharing your session through a link.",
+  "auth.complete.title": "Completing sign-in",
+  "auth.complete.preparing": "Securely preparing your offline workout data…",
+  "auth.complete.retrySignOut": "Retry signing out",
+  "auth.complete.back": "Back to sign-in",
 
   "auth.signIn.missingFields": "Email and password are required.",
   "auth.signIn.submitting": "Signing in…",

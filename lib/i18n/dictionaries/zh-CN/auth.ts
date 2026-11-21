@@ -30,6 +30,18 @@ export const auth = {
   "auth.error.offlinePreparationFailed": "无法安全地准备离线训练数据，请重试。",
   "auth.error.offlineAfterSignUp": "账户已创建，但无法准备离线训练数据，请重新登录。",
   "auth.error.offlineClearFailed": "无法清除离线训练数据，已停止退出登录。",
+  "auth.error.socialFailed": "登录已取消或未能完成，请选择一种登录方式重试。",
+  "auth.error.completionSignOutFailed": "无法安全地完成登录或退出登录，请先重试退出登录。",
+
+  "auth.social.methods": "第三方登录方式",
+  "auth.social.continue": "使用 {provider} 继续",
+  "auth.social.redirecting": "正在打开 {provider}…",
+  "auth.social.orEmail": "或使用邮箱",
+  "auth.native.body": "请在此安全浏览器中继续。登录成功后将返回 Forte，不会通过链接传递你的会话。",
+  "auth.complete.title": "正在完成登录",
+  "auth.complete.preparing": "正在安全地准备你的离线训练数据…",
+  "auth.complete.retrySignOut": "重试退出登录",
+  "auth.complete.back": "返回登录",
 
   "auth.signIn.missingFields": "请输入邮箱和密码。",
   "auth.signIn.submitting": "登录中…",

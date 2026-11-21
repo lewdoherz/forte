@@ -3,3 +3,7 @@
 
 /* Button that reloads the hosted forte app. */
 "retry" = "Retry";
+
+"auth_error_title" = "Sign-in did not finish";
+"auth_error" = "Your existing account and data have not been changed. Please try signing in again.";
+"dismiss" = "OK";

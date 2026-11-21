@@ -148,7 +148,7 @@ export default async function ExerciseDetailPage({
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
-      <Link href={backHref} className="text-sm text-zinc-500 underline">
+      <Link href={backHref} className="inline-flex min-h-11 items-center rounded-xl px-2 text-sm text-zinc-500 underline">
         ← {t("nav.exercises")}
       </Link>
 

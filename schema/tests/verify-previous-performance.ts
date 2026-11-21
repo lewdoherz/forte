@@ -399,6 +399,49 @@ const withMissing = await getPreviousPerformances(db, alice, [neverExercise, ben
 check("missing history yields no entry rather than a zero", !withMissing.has(neverExercise));
 check("an exercise with history is still returned alongside it", withMissing.has(bench.id));
 
+// ---- older compatible metric fallback without changing last-session sets ----
+const fallbackExercise = await mkExercise(alice, "Test Load Fallback", "weight_reps");
+const fallbackOld = new Date("2026-07-01T10:00:00Z");
+await seedWorkout(alice, "Older load", fallbackOld, hourAfter(fallbackOld), [
+  { templateId: fallbackExercise, position: 0, sets: [{ weightKg: "72.5", reps: 8 }] },
+]);
+const fallbackRecent = new Date("2026-07-08T10:00:00Z");
+await seedWorkout(alice, "Latest reps only", fallbackRecent, hourAfter(fallbackRecent), [
+  { templateId: fallbackExercise, position: 0, sets: [{ reps: 12 }] },
+]);
+const fallbackExcluded = new Date("2026-07-15T10:00:00Z");
+await seedWorkout(alice, "Unfinished load", fallbackExcluded, null, [
+  { templateId: fallbackExercise, position: 0, sets: [{ weightKg: "201", reps: 1 }] },
+]);
+await seedWorkout(alice, "Incomplete load", fallbackExcluded, hourAfter(fallbackExcluded), [
+  { templateId: fallbackExercise, position: 0, sets: [{ weightKg: "202", reps: 1, completedAt: null }] },
+]);
+await seedWorkout(bob, "Foreign load", fallbackExcluded, hourAfter(fallbackExcluded), [
+  { templateId: fallbackExercise, position: 0, sets: [{ weightKg: "203", reps: 1 }] },
+]);
+const fallback = (await getPreviousPerformances(db, alice, [fallbackExercise])).get(fallbackExercise);
+check(
+  "fallback does not merge older rows into the latest session",
+  fallback?.performedAt.getTime() === fallbackRecent.getTime() &&
+    fallback.sets.length === 1 && fallback.sets[0].reps === 12 &&
+    fallback.sets[0].weight_kg === null,
+);
+check(
+  "an earlier completed compatible load is available as fallback",
+  fallback?.fallbackSets?.some((set) => set.set_type === "normal" &&
+    set.weight_kg === "72.500" && set.reps === 8) === true,
+  JSON.stringify(fallback?.fallbackSets),
+);
+check(
+  "fallback excludes foreign, unfinished and incomplete loads",
+  fallback?.fallbackSets?.every((set) =>
+    !["201.000", "202.000", "203.000"].includes(set.weight_kg ?? "")) === true,
+);
+check(
+  "fallback never creates history for an owner without completed sets",
+  (await getPreviousPerformances(db, carol, [fallbackExercise])).size === 0,
+);
+
 await close();
 
 console.log(out.join("\n"));

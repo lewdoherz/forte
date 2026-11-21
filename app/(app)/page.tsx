@@ -152,7 +152,7 @@ export default async function DashboardPage() {
   const activeWorkout = activeCards[0];
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10 [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-offset-4 [&_a]:focus-visible:outline-zinc-700 [&_button]:focus-visible:outline-2 [&_button]:focus-visible:outline-offset-4 [&_button]:focus-visible:outline-zinc-700">
+    <main className="training mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10 [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-offset-4 [&_a]:focus-visible:outline-[#d6f077] [&_button]:focus-visible:outline-2 [&_button]:focus-visible:outline-offset-4 [&_button]:focus-visible:outline-[#d6f077]">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-3xl font-semibold tracking-tight">{t("dashboard.title")}</h1>
@@ -162,12 +162,14 @@ export default async function DashboardPage() {
               : t("dashboard.greeting.guest")}
           </p>
         </div>
-        <Link
-          href="/progress"
-          className="inline-flex min-h-11 items-center rounded-lg border border-zinc-300 bg-white px-4 text-sm font-medium hover:bg-zinc-50"
-        >
-          {t("dashboard.viewProgress")}
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/workouts" className="training-panel inline-flex min-h-11 items-center rounded-lg border px-4 text-sm font-medium">
+            {t("nav.history")}
+          </Link>
+          <Link href="/progress" className="training-panel inline-flex min-h-11 items-center rounded-lg border px-4 text-sm font-medium">
+            {t("dashboard.viewProgress")}
+          </Link>
+        </div>
       </header>
 
       <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">

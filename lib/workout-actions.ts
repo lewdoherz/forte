@@ -76,6 +76,7 @@ export async function startWorkoutFormAction(formData: FormData): Promise<void> 
     return;
   }
   revalidatePath("/workouts");
+  revalidatePath("/", "layout");
   redirect(`/workouts/${id}`);
 }
 
@@ -87,6 +88,7 @@ export async function startEmptyWorkoutFormAction(): Promise<void> {
   const userId = await requireSessionUserId();
   const workout = await startEmptyWorkout(db, userId);
   revalidatePath("/workouts");
+  revalidatePath("/", "layout");
   redirect(`/workouts/${workout.id}`);
 }
 
@@ -126,6 +128,7 @@ export async function discardWorkoutAction(
     return { error: message(e, t, "workouts.error.discardFailed") };
   }
   revalidatePath("/workouts");
+  revalidatePath("/", "layout");
   return { ok: true };
 }
 
@@ -208,6 +211,10 @@ export async function syncWorkoutStateAction(
       error: message(e, t, "workouts.error.syncFailed"),
       code: e instanceof Error && PERMANENT_SYNC_ERRORS.has(e.message) ? "permanent" : "transient",
     };
+  }
+  if (input.endedAt !== null) {
+    revalidatePath("/workouts");
+    revalidatePath("/", "layout");
   }
   return { ok: true };
 }

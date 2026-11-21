@@ -5,3 +5,6 @@ import { db } from "./db";
 // server-side session helpers. The application and auth share the same Kysely
 // instance (`db`).
 export const auth = createAuth(db);
+
+/** Only availability crosses the server/client boundary, never credentials. */
+export { enabledSocialProviders } from "./social-provider-config";

@@ -78,7 +78,7 @@ export default async function WorkoutsPage({
                 id="exercise"
                 name="exercise"
                 defaultValue={selected?.id ?? ""}
-                className="h-9 max-w-48 rounded-md border border-zinc-300 bg-white px-2 text-sm"
+                className="min-h-11 min-w-0 max-w-48 rounded-xl border border-zinc-300 bg-white px-2 text-base"
               >
                 <option value="">{t("workouts.list.allExercises")}</option>
                 {exercises.map((e) => (
@@ -89,7 +89,7 @@ export default async function WorkoutsPage({
               </select>
               <button
                 type="submit"
-                className="h-9 rounded-md border border-zinc-300 px-3 text-sm font-medium hover:bg-zinc-100"
+                className="min-h-11 rounded-xl border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-100"
               >
                 {t("common.filter")}
               </button>

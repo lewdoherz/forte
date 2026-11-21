@@ -2,8 +2,9 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { auth } from "@/lib/auth-server";
+import { auth, enabledSocialProviders } from "@/lib/auth-server";
 import { requireSession, requireSessionUserId } from "@/lib/auth-session";
+import { isPlaceholderEmail } from "@/lib/auth-email";
 import { getUserProfile } from "@/lib/users";
 import { getI18n } from "@/lib/i18n/server";
 import {
@@ -12,12 +13,17 @@ import {
   updateAccount,
 } from "@/lib/account-actions";
 import { AccountForm } from "@/components/account-form";
+import { AccountSignInMethods } from "@/components/account-sign-in-methods";
 import { DeleteAccountForm } from "@/components/delete-account-form";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { SignOutButton } from "@/components/sign-out-button";
 import { SessionList, type ActiveSession } from "@/components/session-list";
 
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ social?: string | string[] }>;
+}) {
   const userId = await requireSessionUserId();
   const profile = await getUserProfile(db, userId);
 
@@ -28,13 +34,19 @@ export default async function AccountPage() {
   }
 
   const { t } = await getI18n();
+  const hasContactEmail = !isPlaceholderEmail(profile.email);
 
   // The current session is identified by its token so the list can mark it and
   // refuse to offer a "sign out" that would immediately sign the user back out of
   // the page they are looking at.
   const session = await requireSession();
   const currentToken = session.session.token;
-  const sessions = await auth.api.listSessions({ headers: await headers() });
+  const requestHeaders = await headers();
+  const [sessions, accounts, query] = await Promise.all([
+    auth.api.listSessions({ headers: requestHeaders }),
+    auth.api.listUserAccounts({ headers: requestHeaders }),
+    searchParams,
+  ]);
 
   const activeSessions: ActiveSession[] = sessions.map((entry) => ({
     id: entry.id,
@@ -59,10 +71,19 @@ export default async function AccountPage() {
       <AccountForm
         action={updateAccount}
         initial={{
-          email: profile.email,
+          email: hasContactEmail ? profile.email : null,
           displayName: profile.display_name ?? "",
           timeZone: profile.timezone,
         }}
+      />
+
+      <AccountSignInMethods
+        linkedProviderIds={accounts.map((account) => account.providerId)}
+        providers={enabledSocialProviders}
+        canRecoverPassword={hasContactEmail && Boolean(profile.email_verified)}
+        missingContactEmail={!hasContactEmail}
+        native={/ForteAndroid\/1|ForteIOS\/1/.test(requestHeaders.get("user-agent") ?? "")}
+        socialError={query.social === "error"}
       />
 
       {/* The header only carries the compact picker, so the full control — label,
@@ -77,7 +98,9 @@ export default async function AccountPage() {
 
       <section className="mt-10 border-t border-zinc-200 pt-6">
         <h2 className="text-lg font-semibold">{t("account.email.title")}</h2>
-        {profile.email_verified ? (
+        {!hasContactEmail ? (
+          <p className="mt-2 text-sm text-zinc-600">{t("account.email.noContactBody")}</p>
+        ) : profile.email_verified ? (
           <p className="mt-2 text-sm text-zinc-600">
             <span className="font-medium text-green-700">
               {t("account.email.verifiedBadge")}

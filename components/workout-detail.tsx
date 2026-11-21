@@ -3,7 +3,7 @@ import type { SetType, WorkoutTree } from "@/schema/types";
 import { ExerciseThumbnail } from "@/components/exercise-media";
 import type { VocabularyEntry } from "@/components/exercise-filter-form";
 import { WorkoutSummary } from "@/components/workout-summary";
-import { formatDuration, formatDateTime } from "@/lib/i18n/format";
+import { formatDuration, formatDateTime, formatNumber } from "@/lib/i18n/format";
 import { getI18n } from "@/lib/i18n/server";
 import type { MessageKey } from "@/lib/i18n";
 import { recordCategoryLabel } from "@/lib/records";
@@ -83,6 +83,12 @@ export async function WorkoutDetail({
       seenTemplates.add(entry.exercise.template_id);
       return { ...entry, earned };
     });
+  const hasVolume = exercises.some(({ exercise, sets }) =>
+    (exercise.template.exercise_type === "weight_reps" ||
+      exercise.template.exercise_type === "bodyweight_weighted" ||
+      exercise.template.exercise_type === "bodyweight_assisted") &&
+    sets.some((set) => set.reps != null && set.weight_kg != null),
+  );
 
   // The same shape the routine summary feeds to `muscleDistribution`, but built
   // from this workout's COMPLETED sets — never from a routine's prescription.
@@ -94,85 +100,121 @@ export async function WorkoutDetail({
   }));
 
   return (
-    <main className="mx-auto max-w-2xl px-4 pb-12 pt-6">
+    <main className="training mx-auto min-h-dvh w-full max-w-4xl px-4 pb-12 pt-4 sm:px-6 sm:pt-6">
       <Link
         href="/workouts"
-        aria-label={t("workouts.detail.back")}
-        className="inline-flex h-10 w-10 items-center justify-center rounded-md text-lg text-zinc-600 hover:bg-zinc-200/60"
+        className="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm text-[#b0c0b4] hover:bg-[#17221c] hover:text-[#eef5ef] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6f077]"
       >
-        ←
+        <span aria-hidden="true">←</span>
+        {t("workouts.detail.back")}
       </Link>
 
-      <h1 className="mt-2 break-words text-2xl font-semibold">{workout.title}</h1>
-      <p className="mt-1 text-sm text-zinc-500">
-        {formatDateTime(locale, workout.started_at, timeZone)}
-      </p>
+      <header className="pb-6 pt-5 sm:pb-8">
+        <p className="inline-flex items-center gap-2 text-sm font-medium text-[#d6f077]">
+          <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+            <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
+            <path d="m6 10 2.5 2.5L14 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {t("workouts.recap.saved")}
+        </p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+          {t("workouts.recap.title")}
+        </h1>
+        <h2 className="mt-4 break-words text-xl font-medium sm:text-2xl">{workout.title}</h2>
+        <p className="mt-1 text-sm text-[#b0c0b4]">
+          <time dateTime={workout.started_at.toISOString()}>
+            {formatDateTime(locale, workout.started_at, timeZone)}
+          </time>
+        </p>
+      </header>
 
-      <dl className="mt-4 flex flex-wrap gap-3">
-        <div className="rounded-lg border border-zinc-200 px-4 py-2">
-          <dt className="text-xs text-zinc-500">{t("workouts.metric.duration")}</dt>
-          <dd className="mt-0.5 text-lg font-semibold tabular-nums">
+      <dl className={`grid gap-2 sm:gap-3 ${hasVolume ? "grid-cols-3" : "grid-cols-2"}`}>
+        <div className="training-panel min-w-0 rounded-2xl p-3 sm:p-5">
+          <dt className="text-xs text-[#b0c0b4] sm:text-sm">{t("workouts.metric.duration")}</dt>
+          <dd className="mt-2 break-words text-lg font-semibold tabular-nums sm:text-2xl">
             {formatDuration(locale, stats.durationSeconds)}
           </dd>
         </div>
-        <div className="rounded-lg border border-zinc-200 px-4 py-2">
-          <dt className="text-xs text-zinc-500">{t("workouts.metric.volume")}</dt>
-          <dd className="mt-0.5 text-lg font-semibold tabular-nums">
-            {formatVolumeKg(stats.volumeKg, locale)}
+        <div className="training-panel min-w-0 rounded-2xl p-3 sm:p-5">
+          <dt className="text-xs text-[#b0c0b4] sm:text-sm">{t("workouts.recap.completedSets")}</dt>
+          <dd className="mt-2 text-lg font-semibold tabular-nums sm:text-2xl">
+            {formatNumber(locale, stats.completedSets)}
           </dd>
         </div>
+        {hasVolume ? (
+          <div className="training-panel min-w-0 rounded-2xl p-3 sm:p-5">
+            <dt className="text-xs text-[#b0c0b4] sm:text-sm">{t("workouts.metric.volume")}</dt>
+            <dd className="mt-2 break-words text-lg font-semibold tabular-nums sm:text-2xl">
+              {formatVolumeKg(stats.volumeKg, locale)}
+            </dd>
+          </div>
+        ) : null}
       </dl>
 
+      {workout.notes ? (
+        <section aria-labelledby="workout-notes" className="training-panel mt-4 rounded-2xl p-4 sm:p-5">
+          <h2 id="workout-notes" className="text-sm font-medium">{t("workouts.recap.notes")}</h2>
+          <p className="mt-2 whitespace-pre-wrap break-words text-sm text-[#b0c0b4]">{workout.notes}</p>
+        </section>
+      ) : null}
+
       {exercises.length === 0 ? (
-        <p className="mt-6 text-zinc-500">{t("workouts.detail.noSets")}</p>
+        <p className="training-panel mt-6 rounded-2xl p-5 text-sm text-[#b0c0b4]">{t("workouts.detail.noSets")}</p>
       ) : (
-        <>
-          <ol className="mt-6 space-y-4">
+        <section className="mt-8" aria-labelledby="completed-exercises">
+          <h2 id="completed-exercises" className="text-lg font-semibold">{t("workouts.recap.exercises")}</h2>
+          <ol className="mt-4 space-y-3">
             {exercises.map(({ exercise, sets, earned }) => (
-              <li
-                key={exercise.id}
-                className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
-              >
+              <li key={exercise.id} className="training-panel rounded-2xl p-4 sm:p-5">
                 <div className="flex items-start gap-3">
                   <ExerciseThumbnail slug={exercise.template.slug} />
                   <div className="min-w-0 flex-1">
-                    <div className="break-words font-medium">{exercise.template.title}</div>
-                    <div className="mt-0.5 text-xs text-zinc-500">
-                      {t("common.plural.sets", { count: sets.length })}
-                    </div>
+                    <h3 className="break-words font-semibold">
+                      <Link
+                        href={`/exercises/${exercise.template_id}?tab=history`}
+                        className="inline-flex min-h-11 items-center rounded-sm underline-offset-4 hover:text-[#d6f077] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#d6f077]"
+                      >
+                        {exercise.template.title}
+                        <span aria-hidden="true" className="ml-2 text-[#b0c0b4]">↗</span>
+                      </Link>
+                    </h3>
+                    <p className="mt-1 text-xs text-[#b0c0b4]">
+                      {t("workouts.recap.setsCompleted", { count: sets.length })}
+                    </p>
                   </div>
                 </div>
 
-                {/* Above the sets, and one badge per category: the record was
-                    earned by the exercise's best set, not by this or that set,
-                    so it is not repeated down the list. The wording comes from
-                    the records module, so no two views name a category
-                    differently. */}
+                {exercise.notes ? (
+                  <p className="mt-3 whitespace-pre-wrap break-words text-sm text-[#b0c0b4]">{exercise.notes}</p>
+                ) : null}
+
                 {earned.length > 0 ? (
-                  <ul className="mt-2 flex flex-wrap gap-1.5">
+                  <ul aria-label={t("workouts.recap.earnedRecords")} className="mt-3 flex flex-wrap gap-2">
                     {earned.map((record) => (
                       <li
                         key={record.category}
-                        className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[#63783c] bg-[#26351d] px-2.5 py-1 text-xs font-medium text-[#d6f077]"
                       >
-                        <span aria-hidden>🏅</span>
+                        <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5 shrink-0">
+                          <path d="M5 2h6v4a3 3 0 0 1-6 0V2Zm0 1H2v2a3 3 0 0 0 3 3m6-5h3v2a3 3 0 0 1-3 3M8 9v4m-3 1h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
                         {recordCategoryLabel(record.category, locale)}
                       </li>
                     ))}
                   </ul>
                 ) : null}
 
-                <ol className="mt-3 space-y-1.5 border-t border-zinc-100 pt-3">
+                <ol className="mt-4 divide-y divide-[#34463a] border-t border-[#34463a]">
                   {sets.map((set, index) => (
-                    <li key={set.id} className="flex items-baseline gap-3 text-sm">
-                      <span className="w-5 shrink-0 text-right tabular-nums text-zinc-400">
+                    <li key={set.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-3 text-sm last:pb-0">
+                      <span className="w-5 shrink-0 text-right tabular-nums text-[#b0c0b4]">
                         {index + 1}.
                       </span>
-                      <span className="min-w-0 text-zinc-800">
+                      <span className="min-w-0 flex-1 break-words font-medium tabular-nums">
                         {formatSetValues(set, exercise.template.exercise_type, locale)}
                       </span>
                       {set.set_type === "normal" ? null : (
-                        <span className="shrink-0 text-xs text-zinc-500">
+                        <span className="text-xs text-[#b0c0b4]">
                           {t(SET_TYPE_KEYS[set.set_type])}
                         </span>
                       )}
@@ -183,14 +225,25 @@ export async function WorkoutDetail({
             ))}
           </ol>
 
-          {/* The record's own muscle work: same heatmap and distribution table as
-              the routine summary, fed from the completed sets above. */}
-          <section className="mt-8 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-            <h2 className="text-lg font-semibold">{t("workouts.detail.summaryTitle")}</h2>
-            <WorkoutSummary exercises={summaryExercises} muscles={muscles} />
-          </section>
-        </>
+          <details className="training-panel mt-6 rounded-2xl">
+            <summary className="cursor-pointer rounded-2xl p-4 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6f077] sm:p-5">
+              {t("workouts.detail.summaryTitle")}
+            </summary>
+            <div className="border-t border-[#34463a] p-4 pt-0 sm:p-5 sm:pt-0">
+              <WorkoutSummary exercises={summaryExercises} muscles={muscles} />
+            </div>
+          </details>
+        </section>
       )}
+
+      <footer className="mt-8">
+        <Link
+          href="/workout"
+          className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[#d6f077] px-5 py-3 text-sm font-semibold text-[#17221c] hover:bg-[#e1f69b] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#d6f077] sm:w-auto"
+        >
+          {t("workouts.recap.newWorkout")}
+        </Link>
+      </footer>
     </main>
   );
 }

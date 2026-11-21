@@ -8,3 +8,4 @@
 *.keystore
 *.p12
 *.mobileprovision
+**/.native-review-tmp/

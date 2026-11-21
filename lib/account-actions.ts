@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { auth } from "./auth-server";
 import { db } from "./db";
 import { requireSessionUserId } from "./auth-session";
+import { isPlaceholderEmail } from "./auth-email";
 import { getUserProfile, updateUserProfile, userProfileInputSchemaFor } from "./users";
 import { getI18n } from "./i18n/server";
 import { reportFailure } from "./log";
@@ -94,7 +95,7 @@ export async function updateAccount(
 export async function resendVerificationAction(): Promise<void> {
   const userId = await requireSessionUserId();
   const profile = await getUserProfile(db, userId);
-  if (!profile) return;
+  if (!profile || isPlaceholderEmail(profile.email)) return;
 
   try {
     await auth.api.sendVerificationEmail({

@@ -10,6 +10,8 @@ import {
   type OfflineStore,
 } from "@/lib/offline-store";
 import { formatSetValues, formatVolumeKg, summarizeWorkout } from "@/lib/workout-stats";
+import { getSetSuggestion } from "@/lib/set-suggestions";
+import { readForteTimer, timerElapsed } from "@/lib/set-suggestions";
 import type { LoggedExercise, LoggedWorkout, WorkoutSyncInput } from "@/lib/workout-sync";
 import {
   discardWorkoutAction,
@@ -20,11 +22,13 @@ import {
 import type { PreviousPerformance } from "@/lib/previous-performance";
 import { ElapsedTimer } from "@/components/elapsed-timer";
 import { RestTimer } from "@/components/rest-timer";
-import { SetForm, type SetFormValues } from "@/components/set-form";
-import { ExercisePicker, type PickerExercise } from "@/components/exercise-picker";
+import { SetForm, SetGridHeader, type SetFormValues } from "@/components/set-form";
+import type { PickerExercise } from "@/components/exercise-picker";
+import { WorkoutExercisePicker } from "@/components/workout-exercise-picker";
+import { ExerciseThumbnail } from "@/components/exercise-media";
 import type { VocabularyEntry } from "@/components/exercise-filter-form";
 import { Modal } from "@/components/modal";
-import { formatDuration, formatNumber } from "@/lib/i18n/format";
+import { formatDuration } from "@/lib/i18n/format";
 import { useI18n } from "@/lib/i18n/context";
 import type { Locale, MessageKey } from "@/lib/i18n";
 import { formatDateTimeInTimeZone } from "@/lib/timezone";
@@ -36,6 +40,8 @@ import { formatDateTimeInTimeZone } from "@/lib/timezone";
  */
 export interface LoggerLibraryExercise extends PickerExercise {
   exercise_type: ExerciseType;
+  equipment: string;
+  secondary_muscles: string[];
 }
 
 /** Which destructive action, if any, the screen is confirming. */
@@ -44,15 +50,8 @@ type ConfirmState =
   | { kind: "discard" }
   | { kind: "removeExercise"; exerciseId: string; title: string; setCount: number };
 
-/** The set type names as message keys, resolved with the active locale. */
-const SET_TYPE_KEYS: Record<SetType, MessageKey> = {
-  warmup: "logger.setType.warmup",
-  normal: "logger.setType.normal",
-  failure: "logger.setType.failure",
-  dropset: "logger.setType.dropset",
-};
 
-const EXERCISE_CARD = "rounded-xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-4";
+const EXERCISE_CARD = "training-panel overflow-hidden rounded-2xl p-3 sm:p-5";
 
 /**
  * How long edits are allowed to accumulate before one sync is sent. A fast
@@ -70,12 +69,6 @@ const SYNC_DEBOUNCE_MS = 800;
 const RETRY_BASE_MS = 2_000;
 const RETRY_CEILING_MS = 60_000;
 
-/**
- * How stale the last successful sync may be before a stored document is
- * refused. A device left signed in must not serve a week-old session as if it
- * were current.
- */
-const STALE_DOCUMENT_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** The quiet status line's states. */
 type SyncState = "saved" | "pending" | "offline";
@@ -87,18 +80,6 @@ const SYNC_STATE_KEYS: Record<SyncState, MessageKey> = {
   offline: "logger.sync.offline",
 };
 
-/**
- * Whether a stored document is too old to serve. Only consulted when a pending
- * marker exists for it, which is why an absent sync time counts as stale: a
- * document edited offline but never successfully synced has no age to trust.
- * An unparseable timestamp is treated the same way; refusing is the safe answer.
- */
-function isStaleDocument(lastSyncedAt: string | null): boolean {
-  if (lastSyncedAt === null) return true;
-  const synced = Date.parse(lastSyncedAt);
-  if (Number.isNaN(synced)) return true;
-  return Date.now() - synced > STALE_DOCUMENT_MS;
-}
 
 /**
  * One previous set's values for the PREVIOUS column, or an em dash when there
@@ -174,11 +155,16 @@ export function WorkoutLogger({
   const [discarding, setDiscarding] = useState(false);
   const [discardError, setDiscardError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
+  const finishGuard = useRef(false);
+  const acknowledgedRevision = useRef(-1);
+  const [ready, setReady] = useState(false);
+  const [defaultRest, setDefaultRest] = useState(90);
+  const [restEditing, setRestEditing] = useState<string | null>(null);
 
   const storeRef = useRef<OfflineStore | null>(null);
   const storePromiseRef = useRef<Promise<OfflineStore> | null>(null);
   const debounceRef = useRef<number | null>(null);
-  const syncingRef = useRef(false);
+  const syncingRef = useRef<Promise<boolean> | null>(null);
   const rerunRef = useRef(false);
   // Bumped by every local mutation, so a sync can tell whether the document it
   // sent is still the latest one.
@@ -245,31 +231,21 @@ export function WorkoutLogger({
     }, delay);
   }, [cancelRetry]);
 
-  const runSync = useCallback(async () => {
+  const runSync = useCallback(async (): Promise<boolean> => {
     if (syncingRef.current) {
-      // A trigger arrived mid-flight; the running pass re-reads the document.
       rerunRef.current = true;
-      return;
+      return syncingRef.current;
     }
-    syncingRef.current = true;
-    try {
+    const operation = (async (): Promise<boolean> => {
       for (;;) {
         rerunRef.current = false;
         const revision = revisionRef.current;
         const store = storeRef.current;
-        if (!store) return;
-
-        // The server rejected this exact document for good. Nothing but a new
-        // local edit — which bumps the revision — can change the outcome, so
-        // the timer, `online` and visibility triggers all stop here.
-        if (rejectedRevisionRef.current === revision) return;
-
+        if (rejectedRevisionRef.current === revision) return false;
         const doc = workoutRef.current;
         const input: WorkoutSyncInput = {
           workoutId: doc.id,
           endedAt: doc.ended_at ? doc.ended_at.toISOString() : null,
-          // The complete exercise list, so adding or removing one mid-workout is
-          // reconciled by the same document as the sets.
           exercises: doc.exercises.map((exercise) => ({
             id: exercise.id,
             template_id: exercise.template_id,
@@ -286,52 +262,54 @@ export function WorkoutLogger({
               set_type: set.set_type,
               reps: set.reps,
               weight_kg: set.weight_kg,
+              duration_seconds: set.duration_seconds,
+              distance_meters: set.distance_meters,
               rpe: set.rpe,
+              metrics: set.metrics,
               completed_at: set.completed_at ? set.completed_at.toISOString() : null,
             })),
           ),
         };
         let result: { ok: true } | { error: string; code: SyncFailureCode };
-        rejectedRevisionRef.current = null;
         try {
           result = await syncWorkoutStateAction(input);
         } catch {
           setSyncError(t("logger.sync.unreachable"));
           scheduleRetry();
           void refreshSyncState();
-          return;
+          return false;
         }
         if ("error" in result) {
           if (result.code === "permanent") {
-            // The local change and its marker stay, but retrying cannot help:
-            // the server would reject the same document forever.
             rejectedRevisionRef.current = revision;
             cancelRetry();
             setSyncError(t("logger.sync.permanentSuffix", { message: result.error }));
           } else {
-            // Transient. The marker stays: the local change is never discarded,
-            // and the backoff timer retries it.
             setSyncError(t("logger.sync.keptSuffix", { message: result.error }));
             scheduleRetry();
           }
           void refreshSyncState();
-          return;
+          return false;
         }
-
         if (revision === revisionRef.current) {
-          await store.clearPending(input.workoutId);
-          await store.setLastSyncedAt(new Date().toISOString());
+          acknowledgedRevision.current = revision;
+          if (store) {
+            await store.clearPending(input.workoutId).catch(() => {});
+            await store.setLastSyncedAt(new Date().toISOString()).catch(() => {});
+          }
           retryDelayRef.current = RETRY_BASE_MS;
           cancelRetry();
           setSyncError(null);
+          setSyncState("saved");
         }
-        void refreshSyncState();
-        // Loop while an edit landed during the request; the document that
-        // reaches the server must always be the newest one.
-        if (!rerunRef.current && revision === revisionRef.current) return;
+        if (!rerunRef.current && revision === revisionRef.current) return true;
       }
+    })();
+    syncingRef.current = operation;
+    try {
+      return await operation;
     } finally {
-      syncingRef.current = false;
+      if (syncingRef.current === operation) syncingRef.current = null;
     }
   }, [cancelRetry, refreshSyncState, scheduleRetry, t]);
 
@@ -369,24 +347,33 @@ export function WorkoutLogger({
    * to the completed view.
    */
   const commit = useCallback(
-    (next: LoggedWorkout, immediate = false): Promise<void> => {
+    (next: LoggedWorkout): Promise<void> => {
       revisionRef.current += 1;
       workoutRef.current = next;
       setWorkout(next);
-      if (debounceRef.current !== null) {
-        window.clearTimeout(debounceRef.current);
-        debounceRef.current = null;
-      }
+      setSyncState(navigator.onLine ? "pending" : "offline");
+      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
       const persisted = persist(next).catch(() => {
-        // IndexedDB unavailable or blocked: the in-memory document is still this
-        // session's truth, and the sync does not depend on the local write.
+        setSyncError(t("logger.sync.storageUnavailable"));
       });
-      if (immediate) return persisted.then(() => runSync());
       void persisted.then(() => scheduleSync());
       return persisted;
     },
-    [persist, runSync, scheduleSync],
+    [persist, scheduleSync, t],
   );
+
+  useEffect(() => {
+    const task = window.setTimeout(() => {
+      try {
+        const raw = window.localStorage.getItem(`forte:default-rest:${userId}`);
+        const value = raw === null ? 90 : Number(raw);
+        if (Number.isInteger(value) && value >= 0 && value <= 86_400) setDefaultRest(value);
+      } catch {
+        // A preference is optional; the workout document remains the authority.
+      }
+    }, 0);
+    return () => window.clearTimeout(task);
+  }, [userId]);
 
   // Hydrate the store once, then render from it. The first paint above already
   // came from `initial`, so there is no flash of empty content.
@@ -419,24 +406,9 @@ export function WorkoutLogger({
         if (cancelled) return;
 
         if (stored && pending.includes(workoutId)) {
-          // The stored copy is refused in exactly two cases, both from
-          // docs/offline-logging.md's rule that rendering refuses a session
-          // older than seven days: (1) the last successful sync is more than
-          // seven days old, or (2) the copy is marked pending but no successful
-          // sync was ever recorded, so it has no age to trust. In both cases
-          // the whole stored workout is deleted — copy and pending marker, in
-          // one transaction, so no dangling pending id remains — and the server
-          // document already on screen is rendered instead; the next edit
-          // writes a fresh local copy. Discarding a user's pending sets is
-          // normally the one forbidden outcome, so these conditions are
-          // deliberately narrow and the timestamp check runs only here.
-          const lastSyncedAt = await store.lastSyncedAt();
-          if (cancelled) return;
-          if (isStaleDocument(lastSyncedAt)) {
-            await store.deleteWorkout(workoutId);
-            void refreshSyncState();
-            return;
-          }
+          // Pending edits are the user's only copy. Age or a missing successful
+          // sync timestamp must never delete them. Ownership is already checked
+          // by openOfflineStore; the server re-authorizes every reconciliation.
 
           workoutRef.current = stored;
           setWorkout(stored);
@@ -449,6 +421,9 @@ export function WorkoutLogger({
       })
       .catch(() => {
         setSyncError(t("logger.sync.storageUnavailable"));
+      })
+      .finally(() => {
+        if (!cancelled) setReady(true);
       });
     return () => {
       cancelled = true;
@@ -491,10 +466,11 @@ export function WorkoutLogger({
     };
   }, [cancelRetry, runSync, refreshSyncState]);
 
-  const recordSet = useCallback(
-    (setId: string, values: SetFormValues) => {
+  const updateSet = useCallback(
+    (setId: string, values: Partial<SetFormValues> & { set_type?: SetType }, toggle = false) => {
       const current = workoutRef.current;
-      const next: LoggedWorkout = {
+      if (current.ended_at !== null) return Promise.resolve();
+      return commit({
         ...current,
         exercises: current.exercises.map((exercise) => ({
           ...exercise,
@@ -502,31 +478,10 @@ export function WorkoutLogger({
             set.id === setId
               ? {
                   ...set,
-                  reps: values.reps,
-                  weight_kg: values.weight_kg,
-                  rpe: values.rpe,
-                  // Done records and completes the set in one action, as it
-                  // always has.
-                  completed_at: new Date(),
+                  ...values,
+                  completed_at: toggle ? (set.completed_at ? null : new Date()) : set.completed_at,
                 }
               : set,
-          ),
-        })),
-      };
-      return commit(next);
-    },
-    [commit],
-  );
-
-  const undoSet = useCallback(
-    (setId: string) => {
-      const current = workoutRef.current;
-      void commit({
-        ...current,
-        exercises: current.exercises.map((exercise) => ({
-          ...exercise,
-          sets: exercise.sets.map((set) =>
-            set.id === setId ? { ...set, completed_at: null } : set,
           ),
         })),
       });
@@ -579,49 +534,34 @@ export function WorkoutLogger({
    * broken. Order is preserved by appending: nothing already in the workout
    * moves.
    */
-  const addExercise = useCallback(
-    (templateId: string) => {
+  const addExercises = useCallback(
+    (templateIds: string[]) => {
       setPickerOpen(false);
-      const entry = libraryById[templateId];
       const current = workoutRef.current;
-      if (!entry || current.exercises.some((exercise) => exercise.template_id === templateId)) {
-        return;
-      }
-
       const now = new Date();
-      const exerciseId = crypto.randomUUID();
-      const exercise: LoggedExercise = {
-        id: exerciseId,
-        workout_id: current.id,
-        template_id: templateId,
-        position: current.exercises.length,
-        superset_key: null,
-        rest_seconds: null,
-        notes: null,
-        created_at: now,
-        updated_at: now,
-        template: {
-          id: entry.id,
-          slug: entry.slug,
-          title: entry.title,
-          exercise_type: entry.exercise_type,
-          primary_muscle: entry.primary_muscle,
-        },
-        sets: [blankSet(exerciseId, 0, now)],
-      };
-      void commit({ ...current, exercises: [...current.exercises, exercise] });
-
-      void previousPerformanceAction(templateId)
-        .then((performance) => {
-          if (!performance) return;
-          // Nothing overwrites a value that was already resolved from the page.
-          setPreviousById((prev) =>
-            prev[templateId] ? prev : { ...prev, [templateId]: performance },
-          );
-        })
-        .catch(() => {
-          // Offline or the lookup failed: the column shows its empty state.
+      const existing = new Set(current.exercises.map((exercise) => exercise.template_id));
+      const added: LoggedExercise[] = [];
+      for (const templateId of templateIds) {
+        const entry = libraryById[templateId];
+        if (!entry || existing.has(templateId)) continue;
+        existing.add(templateId);
+        const id = crypto.randomUUID();
+        added.push({
+          id, workout_id: current.id, template_id: templateId,
+          position: current.exercises.length + added.length,
+          superset_key: null, rest_seconds: null, notes: null,
+          created_at: now, updated_at: now,
+          template: {
+            id: entry.id, slug: entry.slug, title: entry.title,
+            exercise_type: entry.exercise_type, primary_muscle: entry.primary_muscle,
+          },
+          sets: [blankSet(id, 0, now)],
         });
+        void previousPerformanceAction(templateId).then((performance) => {
+          if (performance) setPreviousById((prev) => prev[templateId] ? prev : { ...prev, [templateId]: performance });
+        }).catch(() => {});
+      }
+      if (added.length) void commit({ ...current, exercises: [...current.exercises, ...added] });
     },
     [commit, libraryById],
   );
@@ -642,33 +582,42 @@ export function WorkoutLogger({
   );
 
   const finishNow = useCallback(async () => {
-    setConfirm(null);
+    if (finishGuard.current) return;
+    finishGuard.current = true;
     setFinishing(true);
-    // Finishing is the end of the session: sync it at once rather than waiting
-    // out the debounce, and only then hand over to the completed view. The
-    // server render decides which view that is from `ended_at`.
-    await commit({ ...workoutRef.current, ended_at: new Date() }, true);
-    setFinishing(false);
-    router.refresh();
-  }, [commit, router]);
-
-  /**
-   * Finishing never completes a set for the user. If any set is still open, the
-   * count is confirmed first; the open sets are then saved as they are — not
-   * completed, and not deleted — so an empty placeholder never becomes a
-   * recorded, "valid" set.
-   */
-  const requestFinish = useCallback(() => {
-    const incomplete = workoutRef.current.exercises.reduce(
-      (count, exercise) => count + exercise.sets.filter((set) => set.completed_at == null).length,
-      0,
-    );
-    if (incomplete === 0) {
-      void finishNow();
-      return;
+    try {
+      const current = workoutRef.current;
+      const endedAt = current.ended_at ?? new Date();
+      if (!current.ended_at) {
+        const stopped = {
+          ...current,
+          ended_at: endedAt,
+          exercises: current.exercises.map((exercise) => ({
+            ...exercise,
+            sets: exercise.sets.map((set) => {
+              const timer = readForteTimer(set.metrics);
+              if (!timer?.startedAt) return set;
+              const seconds = timerElapsed(timer, endedAt.getTime());
+              return { ...set, duration_seconds: seconds, metrics: { ...set.metrics, forte_timer: { startedAt: null, elapsedSeconds: seconds } } };
+            }),
+          })),
+        };
+        await commit(stopped);
+      }
+      if (debounceRef.current !== null) {
+        window.clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      // An in-flight sync joins this promise and loops over the latest revision.
+      // Failed saves keep the complete local document and the review open.
+      if (await runSync()) router.refresh();
+    } finally {
+      finishGuard.current = false;
+      setFinishing(false);
     }
-    setConfirm({ kind: "finish" });
-  }, [finishNow]);
+  }, [commit, router, runSync]);
+
+  const requestFinish = useCallback(() => setConfirm({ kind: "finish" }), []);
 
   /**
    * Discards the workout outright. The server is asked first: clearing the local
@@ -715,17 +664,24 @@ export function WorkoutLogger({
   const active = workout.ended_at == null;
   const stats = summarizeWorkout(workout);
   const exercises = workout.exercises;
+  useEffect(() => {
+    if (workout.ended_at && syncState === "saved" && acknowledgedRevision.current === revisionRef.current) router.refresh();
+  }, [workout.ended_at, syncState, router]);
 
   // The rest countdown is anchored to the most recently completed set and the
   // rest target that set's own exercise was started with. Both come from the
   // local document, so completing a set moves the anchor without a round trip.
   let restAnchor: Date | null = null;
   let restSeconds: number | null = null;
+  let restAnchorId: string | null = null;
+  const completedIds: string[] = [];
   for (const ex of exercises) {
     for (const set of ex.sets) {
+      if (set.completed_at) completedIds.push(set.id);
       if (set.completed_at && (restAnchor === null || set.completed_at.getTime() > restAnchor.getTime())) {
         restAnchor = set.completed_at;
-        restSeconds = ex.rest_seconds;
+        restSeconds = ex.rest_seconds ?? defaultRest;
+        restAnchorId = set.id;
       }
     }
   }
@@ -743,147 +699,61 @@ export function WorkoutLogger({
     }
   }
 
+  function changeExercise(id: string, patch: Partial<Pick<LoggedExercise, "rest_seconds" | "notes">>) {
+    const current = workoutRef.current;
+    void commit({
+      ...current,
+      exercises: current.exercises.map((exercise) => exercise.id === id ? { ...exercise, ...patch } : exercise),
+    });
+  }
+
   function renderExercise(ex: LoggedExercise) {
     const exerciseType = ex.template.exercise_type;
     const performance = previousById[ex.template_id];
+    const rest = ex.rest_seconds ?? defaultRest;
     return (
       <>
-        <div className="flex items-start justify-between gap-3">
-          <span className="min-w-0 break-words font-medium">{ex.template.title}</span>
-          <span className="flex shrink-0 items-center gap-1">
-            <span className="text-sm text-zinc-500">
-              {muscleNames.get(ex.template.primary_muscle) ?? ex.template.primary_muscle}
-            </span>
-            {active ? (
-              <button
-                type="button"
-                aria-label={t("logger.exercise.removeLabel", { title: ex.template.title })}
-                onClick={() =>
-                  setConfirm({
-                    kind: "removeExercise",
-                    exerciseId: ex.id,
-                    title: ex.template.title,
-                    setCount: ex.sets.length,
-                  })
-                }
-                className="flex h-9 min-w-9 items-center justify-center rounded-md text-sm text-red-600 hover:bg-red-50"
-              >
-                ✕
-              </button>
-            ) : null}
-          </span>
-        </div>
-        {ex.rest_seconds != null ? (
-          <div className="mt-0.5 text-xs text-zinc-400">
-            {t("logger.exercise.rest", {
-              duration: t("common.quantityTight", {
-                value: formatNumber(locale, ex.rest_seconds),
-                unit: t("common.unit.seconds"),
-              }),
-            })}
+        <div className="flex items-start gap-3">
+          <ExerciseThumbnail slug={ex.template.slug} />
+          <div className="min-w-0 flex-1">
+            <h2>
+            <Link href={`/exercises/${ex.template_id}?tab=history`} className="block min-h-11 break-words py-1 text-base font-semibold leading-snug text-[#eef5ef] hover:text-[#d6f077]">
+              {ex.template.title}
+            </Link>
+            </h2>
+            <p className="training-muted text-xs">{muscleNames.get(ex.template.primary_muscle) ?? ex.template.primary_muscle}</p>
           </div>
-        ) : null}
-        {ex.notes ? <div className="mt-1 text-sm text-zinc-600">{ex.notes}</div> : null}
-
-        <div className="mt-3 space-y-2">
-          {ex.sets.map((s, index) => {
-            const done = s.completed_at != null;
-            return (
-              <div
-                key={s.id}
-                className={`rounded-md border p-2 ${
-                  done ? "border-green-300 bg-green-50" : "border-zinc-200"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-zinc-500">
-                    {t(SET_TYPE_KEYS[s.set_type])}
-                  </span>
-
-                  {active ? (
-                    <div className="flex shrink-0 items-center gap-1">
-                      {done ? (
-                        <form
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            undoSet(s.id);
-                          }}
-                        >
-                          <button
-                            type="submit"
-                            aria-label={t("logger.set.undoLabel")}
-                            className="flex h-10 min-w-10 items-center justify-center rounded-md text-base text-zinc-600 hover:bg-zinc-200/60"
-                          >
-                            ↺
-                          </button>
-                        </form>
-                      ) : null}
-                      <form
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          removeSet(s.id);
-                        }}
-                      >
-                        <button
-                          type="submit"
-                          aria-label={t("logger.set.removeLabel")}
-                          className="flex h-10 min-w-10 items-center justify-center rounded-md text-sm text-red-600 hover:bg-red-50"
-                        >
-                          ✕
-                        </button>
-                      </form>
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* Current values on the left, last time's on the right from
-                    `sm` up; below that the previous value sits under the set it
-                    answers rather than in a squeezed column. */}
-                <div className="mt-1 grid gap-1.5 sm:grid-cols-[1fr_9rem] sm:items-baseline sm:gap-3">
-                  <div className="min-w-0">
-                    {!active || done ? (
-                      <span className="text-sm text-zinc-700">
-                        {formatSetValues(s, exerciseType, locale)}
-                        {done ? <span className="ml-1 text-green-600">✓</span> : null}
-                      </span>
-                    ) : (
-                      <SetForm
-                        reps={s.reps}
-                        weight={s.weight_kg}
-                        rpe={s.rpe}
-                        onSubmit={(values) => recordSet(s.id, values)}
-                      />
-                    )}
-                  </div>
-                  <div className="flex items-baseline gap-1.5 text-xs sm:justify-end">
-                    <span className="uppercase tracking-wide text-zinc-400">
-                      {t("logger.set.previous")}
-                    </span>
-                    <span className="min-w-0 truncate tabular-nums text-zinc-600">
-                      {previousText(performance, index, exerciseType, locale)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          {active ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                addSet(ex.id);
-              }}
-            >
-              <button
-                type="submit"
-                className="h-10 rounded-md border border-dashed border-zinc-300 px-3 text-sm text-zinc-600 hover:bg-zinc-50"
-              >
-                + {t("logger.set.add")}
-              </button>
-            </form>
-          ) : null}
+          <button type="button" disabled={!active || !ready} aria-label={t("logger.exercise.removeLabel", { title: ex.template.title })}
+            onClick={() => setConfirm({ kind: "removeExercise", exerciseId: ex.id, title: ex.template.title, setCount: ex.sets.length })}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#b0c0b4] hover:bg-[#2b3930] disabled:opacity-40">✕</button>
         </div>
+        <div className="mt-2 flex flex-wrap items-start gap-2">
+          <button type="button" disabled={!active || !ready} onClick={() => setRestEditing(ex.id)}
+            className="min-h-11 rounded-xl border border-[#34463a] px-3 text-sm text-[#b0c0b4]">
+            {t("logger.rest.setting", { value: rest === 0 ? t("logger.rest.off") : formatDuration(locale, rest) })}
+          </button>
+          <details className="min-w-0 flex-1">
+            <summary className="training-muted flex min-h-11 cursor-pointer items-center px-2 text-sm">{t("logger.exercise.notes")}{ex.notes ? " •" : ""}</summary>
+            <textarea aria-label={t("logger.exercise.notes")} maxLength={2000} value={ex.notes ?? ""} disabled={!active || !ready}
+              onChange={(event) => changeExercise(ex.id, { notes: event.target.value || null })}
+              className="training-input mt-1 min-h-20 w-full rounded-xl p-3 text-base" />
+          </details>
+        </div>
+        {ex.notes ? <p className="training-muted mt-2 whitespace-pre-wrap break-words text-sm">{ex.notes}</p> : null}
+        <SetGridHeader exerciseType={exerciseType} />
+        <div className="space-y-1.5">
+          {ex.sets.map((set, index) => (
+            <SetForm key={set.id} set={set} index={index} exerciseType={exerciseType}
+              suggestion={getSetSuggestion(ex, set, index, performance)}
+              previous={previousText(performance, index, exerciseType, locale)}
+              disabled={!active || !ready || finishing}
+              onUpdate={(patch) => updateSet(set.id, patch)}
+              onToggle={(values) => updateSet(set.id, values, true)}
+              onRemove={() => removeSet(set.id)} />
+          ))}
+        </div>
+        {active ? <button type="button" disabled={!ready} onClick={() => addSet(ex.id)}
+          className="mt-3 min-h-11 w-full rounded-xl border border-dashed border-[#50705b] px-3 text-sm font-semibold text-[#d6f077] disabled:opacity-40">+ {t("logger.set.add")}</button> : null}
       </>
     );
   }
@@ -898,288 +768,128 @@ export function WorkoutLogger({
   // added twice.
   const addedTemplateIds = new Set(exercises.map((exercise) => exercise.template_id));
 
+  const hasVolume = exercises.some((exercise) => ["weight_reps", "bodyweight_weighted"].includes(exercise.template.exercise_type));
+  const editingExercise = exercises.find((exercise) => exercise.id === restEditing);
+  const restValue = restEditing === "default" ? defaultRest : editingExercise?.rest_seconds ?? "default";
+  const restOptions = [0, 30, 45, 60, 90, 120, 180, 300];
+  if (typeof restValue === "number" && !restOptions.includes(restValue)) restOptions.push(restValue);
+
   return (
-    <main className="mx-auto max-w-2xl px-4 pb-8">
-      {/* Sticky so the metrics, timer and finish action stay reachable while
-          logging. */}
-      <div className="sticky top-[var(--app-safe-top)] z-30 -mx-4 border-b border-zinc-200 bg-zinc-50/95 px-4 py-2 backdrop-blur">
-        <div className="flex items-center gap-2 sm:gap-3">
-          <Link
-            href="/workouts"
-            aria-label={t("logger.nav.back", { label: t("nav.workouts") })}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-lg text-zinc-600 hover:bg-zinc-200/60"
-          >
-            ←
+    <main data-active-logger className="training training-logger mx-auto min-h-dvh max-w-3xl px-3 pb-[calc(9rem+var(--app-safe-bottom))] sm:px-6">
+      <header className="sticky top-[var(--app-safe-top)] z-30 -mx-3 border-b border-[#34463a] bg-[#0d1512]/95 px-3 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="flex items-center gap-2">
+          <Link href="/workout" aria-label={t("logger.minimize")} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#b0c0b4] hover:bg-[#25382c]">
+            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
           </Link>
-          <h1 className="min-w-0 flex-1 truncate text-base font-semibold sm:text-xl">
-            {workout.title}
-          </h1>
-          <RestTimer
-            workoutId={workout.id}
-            anchor={restAnchor ? restAnchor.toISOString() : null}
-            restSeconds={restSeconds}
-            workoutActive={active}
-          />
-          {active ? (
-            <button
-              type="button"
-              onClick={requestFinish}
-              disabled={finishing}
-              className="h-10 shrink-0 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white disabled:opacity-60"
-            >
-              {finishing ? t("logger.finish.finishing") : t("logger.finish.action")}
-            </button>
-          ) : null}
+          <div className="min-w-0 flex-1">
+            <p className="training-muted text-[10px] font-semibold uppercase tracking-[0.18em]">{t("logger.session")}</p>
+            <h1 className="truncate text-base font-semibold sm:text-xl">{workout.title}</h1>
+          </div>
+          <button type="button" onClick={requestFinish} disabled={!ready || finishing}
+            className="training-action min-h-11 shrink-0 rounded-xl px-4 text-sm font-bold disabled:opacity-50">
+            {finishing ? t("logger.finish.finishing") : t("logger.finish.action")}
+          </button>
         </div>
-
-        {/* Live session metrics, derived from the document and the start time —
-            the same volume `summarizeWorkout` computes elsewhere, never a
-            second formula. Duration ticks from `started_at` on its own. */}
-        <dl className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-0.5 text-xs">
-          <div className="flex items-baseline gap-1.5">
-            <dt className="text-zinc-400">{t("logger.metric.duration")}</dt>
-            <dd className="font-medium tabular-nums text-zinc-700">
-              {active ? (
-                <ElapsedTimer startedAt={workout.started_at.toISOString()} endedAt={null} />
-              ) : (
-                formatDuration(locale, stats.durationSeconds)
-              )}
-            </dd>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <dt className="text-zinc-400">{t("logger.metric.volume")}</dt>
-            <dd className="font-medium tabular-nums text-zinc-700">
-              {formatVolumeKg(stats.volumeKg, locale)}
-            </dd>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <dt className="text-zinc-400">{t("logger.metric.sets")}</dt>
-            <dd className="font-medium tabular-nums text-zinc-700">
-              {formatNumber(locale, stats.completedSets)}/{formatNumber(locale, stats.totalSets)}
-            </dd>
-          </div>
+        <dl className="mt-2 grid grid-cols-3 gap-3 px-1">
+          <div><dt className="training-muted text-xs">{t("logger.metric.duration")}</dt>
+            <dd className="text-lg font-semibold tabular-nums">{active ? <ElapsedTimer startedAt={workout.started_at.toISOString()} endedAt={null} /> : formatDuration(locale, stats.durationSeconds)}</dd></div>
+          <div><dt className="training-muted text-xs">{t("logger.metric.sets")}</dt>
+            <dd className="text-lg font-semibold tabular-nums">{stats.completedSets}<span className="training-muted text-sm"> / {stats.totalSets}</span></dd></div>
+          <div><dt className="training-muted text-xs">{t("logger.metric.volume")}</dt>
+            <dd className="text-lg font-semibold tabular-nums">{hasVolume ? formatVolumeKg(stats.volumeKg, locale) : "—"}</dd></div>
         </dl>
+        <p role="status" className="training-muted mt-1 truncate px-1 text-xs">{ready ? t(SYNC_STATE_KEYS[syncState]) : t("common.loading")}</p>
+      </header>
 
-        {/* Quiet sync status, always rendered — the positive state included, so
-            "saved" is never merely the absence of the failure banner below. It
-            lives in the sticky header, visible while logging and clear of the
-            set rows, and stays one truncated line so a sync never shifts the
-            layout under a thumb. */}
-        <div role="status" className="mt-0.5 truncate text-xs text-zinc-500">
-          {t(SYNC_STATE_KEYS[syncState])}
-        </div>
-      </div>
-
-      {/* Only rendered when a sync fails; the local change is never discarded. */}
-      {syncError ? (
-        <div
-          role="alert"
-          className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-        >
-          {syncError}
-        </div>
-      ) : null}
-
-      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-zinc-500">
+      {syncError ? <p role="alert" className="mt-3 rounded-xl border border-[#8c5a4f] bg-[#38251f] p-3 text-sm text-[#ffc0b5]">{syncError}</p> : null}
+      <div className="training-muted mt-4 flex flex-wrap items-center justify-between gap-2 text-xs">
         <span>{formatDateTimeInTimeZone(workout.started_at, timeZone, locale)}</span>
-        {workout.ended_at ? (
-          <span>→ {formatDateTimeInTimeZone(workout.ended_at, timeZone, locale)}</span>
-        ) : null}
-        <span>{t("common.plural.exercises", { count: stats.exerciseCount })}</span>
-        {!active ? (
-          <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
-            {t("logger.summary.completed", {
-              duration: formatDuration(locale, stats.durationSeconds),
-            })}
-          </span>
-        ) : null}
+        <button type="button" disabled={!active || !ready} onClick={() => setRestEditing("default")} className="min-h-11 rounded-xl border border-[#34463a] px-3 text-sm">{t("logger.rest.defaults")}</button>
       </div>
-
-      {active ? (
-        <div className="mt-4 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setPickerOpen(true)}
-            className="h-11 rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-50"
-          >
-            {t("logger.exercise.add")}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setDiscardError(null);
-              setConfirm({ kind: "discard" });
-            }}
-            className="ml-auto h-11 rounded-md px-3 text-sm font-medium text-red-600 hover:bg-red-50"
-          >
-            {t("logger.discard.action")}
-          </button>
-        </div>
-      ) : null}
-
+      {workout.notes ? <p className="training-muted mt-2 whitespace-pre-wrap text-sm">{workout.notes}</p> : null}
       {exercises.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500">
-          {active
-            ? t("logger.exercise.emptyActive")
-            : t("logger.exercise.emptyCompleted")}
-        </p>
+        <div className="training-panel mt-4 rounded-2xl border-dashed px-5 py-10 text-center">
+          <p className="text-lg font-semibold">{t("logger.exercise.emptyTitle")}</p>
+          <p className="training-muted mt-2 text-sm">{t("logger.exercise.emptyActive")}</p>
+        </div>
       ) : (
-        <ol className="mt-6 space-y-4">
+        <ol className="mt-4 space-y-4">
           {groups.map((group) => {
-            const isSuperset = group.key !== null && group.exercises.length > 1;
-
-            if (!isSuperset) {
-              return (
-                <li key={group.exercises[0].id} className={EXERCISE_CARD}>
-                  {renderExercise(group.exercises[0])}
-                </li>
-              );
-            }
-
+            const superset = group.key !== null && group.exercises.length > 1;
             return (
-              <li
-                key={group.exercises[0].id}
-                className="rounded-xl border border-sky-200 bg-sky-50/60 p-2 sm:p-3"
-              >
-                <div className="mb-2 flex flex-wrap items-center gap-x-2">
-                  <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-900">
-                    {t("logger.superset.title")}
-                  </span>
-                  <span className="text-xs text-sky-800">{t("logger.superset.hint")}</span>
-                </div>
-                <div className="space-y-3">
-                  {group.exercises.map((ex) => (
-                    <div key={ex.id} className={EXERCISE_CARD}>
-                      {renderExercise(ex)}
-                    </div>
-                  ))}
-                </div>
+              <li key={group.exercises[0].id} className={superset ? "rounded-2xl border border-[#50705b] p-2" : EXERCISE_CARD}>
+                {superset ? <>
+                  <p className="mb-2 px-2 text-xs font-semibold text-[#d6f077]">{t("logger.superset.title")} · {t("logger.superset.hint")}</p>
+                  <div className="space-y-3">{group.exercises.map((exercise) => <section key={exercise.id} className={EXERCISE_CARD}>{renderExercise(exercise)}</section>)}</div>
+                </> : renderExercise(group.exercises[0])}
               </li>
             );
           })}
         </ol>
       )}
+      {active ? <div className="mt-5 space-y-3">
+        <button type="button" disabled={!ready} onClick={() => setPickerOpen(true)} className="training-action min-h-12 w-full rounded-xl px-4 text-base font-bold disabled:opacity-40">+ {t("logger.exercise.add")}</button>
+        <button type="button" disabled={!ready} onClick={() => { setDiscardError(null); setConfirm({ kind: "discard" }); }} className="min-h-11 w-full rounded-xl px-4 text-sm text-[#e8ab9e]">{t("logger.discard.title")}</button>
+      </div> : <p className="training-muted mt-5 text-sm">{t("logger.finish.pending")}</p>}
 
-      {pickerOpen ? (
-        <Modal
-          title={t("logger.exercise.add")}
-          onClose={() => setPickerOpen(false)}
-          panelClassName="max-w-lg"
-        >
-          <div className="mt-3">
-            <ExercisePicker
-              exercises={library}
-              muscles={muscles}
-              equipment={equipment}
-              excludeIds={addedTemplateIds}
-              onSelect={addExercise}
-            />
+      {ready ? <RestTimer workoutId={workout.id} userId={userId} anchorId={restAnchorId} validAnchorIds={completedIds}
+        anchor={restAnchor?.toISOString() ?? null} restSeconds={restSeconds} workoutActive={active} /> : null}
+
+      {pickerOpen ? <Modal title={t("logger.exercise.add")} onClose={() => setPickerOpen(false)} variant="training" panelClassName="training-picker-modal max-w-xl">
+        <WorkoutExercisePicker exercises={library} muscles={muscles} equipment={equipment} excludeIds={addedTemplateIds} onAdd={addExercises} onClose={() => setPickerOpen(false)} />
+      </Modal> : null}
+
+      {restEditing ? <Modal title={restEditing === "default" ? t("logger.rest.defaults") : editingExercise?.template.title ?? t("logger.rest.defaults")}
+        onClose={() => setRestEditing(null)} variant="training" panelClassName="max-w-sm">
+        <label className="mt-4 block space-y-2 text-sm">
+          <span>{t(restEditing === "default" ? "logger.rest.deviceDefault" : "logger.rest.override")}</span>
+          <select aria-label={t("logger.rest.duration")} value={restValue} className="training-input min-h-12 w-full rounded-xl px-3 text-base"
+            onChange={(event) => {
+              const value = event.target.value === "default" ? null : Number(event.target.value);
+              if (restEditing === "default" && value !== null) {
+                setDefaultRest(value);
+                try { window.localStorage.setItem(`forte:default-rest:${userId}`, String(value)); } catch {}
+              } else if (editingExercise) changeExercise(editingExercise.id, { rest_seconds: value });
+            }}>
+            {restEditing !== "default" ? <option value="default">{t("logger.rest.inherit", { value: defaultRest === 0 ? t("logger.rest.off") : formatDuration(locale, defaultRest) })}</option> : null}
+            {restOptions.sort((a, b) => a - b).map((seconds) => <option key={seconds} value={seconds}>{seconds === 0 ? t("logger.rest.off") : formatDuration(locale, seconds)}</option>)}
+          </select>
+        </label>
+        <p className="training-muted mt-3 text-sm">{t("logger.rest.scope")}</p>
+        <button type="button" onClick={() => setRestEditing(null)} className="training-action mt-4 min-h-11 w-full rounded-xl px-4 font-semibold">{t("common.done")}</button>
+      </Modal> : null}
+
+      {confirm ? <Modal variant="training" title={confirm.kind === "finish" ? t("logger.finish.review") : confirm.kind === "discard" ? t("logger.discard.title") : t("logger.exercise.removeTitle")}
+        onClose={() => { if (!discarding && !finishing) setConfirm(null); }} panelClassName="max-w-md">
+        {confirm.kind === "finish" ? <>
+          <h2 className="mt-4 break-words text-xl font-semibold">{workout.title}</h2>
+          <dl className="training-panel mt-4 grid grid-cols-3 gap-3 rounded-xl p-3">
+            <div><dt className="training-muted text-xs">{t("logger.metric.duration")}</dt><dd className="mt-1 font-semibold">{formatDuration(locale, stats.durationSeconds)}</dd></div>
+            <div><dt className="training-muted text-xs">{t("logger.metric.sets")}</dt><dd className="mt-1 font-semibold">{stats.completedSets}</dd></div>
+            <div><dt className="training-muted text-xs">{t("logger.metric.volume")}</dt><dd className="mt-1 font-semibold">{hasVolume ? formatVolumeKg(stats.volumeKg, locale) : "—"}</dd></div>
+          </dl>
+          <p className="training-muted mt-4 text-sm">{t("logger.finish.unchecked", { count: incompleteSets })}</p>
+          {syncError ? <p role="alert" className="mt-3 text-sm text-[#ffc0b5]">{syncError}</p> : null}
+          {!active ? <p className="training-muted mt-3 text-sm">{t("logger.finish.pending")}</p> : null}
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => setConfirm(null)} disabled={finishing || !active} className="min-h-12 rounded-xl border border-[#34463a] px-3 text-sm font-semibold disabled:opacity-40">{t("logger.finish.keep")}</button>
+            <button type="button" onClick={() => void finishNow()} disabled={finishing} className="training-action min-h-12 rounded-xl px-4 text-sm font-bold disabled:opacity-50">{finishing ? t("logger.finish.finishing") : t("logger.finish.save")}</button>
           </div>
-        </Modal>
-      ) : null}
-
-      {confirm ? (
-        <Modal
-          title={
-            confirm.kind === "finish"
-              ? t("logger.finish.title")
-              : confirm.kind === "discard"
-                ? t("logger.discard.title")
-                : t("logger.exercise.removeTitle")
-          }
-          onClose={() => {
-            // A destructive request in flight must not be dismissed underneath
-            // its own confirmation.
-            if (!discarding && !finishing) setConfirm(null);
-          }}
-          panelClassName="max-w-md"
-        >
-          {confirm.kind === "finish" ? (
-            <>
-              <p className="mt-3 text-sm text-zinc-600">
-                {t("logger.finish.openSets", {
-                  incomplete: formatNumber(locale, incompleteSets),
-                  count: stats.totalSets,
-                  tail: t("logger.finish.openTail", { count: incompleteSets }),
-                })}
-              </p>
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setConfirm(null)}
-                  className="h-11 rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-50"
-                >
-                  {t("logger.finish.keep")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void finishNow()}
-                  disabled={finishing}
-                  className="h-11 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-60"
-                >
-                  {finishing ? t("logger.finish.finishing") : t("logger.finish.title")}
-                </button>
-              </div>
-            </>
-          ) : null}
-
-          {confirm.kind === "discard" ? (
-            <>
-              <p className="mt-3 text-sm text-zinc-600">{t("logger.discard.body")}</p>
-              {discardError ? (
-                <p role="alert" className="mt-2 text-sm text-red-600">
-                  {discardError}
-                </p>
-              ) : null}
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setConfirm(null)}
-                  disabled={discarding}
-                  className="h-11 rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-50 disabled:opacity-60"
-                >
-                  {t("common.cancel")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void discard()}
-                  disabled={discarding}
-                  className="h-11 rounded-md bg-red-600 px-4 text-sm font-medium text-white disabled:opacity-60"
-                >
-                  {discarding ? t("logger.discard.confirming") : t("logger.discard.title")}
-                </button>
-              </div>
-            </>
-          ) : null}
-
-          {confirm.kind === "removeExercise" ? (
-            <>
-              <p className="mt-3 text-sm text-zinc-600">
-                {t("logger.exercise.removeConfirm", {
-                  title: confirm.title,
-                  tail: t("logger.exercise.removeSets", { count: confirm.setCount }),
-                })}
-              </p>
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setConfirm(null)}
-                  className="h-11 rounded-md border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-50"
-                >
-                  {t("common.cancel")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeExercise(confirm.exerciseId)}
-                  className="h-11 rounded-md bg-red-600 px-4 text-sm font-medium text-white"
-                >
-                  {t("common.remove")}
-                </button>
-              </div>
-            </>
-          ) : null}
-        </Modal>
-      ) : null}
+        </> : confirm.kind === "discard" ? <>
+          <p className="training-muted mt-4 text-sm">{t("logger.discard.body")}</p>
+          {discardError ? <p role="alert" className="mt-3 text-sm text-[#ffc0b5]">{discardError}</p> : null}
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => setConfirm(null)} disabled={discarding} className="min-h-12 rounded-xl border border-[#34463a] px-4 font-semibold">{t("common.cancel")}</button>
+            <button type="button" onClick={() => void discard()} disabled={discarding} className="min-h-12 rounded-xl bg-[#913e32] px-4 font-semibold text-white">{discarding ? t("logger.discard.confirming") : t("logger.discard.title")}</button>
+          </div>
+        </> : <>
+          <p className="training-muted mt-4 text-sm">{t("logger.exercise.removeConfirm", { title: confirm.title, tail: t("logger.exercise.removeSets", { count: confirm.setCount }) })}</p>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => setConfirm(null)} className="min-h-12 rounded-xl border border-[#34463a] px-4 font-semibold">{t("common.cancel")}</button>
+            <button type="button" onClick={() => removeExercise(confirm.exerciseId)} className="min-h-12 rounded-xl bg-[#913e32] px-4 font-semibold text-white">{t("common.remove")}</button>
+          </div>
+        </>}
+      </Modal> : null}
     </main>
   );
 }

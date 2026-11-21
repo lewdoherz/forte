@@ -245,181 +245,148 @@ try {
   await page.goto("/");
   await page.waitForSelector('h1:text-is("Dashboard")', { timeout: 20_000 });
 
-  // ---- start a routine -----------------------------------------------------
-  // Leg Day, not Push Day: the seed leaves a Push Day workout open, and starting
-  // it would resume that one instead of creating the workout this run finishes.
-  await page.getByRole("button", { name: "Leg Day" }).click();
+  // ---- start a routine through the Workout destination --------------------
+  await page.goto("/workout");
+  await page.getByRole("button", { name: "Start Leg Day", exact: true }).click();
   await page.waitForURL(/\/workouts\/[0-9a-f-]{36}$/);
-  await page.waitForSelector("text=Squat (Barbell)", { timeout: 20_000 });
+  await page.getByRole("heading", { name: "Squat (Barbell)", exact: true }).waitFor();
   const workoutUrl = page.url();
   const workoutId = workoutUrl.split("/").pop() ?? "";
-  const logger = await text(page);
-  check("starting a routine opens its logger", logger.includes("Squat (Barbell)"), workoutUrl);
+  check("starting a routine opens its full-screen logger", await page.getByRole("navigation").count() === 0, workoutUrl);
+  const originalViewport = page.viewportSize();
+  await page.getByRole("button", { name: /Add exercise/i }).click();
+  await page.setViewportSize({ width: 390, height: 420 });
+  const picker = page.getByRole("dialog", { name: "Add exercise", exact: true });
+  await picker.getByRole("searchbox").fill("crunch");
+  await picker.getByRole("button", { name: "Select Crunch", exact: true }).click();
+  await picker.getByRole("searchbox").fill("plank");
+  await page.waitForFunction(() => {
+    const first = document.querySelector('[role="dialog"] button[aria-label="Select Plank"]');
+    if (!first) return false;
+    const rect = first.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    return hit !== null && first.contains(hit);
+  }, undefined, { timeout: 5000 });
+  check("filtering exposes the first result without losing the previous selection",
+    (await picker.innerText()).includes("1 selected"));
+  await picker.getByRole("button", { name: "Select Plank", exact: true }).click();
+  await picker.getByRole("button", { name: "Add 2 exercises", exact: true }).click();
+  await page.getByRole("heading", { name: "Plank", exact: true }).waitFor();
+  if (originalViewport) await page.setViewportSize(originalViewport);
+  const squat = page.locator("li").filter({ has: page.getByRole("heading", { name: "Squat (Barbell)", exact: true }) }).first();
+  const firstSet = squat.getByRole("group", { name: "Set 1", exact: true });
+  await firstSet.getByRole("textbox", { name: "Reps", exact: true }).fill(WORKING_REPS);
+  await firstSet.getByRole("textbox", { name: "kg", exact: true }).fill(WORKING_WEIGHT);
+  await firstSet.getByRole("button", { name: "Complete set", exact: true }).click();
+  check("a completed row has an explicit pressed checkmark",
+    await firstSet.getByRole("button", { name: "Undo completed set", exact: true }).getAttribute("aria-pressed") === "true");
 
-  // ---- log a set -----------------------------------------------------------
-  const firstSet = page.locator("form").filter({ has: page.getByLabel("Reps") }).first();
-  // The logger writes locally, then syncs; "All changes saved" is its idle
-  // status too, so the sync is observed on the wire instead of read off the page.
-  const syncAfterFirstSet = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      response.url().startsWith(`${APP_URL}/workouts/`) &&
-      response.status() === 200,
-    { timeout: 30_000 },
-  );
-  await firstSet.getByLabel("Reps").fill(WORKING_REPS);
-  await firstSet.getByLabel("Weight in kilograms").fill(WORKING_WEIGHT);
-  await firstSet.getByRole("button", { name: "Done" }).click();
-  await page.waitForSelector(`text=${WORKING_WEIGHT} kg × ${WORKING_REPS} reps`);
-  check("a logged set renders its weight and reps", true);
-  const syncedFirstSet = await syncAfterFirstSet
-    .then(() => true)
-    .catch(() => false);
-  check("logging a set syncs it", syncedFirstSet);
+  const persistedSets = async () => (await localeClient!.query<{
+    position: number; reps: number | null; weight_kg: string | null; set_type: string; completed_at: Date | null;
+  }>(`select ws.position, ws.reps, ws.weight_kg, ws.set_type, ws.completed_at
+      from workout_set ws join workout_exercise we on we.id = ws.workout_exercise_id
+      where we.workout_id = $1 and we.position = 0 order by ws.position`, [workoutId])).rows;
+  await page.waitForFunction(() => document.body.innerText.includes("All changes saved"), undefined, { timeout: 30_000 });
+  check("logged values and completion reach the server", (await persistedSets()).some((set) =>
+    set.completed_at !== null && Number(set.weight_kg) === Number(WORKING_WEIGHT) && set.reps === Number(WORKING_REPS)));
 
-  // The offline leg needs the worker in control and the set already reconciled:
-  // the envelope is the exact route, so the page must have been opened online
-  // before the network goes away.
-  await page.waitForFunction(() => navigator.serviceWorker?.controller != null, undefined, {
-    timeout: 30_000,
-  });
-  await page.waitForFunction(() => document.body.innerText.includes("All changes saved"), undefined, {
-    timeout: 30_000,
-  });
-  check("the service worker controls the logger and the set is saved", true);
-
-  // ...and "saved" has to mean the server, not this browser. A second context
-  // holds the same session but none of this one's storage, so what it renders is
-  // the server's copy alone.
+  // A clean browser without this IndexedDB must see the same completed values.
   const probeContext = await browser.newContext({ baseURL: APP_URL });
   await probeContext.addCookies(await context.cookies());
   const probePage = await probeContext.newPage();
-  await probePage.goto(`/workouts/${workoutId}`, { waitUntil: "domcontentloaded" });
-  const serverCopy = await probePage
-    .waitForFunction(() => /95 kg × 8 reps/.test(document.body.innerText), undefined, {
-      timeout: 20_000,
-    })
-    .then(() => true)
-    .catch(() => false);
-  const probeText = await probePage.evaluate(() => document.body.innerText);
-  await probeContext.close();
-  check(
-    "a logged set reaches the server",
-    serverCopy,
-    `text=${JSON.stringify(probeText.slice(0, 160))}`,
-  );
-
-  // ---- offline: mutate, then reload ---------------------------------------
-  await context.setOffline(true);
-  const secondSet = page.locator("form").filter({ has: page.getByLabel("Reps") }).nth(1);
-  await secondSet.getByLabel("Reps").fill(WORKING_REPS);
-  await secondSet.getByLabel("Weight in kilograms").fill(WORKING_WEIGHT);
-  await secondSet.getByRole("button", { name: "Done" }).click();
-  await page.waitForFunction(
-    () => (document.body.innerText.match(/95 kg × 8 reps/g) ?? []).length >= 2,
-    undefined,
-    { timeout: 20_000 },
-  );
-  check("a set logged with the network gone reaches the page", true);
-
-  await page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
-  const offlineUrl = page.url();
-  const offlineText = await text(page);
-  const privateCache = await page.evaluate(async () => {
-    const names = (await caches.keys()).filter((name) => name.startsWith("forte-private-"));
-    const entries: string[] = [];
-    for (const name of names) {
-      for (const request of await (await caches.open(name)).keys()) entries.push(request.url);
-    }
-    return entries;
+  const probeErrors: string[] = [];
+  probePage.on("pageerror", (error) => probeErrors.push(error.message));
+  await probePage.route(workoutUrl, async (route) => {
+    if (!route.request().isNavigationRequest()) return route.continue();
+    const response = await route.fetch();
+    // Preserve the real server response, but deliver it after the clock ticks.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.fulfill({ response });
   });
-  // What is asserted here is the envelope this run can observe: the exact workout
-  // route falls back to the private snapshot and the logger renders. What the
-  // client restores from its own local document after such a reload is NOT
-  // asserted — see the coverage note in README's Testing section.
-  check(
-    "the worker serves the open logger offline",
-    offlineText.includes("Leg Day") && offlineUrl === `${APP_URL}/workouts/${workoutId}`,
-    `url=${offlineUrl} snapshot=${privateCache.length} text=${JSON.stringify(offlineText.slice(0, 120))}`,
-  );
+  await probePage.goto(workoutUrl);
+  const serverSet = probePage.getByRole("group", { name: "Set 1", exact: true }).first();
+  await serverSet.getByRole("button", { name: "Undo completed set", exact: true }).waitFor();
+  check("another browser reads the actual saved set",
+    Number(await serverSet.getByRole("textbox", { name: "kg", exact: true }).inputValue()) === Number(WORKING_WEIGHT));
+  await probePage.waitForFunction(() => /^\d+:\d{2}(?::\d{2})?$/.test(
+    document.querySelector("[data-active-logger] header dd")?.textContent ?? "",
+  ));
+  check("a slow first load hydrates a live elapsed timer without resetting the logger",
+    probeErrors.length === 0 && await serverSet.getByRole("button", { name: "Undo completed set", exact: true }).isVisible(),
+    probeErrors.join("; "));
+  await probeContext.close();
 
-  // ---- reconnect and finish ------------------------------------------------
-  // Not asserted: whether a change made offline is still there after the reload
-  // above and syncs once the network returns. Observed through this run: the page
-  // reloaded offline renders the server's copy (Sets 0/7) rather than the local
-  // document's, no sync follows the reconnect, and a later finish then writes the
-  // server's sets back as incomplete. That needs its own investigation, so the
-  // checks below restore the precondition explicitly instead of depending on it.
-  const syncAfterReconnect = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      response.url().startsWith(`${APP_URL}/workouts/`) &&
-      response.status() === 200,
-    { timeout: 30_000 },
-  );
+  // Rest identity/adjustment must survive the logger's initial hydration.
+  await page.getByRole("timer").waitFor();
+  await page.getByRole("button", { name: "Add 15 seconds of rest", exact: true }).click();
+  const restDeadline = () => page.evaluate((id) => {
+    const key = Object.keys(sessionStorage).find((name) => name.startsWith("forte:rest:v1:") && name.endsWith(`:${id}`));
+    const state: unknown = key ? JSON.parse(sessionStorage.getItem(key)!) : null;
+    if (!state || typeof state !== "object" || !("current" in state)) return null;
+    const current = state.current;
+    return current && typeof current === "object" && "deadline" in current && typeof current.deadline === "number" ? current.deadline : null;
+  }, workoutId);
+  const adjustedDeadline = await restDeadline();
+  await page.reload();
+  await page.getByRole("timer").waitFor();
+  check("adjusted rest survives draft hydration and reload", adjustedDeadline != null && await restDeadline() === adjustedDeadline);
+  await page.getByRole("button", { name: "Skip", exact: true }).click();
+  await page.reload();
+  await firstSet.getByRole("button", { name: "Undo completed set", exact: true }).waitFor();
+  await page.waitForFunction(() => {
+    const finish = document.querySelector("[data-active-logger] header button");
+    return finish instanceof HTMLButtonElement && !finish.disabled;
+  });
+  check("skipped rest does not restart after reload", await page.getByRole("timer").count() === 0);
+
+  // Wait for the exact route and its assets to be retained before losing signal.
+  await page.waitForFunction(() => navigator.serviceWorker?.controller != null, undefined, { timeout: 30_000 });
+  await page.waitForFunction(async (url) => {
+    for (const name of (await caches.keys()).filter((entry) => entry.startsWith("forte-private-"))) {
+      if (await (await caches.open(name)).match(url)) return true;
+    }
+    return false;
+  }, workoutUrl, { timeout: 30_000 });
+
+  // ---- offline: change type and values, then recover the same draft --------
+  await context.setOffline(true);
+  const secondSet = squat.getByRole("group", { name: "Set 2", exact: true });
+  await secondSet.getByRole("button", { name: "Set type: Normal", exact: true }).click();
+  await page.getByRole("dialog", { name: "Set type", exact: true }).getByRole("button", { name: "Failure", exact: true }).click();
+  await secondSet.getByRole("textbox", { name: "Reps", exact: true }).fill(WORKING_REPS);
+  await secondSet.getByRole("textbox", { name: "kg", exact: true }).fill(WORKING_WEIGHT);
+  await secondSet.getByRole("button", { name: "Complete set", exact: true }).click();
+  // Completion paints optimistically; the disabled check is the durable-write
+  // affordance. Reload after it settles, not while IndexedDB is committing.
+  await secondSet.getByRole("button", { name: "Undo completed set", exact: true }).and(page.locator(":enabled")).waitFor();
+  check("offline completion is explicitly checked", true);
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
+  await secondSet.getByRole("button", { name: "Undo completed set", exact: true }).waitFor({ timeout: 30_000 });
+  check("offline reload restores the edited local set and type",
+    Number(await secondSet.getByRole("textbox", { name: "kg", exact: true }).inputValue()) === Number(WORKING_WEIGHT) &&
+    await secondSet.getByRole("button", { name: "Set type: Failure", exact: true }).count() === 1);
+  check("the worker serves the exact logger offline", page.url() === workoutUrl && (await text(page)).includes("Leg Day"));
+
   await context.setOffline(false);
-  const reconnectedSynced = await syncAfterReconnect
-    .then(() => true)
-    .catch(() => false);
-  console.log(
-    `NOTE  an offline change did not sync after reconnect on its own [synced=${reconnectedSynced}]`,
-  );
+  await page.waitForFunction(() => document.body.innerText.includes("All changes saved"), undefined, { timeout: 30_000 });
+  const restoredSets = await persistedSets();
+  check("offline edits automatically reconcile when connectivity returns",
+    restoredSets.filter((set) => set.completed_at != null && Number(set.weight_kg) === Number(WORKING_WEIGHT) && set.reps === Number(WORKING_REPS)).length === 2 &&
+    restoredSets[1].set_type === "failure");
 
-  // Re-open the logger so the client's document comes from the server rather than
-  // from whatever survived the offline reload above.
-  await page.goto(workoutUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await page.waitForSelector("text=Squat (Barbell)", { timeout: 20_000 });
-
-  // One more set, logged with the network up, so the finishing legs below rest on
-  // a completed set the server definitely has.
-  const onlineSet = page.locator("form").filter({ has: page.getByLabel("Reps") }).first();
-  const syncAfterOnlineSet = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      response.url().startsWith(`${APP_URL}/workouts/`) &&
-      response.status() === 200,
-    { timeout: 30_000 },
-  );
-  await onlineSet.getByLabel("Reps").fill(WORKING_REPS);
-  await onlineSet.getByLabel("Weight in kilograms").fill(WORKING_WEIGHT);
-  await onlineSet.getByRole("button", { name: "Done" }).click();
-  const onlineSetSynced = await syncAfterOnlineSet
-    .then(() => true)
-    .catch(() => false);
-  check("a set logged after reconnecting syncs", onlineSetSynced);
-
-  const syncAfterFinish = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      response.url().startsWith(`${APP_URL}/workouts/`) &&
-      response.status() === 200,
-    { timeout: 30_000 },
-  );
+  // ---- review makes unchecked-set policy explicit; Save commits once -------
   await page.getByRole("button", { name: "Finish", exact: true }).click();
-  // Open sets make finishing ask first. The confirm button is the one after
-  // "Keep logging", which keeps this independent of the label it carries.
-  const keepLogging = page.getByRole("button", { name: "Keep logging" });
-  if (await keepLogging.count()) {
-    await keepLogging.locator("xpath=following-sibling::button").click();
-  }
-  const leftEditor = await page
-    .waitForFunction(() => !document.body.innerText.includes("Add exercise"), undefined, {
-      timeout: 30_000,
-    })
-    .then(() => true)
-    .catch(() => false);
-  const finished = await text(page);
-  check(
-    "finishing closes the workout for editing",
-    leftEditor && !finished.includes("Discard"),
-    `url=${page.url()}`,
-  );
-  // Leaving the page cancels a write that has not been sent yet, so the end of
-  // the workout is waited for on the wire like every other write here.
-  const finishSynced = await syncAfterFinish
-    .then(() => true)
-    .catch(() => false);
-  check("finishing syncs the end of the workout", finishSynced);
+  const review = page.getByRole("dialog", { name: "Review workout", exact: true });
+  await review.getByRole("button", { name: "Save workout", exact: true }).waitFor();
+  check("Finish reviews checked sets without auto-completing the rest",
+    (await review.innerText()).includes("unchecked") && (await persistedSets()).filter((set) => set.completed_at != null).length === 2);
+  await review.getByRole("button", { name: "Keep logging", exact: true }).click();
+  check("review can return to editing", await firstSet.getByRole("button", { name: "Undo completed set", exact: true }).isVisible());
+  await page.getByRole("button", { name: "Finish", exact: true }).click();
+  await review.getByRole("button", { name: "Save workout", exact: true }).click();
+  await page.getByText("Saved to your workout history", { exact: true }).waitFor({ timeout: 30_000 });
+  check("Save opens the read-only completed recap", await page.getByRole("button", { name: "Finish", exact: true }).count() === 0);
+  check("finishing persists the end timestamp", (await localeClient!.query("select ended_at from workout where id=$1", [workoutId])).rows[0]?.ended_at != null);
 
   // ---- history and the record ---------------------------------------------
   await page.goto(`/workouts/${workoutId}`);

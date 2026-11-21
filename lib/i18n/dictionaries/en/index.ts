@@ -13,6 +13,8 @@ import { offline } from "./offline";
 import { progress } from "./progress";
 import { routines } from "./routines";
 import { workouts } from "./workouts";
+import { training } from "./training";
+import { trainingControls } from "./training-controls";
 
 /**
  * The English dictionary, and the shape every locale must satisfy.
@@ -41,4 +43,6 @@ export const en = {
   ...errors,
   ...email,
   ...offline,
+  ...training,
+  ...trainingControls,
 } as const;

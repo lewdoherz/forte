@@ -67,7 +67,7 @@ export function ExerciseFilterForm({
           type="search"
           defaultValue={values.q}
           placeholder={t("exercises.filter.searchLabel")}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+          className="min-h-11 w-full rounded-xl border border-zinc-300 px-3 py-2 text-base"
         />
       </label>
       <div className="flex gap-2">
@@ -76,7 +76,7 @@ export function ExerciseFilterForm({
           <select
             name="equipment"
             defaultValue={values.equipment}
-            className="w-full rounded-md border border-zinc-300 px-2 py-2 text-sm"
+            className="min-h-11 w-full rounded-xl border border-zinc-300 px-2 py-2 text-base"
           >
             <option value="">{t("exercises.filter.allEquipment")}</option>
             {equipment.map((entry) => (
@@ -91,7 +91,7 @@ export function ExerciseFilterForm({
           <select
             name="muscle"
             defaultValue={values.muscle}
-            className="w-full rounded-md border border-zinc-300 px-2 py-2 text-sm"
+            className="min-h-11 w-full rounded-xl border border-zinc-300 px-2 py-2 text-base"
           >
             <option value="">{t("exercises.filter.allMuscles")}</option>
             {muscles.map((entry) => (
@@ -105,12 +105,12 @@ export function ExerciseFilterForm({
       <div className="flex items-center justify-between gap-2">
         <button
           type="submit"
-          className="h-9 rounded-md border border-zinc-300 px-3 text-xs font-medium hover:bg-zinc-100"
+          className="min-h-11 rounded-xl border border-zinc-300 px-4 text-sm font-medium hover:bg-zinc-100"
         >
           {t("common.search")}
         </button>
         {onClear && hasFilters ? (
-          <button type="button" onClick={onClear} className="text-xs text-zinc-500 underline">
+          <button type="button" onClick={onClear} className="min-h-11 min-w-11 px-2 text-sm text-zinc-500 underline">
             {t("common.clear")}
           </button>
         ) : null}

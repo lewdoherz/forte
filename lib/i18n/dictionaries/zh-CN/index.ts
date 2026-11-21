@@ -15,6 +15,8 @@ import { offline } from "./offline";
 import { progress } from "./progress";
 import { routines } from "./routines";
 import { workouts } from "./workouts";
+import { training } from "./training";
+import { trainingControls } from "./training-controls";
 
 /**
  * Simplified Chinese (Mandarin).
@@ -40,4 +42,6 @@ export const zhCN: Messages = {
   ...errors,
   ...email,
   ...offline,
+  ...training,
+  ...trainingControls,
 };
