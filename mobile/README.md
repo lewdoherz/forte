@@ -33,7 +33,7 @@ xcodebuild -project mobile/ios/Forte.xcodeproj -scheme Forte -configuration Rele
 
 ## System-browser authentication
 
-Email/username and password remain ordinary same-origin web authentication, independent of social providers. Google authorization never runs inside WebView/WKWebView.
+Email and password remain ordinary same-origin web authentication, independent of social providers. The sign-in screen exposes password recovery without requiring a provider. Google authorization never runs inside WebView/WKWebView.
 
 For an enabled social provider, Android launches Custom Tabs and iOS uses `ASWebAuthenticationSession`. The app generates a random verifier/state and SHA-256 PKCE challenge. The authenticated browser returns a single-use, 60-second code through `forte://auth/callback`; only the pending app can exchange it over HTTPS, bound to its platform and verifier. The shell installs only the configured host's Secure/HttpOnly session cookie. Session tokens never enter URLs or JavaScript. Cancellation clears the pending flow and sends a nonsecret event to reset the web button without discarding a workout draft.
 
@@ -42,6 +42,8 @@ Account linking opens the normal account page in the system browser. Its cookie 
 ## Automation and artifacts
 
 Run **Native mobile shells** (`mobile.yml`) manually, optionally choosing another hostname. GitHub Secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` supply the existing Android identity; temporary key material is removed after building.
+
+SDK setup installs current `platform-tools`, not Google's retired `tools` package, before installing API 36/build-tools 36.0.0.
 
 - `forte-android-release-signed`: signed personal-install Release APK, verified with `apksigner`.
 - `forte-ios-simulator-release`: unsigned Release simulator app ZIP.

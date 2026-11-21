@@ -137,6 +137,10 @@ export function SignInForm({
 
       </form>
 
+      <Link href="/forgot-password" className="inline-flex min-h-11 items-center text-sm font-medium text-zinc-900 underline">
+        {t("auth.forgotPassword.title")}
+      </Link>
+
       <p className="text-sm text-zinc-500">
         {t("auth.signIn.noAccount")}{" "}
         <Link href="/sign-up" className="font-medium text-zinc-900 underline">
