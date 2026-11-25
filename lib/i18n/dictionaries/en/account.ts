@@ -110,6 +110,9 @@ export const account = {
 
   "account.signOut.description":
     "Ends this session on this device and returns you to the sign-in page.",
+  "account.signOut.pendingPreserved":
+    "{count} unsynced change(s) on this device will stay saved privately for this account and sync when you sign back in.",
+  "account.signOut.syncNow": "Sync now",
 
   "account.errors.invalidInput": "Invalid input.",
   "account.errors.saveFailed": "Could not save your settings.",

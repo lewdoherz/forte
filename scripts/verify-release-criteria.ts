@@ -427,6 +427,177 @@ try {
   const afterResignIn = await pool.query("SELECT id FROM routine WHERE title = 'Session Expiry Routine'");
   check("Re-signing in as the same account syncs preserved pending work", afterResignIn.rows.length === 1);
 
+  // =========================================================================
+  // 5. Pending offline protection across sign-out, account switch, & interrupted retry
+  // =========================================================================
+  // Ensure SW + IndexedDB are warmed for Account A after re-sign-in
+  await page.goto("/");
+  await page.waitForSelector('h1:text-is("Dashboard")', { timeout: 15_000 });
+  await page.waitForTimeout(1000);
+
+  // Go offline, edit a routine AND complete a workout so BOTH are unsynced on device
+  await context.setOffline(true);
+  await page.goto("/", { waitUntil: "domcontentloaded", timeout: 25_000 });
+  await page.getByRole("heading", { name: "Workout history", exact: true }).waitFor({ timeout: 20_000 });
+
+  await page.getByRole("button", { name: "Workout", exact: true }).click();
+  await page.locator("li", { hasText: "Leg Day Offline Edited" }).first().getByRole("button", { name: "Edit routine", exact: true }).click();
+  await page.getByRole("heading", { name: "Edit routine", exact: true }).waitFor({ timeout: 10_000 });
+  await page.getByLabel("Name", { exact: true }).fill("Vaulted Routine Edit");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await page.getByText("Vaulted Routine Edit", { exact: true }).waitFor({ timeout: 10_000 });
+
+  await page.locator("li", { hasText: "Vaulted Routine Edit" }).first().getByRole("button", { name: /Start routine/i }).click();
+  await page.getByRole("heading", { name: "Vaulted Routine Edit", exact: true }).waitFor({ timeout: 15_000 });
+  const vaultedSet1 = page.locator("li").filter({ hasText: "Squat (Barbell)" }).first().getByRole("group", { name: "Set 1", exact: true });
+  await vaultedSet1.getByRole("textbox", { name: "kg", exact: true }).fill("115");
+  await vaultedSet1.getByRole("textbox", { name: "Reps", exact: true }).fill("5");
+  await vaultedSet1.getByRole("button", { name: "Complete set", exact: true }).click();
+  await vaultedSet1.getByRole("button", { name: "Undo completed set", exact: true }).waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Finish", exact: true }).click();
+  await page.getByRole("dialog", { name: "Review workout", exact: true }).getByRole("button", { name: "Save workout", exact: true }).click();
+  await page.getByRole("heading", { name: "Workout complete", exact: true }).waitFor({ timeout: 15_000 });
+
+  // Block /api/offline/sync while coming online so Account A signs out WITH unsynced changes still pending
+  await context.route("**/api/offline/sync", async (route) => {
+    await route.abort("failed");
+  });
+  await context.setOffline(false);
+  await page.goto("/account");
+  await page.getByRole("heading", { name: "Account", exact: true }).waitFor({ timeout: 15_000 });
+  const signOutSection = page.locator("section", { has: page.getByRole("heading", { name: "Sign out", exact: true }) });
+  await page.waitForFunction(
+    () => document.body.innerText.includes("unsynced change(s) on this device will stay saved privately"),
+    undefined,
+    { timeout: 10_000 },
+  );
+  check("Sign-out UI warns that unsynced changes stay saved privately for this account", true);
+  await signOutSection.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.waitForURL(/\/sign-in/, { timeout: 15_000 });
+
+  // Verify active store & private caches are empty while signed out
+  const signedOutCheck = await page.evaluate(async () => {
+    const activeCount = await new Promise<number>((resolve) => {
+      const req = indexedDB.open("forte-offline");
+      req.onerror = () => resolve(-1);
+      req.onsuccess = () => {
+        const db = req.result;
+        const names = Array.from(db.objectStoreNames);
+        if (names.length === 0) return resolve(0);
+        const tx = db.transaction(names, "readonly");
+        let total = 0;
+        let rem = names.length;
+        for (const name of names) {
+          const c = tx.objectStore(name).count();
+          c.onsuccess = () => { total += c.result; if (--rem === 0) resolve(total); };
+          c.onerror = () => { if (--rem === 0) resolve(total); };
+        }
+      };
+    });
+    const privateCaches = (await caches.keys()).filter((k) => k.startsWith("forte-private-"));
+    let privateRoutes = 0;
+    for (const k of privateCaches) privateRoutes += (await (await caches.open(k)).keys()).length;
+    return { activeCount, privateRoutes };
+  });
+  check(
+    "Sign-out clears active forte-offline store and private SW caches while vaulting pending work",
+    signedOutCheck.activeCount === 0 && signedOutCheck.privateRoutes === 0,
+    `active=${signedOutCheck.activeCount} privateRoutes=${signedOutCheck.privateRoutes}`,
+  );
+
+  // Confirm signed-out /offline-app cannot see Account A's pending changes
+  await page.goto("/offline-app");
+  await page.waitForTimeout(500);
+  check(
+    "Signed-out offline shell cannot see previous account's vaulted changes",
+    !(await page.evaluate(() => document.body.innerText)).includes("Vaulted Routine Edit"),
+  );
+
+  // Unblock sync and sign up + sign in as a SECOND account (Account B)
+  await context.unroute("**/api/offline/sync");
+  await page.goto("/sign-up");
+  await page.locator('input[name="email"]').fill("second-offline-check@forte.local");
+  await page.locator('input[name="password"]').fill("second-account-password");
+  await page.getByRole("button", { name: "Sign up", exact: true }).click();
+  await page.waitForURL(`${APP_URL}/`, { timeout: 20_000 });
+  await page.waitForTimeout(2000);
+
+  await page.goto("/routines");
+  const accountBRoutines = await page.evaluate(() => document.body.innerText);
+  await page.goto("/workouts");
+  const accountBWorkouts = await page.evaluate(() => document.body.innerText);
+  const dbWhileAccountB = await pool.query(
+    "SELECT (SELECT count(*)::int FROM workout WHERE title = 'Vaulted Routine Edit') AS w, (SELECT count(*)::int FROM routine WHERE title = 'Vaulted Routine Edit') AS r",
+  );
+  check(
+    "Second account cannot read or upload first account's vaulted pending workout or routine",
+    !accountBRoutines.includes("Vaulted Routine Edit") &&
+      !accountBWorkouts.includes("Vaulted Routine Edit") &&
+      dbWhileAccountB.rows[0].w === 0 &&
+      dbWhileAccountB.rows[0].r === 0,
+    `w=${dbWhileAccountB.rows[0].w} r=${dbWhileAccountB.rows[0].r}`,
+  );
+
+  // Sign out Account B
+  await page.goto("/account");
+  await page.getByRole("heading", { name: "Account", exact: true }).waitFor({ timeout: 15_000 });
+  await page
+    .locator("section", { has: page.getByRole("heading", { name: "Sign out", exact: true }) })
+    .getByRole("button", { name: "Sign out", exact: true })
+    .click();
+  await page.waitForURL(/\/sign-in/, { timeout: 15_000 });
+
+  // Intercept FIRST /api/offline/sync on Account A re-sign-in: commit on server, then drop response!
+  let vaultRetryCalls = 0;
+  await context.route("**/api/offline/sync", async (route) => {
+    vaultRetryCalls++;
+    if (vaultRetryCalls === 1) {
+      await route.fetch(); // Server commits Account A's vaulted workout & routine!
+      await route.abort("failed"); // Drop response to exercise interrupted sync retry!
+      return;
+    }
+    await route.continue();
+  });
+
+  // Sign back in as ORIGINAL Account A -> vaulted pending workout & routine recover and sync once!
+  await signIn(page);
+  const retryDeadline = Date.now() + 25_000;
+  while (vaultRetryCalls < 2 && Date.now() < retryDeadline) {
+    await page.waitForTimeout(300);
+  }
+  await page.waitForFunction(
+    () => {
+      const txt = document.body.innerText;
+      return !txt.includes("unsynced") && !txt.includes("Saved on this device");
+    },
+    undefined,
+    { timeout: 20_000 },
+  );
+  await page.waitForTimeout(500);
+  await context.unroute("**/api/offline/sync");
+
+  const accountAIdRes = await pool.query<{ id: string }>(
+    "SELECT id FROM app_user WHERE email = $1",
+    [DEMO_EMAIL],
+  );
+  const accountAId = accountAIdRes.rows[0].id;
+  const recoveredWorkouts = await pool.query<{ id: string; owner_id: string; ended_at: Date | null }>(
+    "SELECT id, owner_id, ended_at FROM workout WHERE title = 'Vaulted Routine Edit'",
+  );
+  const recoveredRoutines = await pool.query<{ id: string; owner_id: string }>(
+    "SELECT id, owner_id FROM routine WHERE title = 'Vaulted Routine Edit'",
+  );
+  check(
+    "Original account recovers vaulted workout & routine after sign-out/switch and syncs ONCE after interrupted retry",
+    vaultRetryCalls >= 2 &&
+      recoveredWorkouts.rows.length === 1 &&
+      recoveredWorkouts.rows[0].owner_id === accountAId &&
+      recoveredWorkouts.rows[0].ended_at !== null &&
+      recoveredRoutines.rows.length === 1 &&
+      recoveredRoutines.rows[0].owner_id === accountAId,
+    `calls=${vaultRetryCalls} workouts=${recoveredWorkouts.rows.length} routines=${recoveredRoutines.rows.length}`,
+  );
+
   console.log(`\n${checks - failures}/${checks} release-criteria checks passed.`);
   if (failures > 0) process.exitCode = 1;
 } finally {

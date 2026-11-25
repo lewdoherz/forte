@@ -14,6 +14,8 @@ import type { RoutineInput } from "@/lib/routines";
 
 const DB_NAME = "forte-offline";
 const DB_VERSION = 2;
+const PENDING_VAULT_PREFIX = "forte-pending:";
+const PENDING_VAULT_VERSION = 1;
 
 const PRIVATE_CACHE_PREFIX = "forte-private-";
 const CLEAR_PRIVATE_CACHE_MESSAGE = "clear-private-cache";
@@ -32,6 +34,7 @@ const SYNCED_KEY = "last_synced_at";
 const CATALOG_KEY = "snapshot";
 
 const STORE_NAMES = [WORKOUTS, PENDING, META, ROUTINES, PENDING_ROUTINES, CATALOG];
+const VAULT_STORE_NAMES = [WORKOUTS, ROUTINES, PENDING_ROUTINES, META];
 
 export const LOCAL_GUEST_OWNER = "local-guest";
 
@@ -203,20 +206,213 @@ function serialized<T>(task: () => Promise<T>): Promise<T> {
   return next;
 }
 
-async function claimOwner(db: IDBDatabase, userId: string): Promise<boolean> {
-  return transact(db, STORE_NAMES, "readwrite", async (tx) => {
-    const meta = tx.objectStore(META);
-    const owner = await fromRequest<string | undefined>(meta.get(OWNER_KEY));
-    if (owner === userId) return false;
+function vaultDbName(userId: string): string {
+  return `${PENDING_VAULT_PREFIX}${encodeURIComponent(userId)}`;
+}
 
-    if (owner !== undefined) {
-      for (const name of STORE_NAMES) {
-        await fromRequest(tx.objectStore(name).clear());
-      }
+function openVaultDatabase(userId: string): Promise<IDBDatabase> {
+  const { promise, resolve, reject } = Promise.withResolvers<IDBDatabase>();
+  let request: IDBOpenDBRequest;
+  try {
+    request = indexedDB.open(vaultDbName(userId), PENDING_VAULT_VERSION);
+  } catch (error) {
+    return Promise.reject(error);
+  }
+  request.onupgradeneeded = () => {
+    const db = request.result;
+    for (const name of VAULT_STORE_NAMES) {
+      if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
     }
-    await fromRequest(meta.put(userId, OWNER_KEY));
-    return true;
+  };
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () =>
+    reject(request.error ?? new Error("Failed to open the per-account pending vault."));
+  request.onblocked = () =>
+    reject(new Error("The per-account pending vault is blocked by another connection."));
+  return promise;
+}
+
+function deleteVaultDatabase(userId: string): Promise<void> {
+  const { promise, resolve, reject } = Promise.withResolvers<void>();
+  let request: IDBOpenDBRequest;
+  try {
+    request = indexedDB.deleteDatabase(vaultDbName(userId));
+  } catch (error) {
+    return Promise.reject(error);
+  }
+  request.onsuccess = () => resolve();
+  request.onerror = () =>
+    reject(request.error ?? new Error("Failed to remove the per-account pending vault."));
+  request.onblocked = () => resolve();
+  return promise;
+}
+
+async function vaultMayExist(userId: string): Promise<boolean> {
+  if (typeof indexedDB === "undefined") return false;
+  if (typeof indexedDB.databases === "function") {
+    try {
+      const list = await indexedDB.databases();
+      const target = vaultDbName(userId);
+      return list.some((info) => info.name === target);
+    } catch {
+      return true;
+    }
+  }
+  return true;
+}
+
+interface PendingBundle {
+  ownerId: string | null;
+  workouts: LoggedWorkout[];
+  routines: RoutineTree[];
+  pendingRoutines: PendingRoutineEntry[];
+}
+
+async function readPendingBundleFromActive(db: IDBDatabase): Promise<PendingBundle> {
+  return transact(db, [META, WORKOUTS, PENDING, ROUTINES, PENDING_ROUTINES], "readonly", async (tx) => {
+    const owner = (await fromRequest<string | undefined>(tx.objectStore(META).get(OWNER_KEY))) ?? null;
+    const pendingWorkoutKeys = (await fromRequest(tx.objectStore(PENDING).getAllKeys())).map(String);
+    const workouts: LoggedWorkout[] = [];
+    for (const id of pendingWorkoutKeys) {
+      const doc = await fromRequest<LoggedWorkout | undefined>(tx.objectStore(WORKOUTS).get(id));
+      if (doc) workouts.push(doc);
+    }
+    const pendingRoutines = await fromRequest<PendingRoutineEntry[]>(
+      tx.objectStore(PENDING_ROUTINES).getAll(),
+    );
+    const routines: RoutineTree[] = [];
+    for (const entry of pendingRoutines) {
+      const doc = await fromRequest<RoutineTree | undefined>(tx.objectStore(ROUTINES).get(entry.id));
+      if (doc) routines.push(doc);
+    }
+    return { ownerId: owner, workouts, routines, pendingRoutines };
   });
+}
+
+/**
+ * Durably copies an account's unsynced workouts and routine edits into a
+ * per-account IndexedDB vault (`forte-pending:<userId>`) so signing out or
+ * switching accounts never silently discards pending work while keeping it
+ * invisible to signed-out users and every other account.
+ */
+async function stashPendingToVault(activeDb: IDBDatabase, ownerId: string): Promise<void> {
+  if (!ownerId || ownerId === LOCAL_GUEST_OWNER) return;
+  const bundle = await readPendingBundleFromActive(activeDb);
+  if (bundle.ownerId !== ownerId) return;
+  if (bundle.workouts.length === 0 && bundle.pendingRoutines.length === 0) return;
+
+  const vaultDb = await openVaultDatabase(ownerId);
+  try {
+    await transact(vaultDb, VAULT_STORE_NAMES, "readwrite", async (tx) => {
+      await fromRequest(tx.objectStore(META).put(ownerId, OWNER_KEY));
+      const wStore = tx.objectStore(WORKOUTS);
+      for (const workout of bundle.workouts) {
+        await fromRequest(wStore.put(workout, workout.id));
+      }
+      const rStore = tx.objectStore(ROUTINES);
+      for (const routine of bundle.routines) {
+        await fromRequest(rStore.put(routine, routine.id));
+      }
+      const prStore = tx.objectStore(PENDING_ROUTINES);
+      for (const entry of bundle.pendingRoutines) {
+        await fromRequest(prStore.put(entry, entry.id));
+      }
+    });
+  } finally {
+    vaultDb.close();
+  }
+}
+
+/**
+ * Restores any privately vaulted unsynced workouts/routines for `userId` into
+ * the active store, then removes the vault only after the active commit lands.
+ */
+async function restorePendingFromVault(activeDb: IDBDatabase, userId: string): Promise<void> {
+  if (!userId || userId === LOCAL_GUEST_OWNER) return;
+  if (!(await vaultMayExist(userId))) return;
+
+  const vaultDb = await openVaultDatabase(userId);
+  let vaultedWorkouts: LoggedWorkout[] = [];
+  let vaultedRoutines: RoutineTree[] = [];
+  let vaultedPendingRoutines: PendingRoutineEntry[] = [];
+  let vaultOwner: string | undefined;
+  try {
+    const readResult = await transact(vaultDb, VAULT_STORE_NAMES, "readonly", async (tx) => {
+      const owner = await fromRequest<string | undefined>(tx.objectStore(META).get(OWNER_KEY));
+      const workouts = await fromRequest<LoggedWorkout[]>(tx.objectStore(WORKOUTS).getAll());
+      const routines = await fromRequest<RoutineTree[]>(tx.objectStore(ROUTINES).getAll());
+      const pendingRoutines = await fromRequest<PendingRoutineEntry[]>(
+        tx.objectStore(PENDING_ROUTINES).getAll(),
+      );
+      return { owner, workouts, routines, pendingRoutines };
+    });
+    vaultOwner = readResult.owner;
+    vaultedWorkouts = readResult.workouts;
+    vaultedRoutines = readResult.routines;
+    vaultedPendingRoutines = readResult.pendingRoutines;
+  } finally {
+    vaultDb.close();
+  }
+
+  if (
+    vaultOwner === userId &&
+    (vaultedWorkouts.length > 0 || vaultedPendingRoutines.length > 0)
+  ) {
+    await transact(activeDb, [WORKOUTS, PENDING, ROUTINES, PENDING_ROUTINES], "readwrite", async (tx) => {
+      const wStore = tx.objectStore(WORKOUTS);
+      const pStore = tx.objectStore(PENDING);
+      for (const workout of vaultedWorkouts) {
+        const alreadyPending = await fromRequest<string | undefined>(pStore.get(workout.id));
+        if (!alreadyPending) {
+          await fromRequest(pStore.put(workout.id, workout.id));
+          await fromRequest(wStore.put(workout, workout.id));
+        }
+      }
+      const rStore = tx.objectStore(ROUTINES);
+      const prStore = tx.objectStore(PENDING_ROUTINES);
+      const routineById = new Map(vaultedRoutines.map((r) => [r.id, r]));
+      for (const entry of vaultedPendingRoutines) {
+        const alreadyPending = await fromRequest<PendingRoutineEntry | undefined>(
+          prStore.get(entry.id),
+        );
+        if (!alreadyPending) {
+          await fromRequest(prStore.put(entry, entry.id));
+          const tree = routineById.get(entry.id);
+          if (tree) await fromRequest(rStore.put(tree, tree.id));
+        }
+      }
+    });
+  }
+
+  // Delete vault only after the active store transaction committed cleanly.
+  await deleteVaultDatabase(userId).catch(() => {});
+}
+
+async function claimOwner(db: IDBDatabase, userId: string): Promise<boolean> {
+  const currentOwner = await transact(db, [META], "readonly", async (tx) =>
+    fromRequest<string | undefined>(tx.objectStore(META).get(OWNER_KEY)),
+  );
+
+  let ownerChanged = false;
+  if (currentOwner !== userId) {
+    if (currentOwner !== undefined && currentOwner !== LOCAL_GUEST_OWNER) {
+      // Preserve the previous account's unsynced work in its private vault before clearing.
+      await stashPendingToVault(db, currentOwner);
+    }
+    await transact(db, STORE_NAMES, "readwrite", async (tx) => {
+      if (currentOwner !== undefined) {
+        for (const name of STORE_NAMES) {
+          await fromRequest(tx.objectStore(name).clear());
+        }
+      }
+      await fromRequest(tx.objectStore(META).put(userId, OWNER_KEY));
+    });
+    ownerChanged = true;
+  }
+
+  // Restore any previously vaulted pending edits belonging strictly to `userId`.
+  await restorePendingFromVault(db, userId);
+  return ownerChanged;
 }
 
 function createStore(db: IDBDatabase): OfflineStore {
@@ -344,16 +540,48 @@ async function clearPrivateRouteCaches(): Promise<void> {
   );
 }
 
-export async function clearOfflineClientData(): Promise<void> {
+export async function clearOfflineClientData(options?: {
+  discardPending?: boolean;
+}): Promise<void> {
+  const discardPending = options?.discardPending ?? false;
   const operations: Promise<unknown>[] = [clearPrivateRouteCaches()];
   if (typeof indexedDB !== "undefined") {
     operations.push(
-      openDatabase().then((db) => serialized(() => createStore(db).clear())),
+      openDatabase().then((db) =>
+        serialized(async () => {
+          const owner = await transact(db, [META], "readonly", (tx) =>
+            fromRequest<string | undefined>(tx.objectStore(META).get(OWNER_KEY)),
+          );
+          if (owner && owner !== LOCAL_GUEST_OWNER) {
+            if (discardPending) {
+              await deleteVaultDatabase(owner);
+            } else {
+              await stashPendingToVault(db, owner);
+            }
+          }
+          await createStore(db).clear();
+        }),
+      ),
     );
   }
   const results = await Promise.allSettled(operations);
   for (const result of results) {
     if (result.status === "rejected") throw result.reason;
+  }
+}
+
+export async function readActivePendingCount(): Promise<number> {
+  if (typeof indexedDB === "undefined") return 0;
+  try {
+    const existing = await openExistingOfflineStore();
+    if (!existing) return 0;
+    const [pendingWorkouts, pendingRoutines] = await Promise.all([
+      existing.store.pendingWorkoutIds(),
+      existing.store.pendingRoutines(),
+    ]);
+    return pendingWorkouts.length + pendingRoutines.length;
+  } catch {
+    return 0;
   }
 }
 

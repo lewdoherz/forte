@@ -37,11 +37,10 @@ export function OfflineSyncBridge({ userId }: { userId: string }) {
     };
 
     const run = async (refreshIfDrained: boolean) => {
-      const beforePending = snapshot?.pendingCount ?? 0;
       const result = await syncOfflineData(userId);
       if (!active) return;
       setSnapshot(result);
-      if (refreshIfDrained && beforePending > 0 && result.pendingCount === 0) {
+      if (refreshIfDrained && (result.flushedCount ?? 0) > 0 && result.pendingCount === 0) {
         router.refresh();
       }
     };
@@ -76,6 +75,23 @@ export function OfflineSyncBridge({ userId }: { userId: string }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per userId
   }, [userId]);
+
+  useEffect(() => {
+    if (!online || !snapshot || snapshot.pendingCount === 0 || snapshot.status === "auth_required") {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        void syncOfflineData(userId).then((res) => {
+          setSnapshot(res);
+          if ((res.flushedCount ?? 0) > 0 && res.pendingCount === 0) {
+            router.refresh();
+          }
+        });
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [online, router, snapshot, userId]);
 
   const showBanner =
     !online ||

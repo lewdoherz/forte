@@ -26,6 +26,7 @@ export interface OfflineSyncSnapshot {
   pendingRoutineIds: string[];
   lastSyncedAt: string | null;
   error: string | null;
+  flushedCount?: number;
 }
 
 export const OFFLINE_SYNC_EVENT = "forte:offline-sync-status";
@@ -246,13 +247,22 @@ export async function flushOfflineQueue(store: OfflineStore): Promise<OfflineSyn
   };
 
   let hadFailure = false;
+  let flushedCount = 0;
   for (const r of data.routines ?? []) {
-    if (r.ok) await store.clearRoutinePending(r.id);
-    else hadFailure = true;
+    if (r.ok) {
+      await store.clearRoutinePending(r.id);
+      flushedCount += 1;
+    } else {
+      hadFailure = true;
+    }
   }
   for (const w of data.workouts ?? []) {
-    if (w.ok) await store.clearPending(w.id);
-    else hadFailure = true;
+    if (w.ok) {
+      await store.clearPending(w.id);
+      flushedCount += 1;
+    } else {
+      hadFailure = true;
+    }
   }
 
   if (!hadFailure) {
@@ -264,6 +274,7 @@ export async function flushOfflineQueue(store: OfflineStore): Promise<OfflineSyn
     ...finalSnap,
     status: finalSnap.pendingCount === 0 ? "synced" : hadFailure ? "error" : "idle",
     error: hadFailure ? "partial" : null,
+    flushedCount,
   };
   emitSyncSnapshot(result);
   return result;

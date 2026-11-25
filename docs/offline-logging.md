@@ -65,12 +65,22 @@ IndexedDB, one database per origin, hand-written (no new dependency):
   simply retried.
 - `meta` — the signed-in user id, and when the store was last synced.
 
-**Scoped and cleared by user.** The `meta` store records the owner id. Opening
-for a different owner clears every local workout before returning a store, and
-sign-out or account deletion clears the store explicitly. The private route
-cache follows the same lifecycle. Without both, the next person to use the
-device could see the previous user's training. Pending data is retained even when
-its successful-sync timestamp is absent; it is never an offline authorization grant.
+**Scoped and protected per user.** The `meta` store records the owner id.
+When signing out or switching accounts:
+- The active `forte-offline` database and all `forte-private-*` service-worker
+  caches are cleared so signed-out visitors and subsequent accounts never see
+  cached history, routines, catalog data, or private route HTML.
+- If the outgoing account has **unsynced pending workouts or routine edits**,
+  those pending records alone are durably vaulted into a per-account database
+  (`forte-pending:<userId>`) before the active store is cleared. No other
+  account can open, read, or upload that vault. When the originating account
+  signs back in, `prepareOfflineDataForUser` / `openOfflineStore` atomically
+  restores its vaulted items into `forte-offline`, removes the vault only after
+  commit, and `OfflineSyncBridge` reconciles them idempotently with the server.
+- Permanent account deletion (`Delete account`) passes `discardPending: true`
+  and erases both `forte-offline` and the account's pending vault.
+Pending data is retained across session expiry (`401`), sign-out, and account
+switching; it is never an offline authorization grant.
 
 ## Server changes
 

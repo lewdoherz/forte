@@ -102,6 +102,9 @@ export const account = {
   "account.danger.offlineError": "无法清除离线训练数据，账户删除已中止。",
 
   "account.signOut.description": "结束此设备上的本次会话，并返回登录页。",
+  "account.signOut.pendingPreserved":
+    "此设备上有 {count} 项未同步更改，退出后会仅为此账户私密保留，重新登录后自动同步。",
+  "account.signOut.syncNow": "立即同步",
 
   "account.errors.invalidInput": "输入无效。",
   "account.errors.saveFailed": "无法保存设置。",
