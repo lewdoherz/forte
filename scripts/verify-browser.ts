@@ -512,4 +512,4 @@ try {
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
-if (failures > 0) process.exit(1);
+process.exit(failures > 0 ? 1 : 0);
