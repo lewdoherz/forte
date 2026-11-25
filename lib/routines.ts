@@ -286,6 +286,60 @@ export async function createRoutine(db: Kysely<Database>, userId: string, input:
   });
 }
 
+/**
+ * Idempotent upsert for offline-created or offline-edited routines using a
+ * client-generated UUID. Replaying the same create or edit produces one row
+ * and rejects any id belonging to a different owner.
+ */
+export async function upsertRoutineWithId(
+  db: Kysely<Database>,
+  userId: string,
+  id: string,
+  input: RoutineInput,
+) {
+  return db.transaction().execute(async (trx) => {
+    const existing = await trx
+      .selectFrom("routine")
+      .select(["id", "owner_id"])
+      .where("id", "=", id)
+      .forUpdate()
+      .executeTakeFirst();
+
+    if (existing && existing.owner_id !== userId) {
+      throw new Error("not_authorized");
+    }
+
+    await assertExercisesVisible(trx, userId, input.exercises.map((e) => e.template_id));
+
+    let routine: Routine;
+    if (existing) {
+      routine = await trx
+        .updateTable("routine")
+        .set({ title: input.title, notes: input.notes ?? null })
+        .where("id", "=", id)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      await trx.deleteFrom("routine_exercise").where("routine_id", "=", id).execute();
+    } else {
+      routine = await trx
+        .insertInto("routine")
+        .values({
+          id,
+          owner_id: userId,
+          folder_id: null,
+          title: input.title,
+          notes: input.notes ?? null,
+          position: 0,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    }
+
+    await insertExercises(trx, routine.id, input.exercises);
+    return routine;
+  });
+}
+
 export async function updateRoutine(
   db: Kysely<Database>,
   userId: string,

@@ -18,6 +18,7 @@ export default async function NewRoutinePage() {
     primary_muscle: e.primary_muscle,
     secondary_muscles: e.secondary_muscles,
     exercise_type: e.exercise_type,
+    equipment: e.equipment,
   }));
 
   return (

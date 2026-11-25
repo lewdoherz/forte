@@ -211,6 +211,15 @@ functioning app rather than a half-migrated one.
 6. **Acceptance test in a real browser.** Offline mode, log sets, reload while
    offline, reconnect, confirm the database matches and the indicator clears.
 
+## PWA first-online-visit checklist
+
+For the installed PWA to cold-launch offline in airplane mode, the first online visit after sign-in must complete:
+1. Service worker registration (`/sw.js`, cache family `forte-static-v4` / `forte-private-v4`).
+2. `OfflineSyncBridge` bootstrap (`GET /api/offline/bootstrap`), which populates IndexedDB (`forte-offline` v2) with the account's exercise catalog, routines, active workout, recent history, and previous performances.
+3. Static offline shell warming (`warm-offline-shell` message), which fetches `/offline-app` without credentials, caches all `/_next/static/*` JS/CSS chunks it references, and caches public `/exercise-media/thumbnails/*.jpg` assets.
+
+Once those complete (automatically within seconds of signing in online), closing Forte completely, enabling airplane mode, and launching from the app icon serves `/offline-app` from `forte-static-v4` and boots entirely from account-scoped IndexedDB.
+
 ## Typed logger state and timers
 
 New sync documents send `set_type`, duration, distance and the set's metric

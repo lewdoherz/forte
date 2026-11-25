@@ -17,7 +17,7 @@ export function NavigationIcon({ name, className }: { name: NavigationIconName; 
       {name === "history" ? <><path d="M3 11a9 9 0 1 1 2 7M3 4v7h7" /><path d="M12 7v5l3 2" /></> : null}
       {name === "progress" ? <><path d="M4 5v14h16" /><path d="m8 15 4-5 3 2 5-6" /></> : null}
       {name === "exercises" ? <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></> : null}
-      {name === "settings" ? <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" fill="#17221c" /><circle cx="15" cy="17" r="3" fill="#17221c" /></> : null}
+      {name === "settings" ? <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" fill="var(--bg-surface)" /><circle cx="15" cy="17" r="3" fill="var(--bg-surface)" /></> : null}
     </svg>
   );
 }
@@ -43,13 +43,22 @@ export function BottomNav() {
   const { t } = useI18n();
 
   return (
-    <nav aria-label={t("nav.primary")} className="fixed inset-x-0 bottom-0 z-40 border-t border-[#34463a] bg-[#0d1512]/95 pb-[var(--app-safe-bottom)] pl-[var(--app-safe-left)] pr-[var(--app-safe-right)] backdrop-blur sm:hidden">
+    <nav
+      aria-label={t("nav.primary")}
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border-subtle)] bg-[var(--nav-backdrop)] pb-[var(--app-safe-bottom)] pl-[var(--app-safe-left)] pr-[var(--app-safe-right)] backdrop-blur sm:hidden"
+    >
       <ul className="mx-auto flex max-w-md">
         {PRIMARY_NAV.map(({ href, label, icon }) => {
           const active = isNavigationActive(pathname, href);
           return (
             <li key={href} className="min-w-0 flex-1">
-              <Link href={href} aria-current={active ? "page" : undefined} className={`flex min-h-16 flex-col items-center justify-center gap-1 px-2 py-2 text-xs font-medium ${active ? "text-[#d6f077]" : "text-[#b0c0b4]"} focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[#d6f077]`}>
+              <Link
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={`flex min-h-16 flex-col items-center justify-center gap-1 px-2 py-2 text-xs font-medium ${
+                  active ? "text-[var(--accent-text)]" : "text-[var(--text-muted)]"
+                } focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--accent-text)]`}
+              >
                 <NavigationIcon name={icon} className="h-6 w-6" />
                 <span className="max-w-full truncate">{t(label)}</span>
               </Link>

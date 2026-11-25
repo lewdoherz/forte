@@ -89,14 +89,14 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`w-full rounded-2xl border p-4 shadow-2xl ${variant === "training" ? "max-h-full overflow-y-auto border-[#34463a] bg-[#17221c] text-[#eef5ef]" : "border-zinc-200 bg-white"} ${panelClassName}`}
+        className={`w-full rounded-2xl border p-4 shadow-2xl ${variant === "training" ? "max-h-full overflow-y-auto border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-primary)]" : "border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-primary)]"} ${panelClassName}`}
       >
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button
             type="button"
             onClick={onClose}
-            className={variant === "training" ? "min-h-11 rounded-xl px-3 text-sm text-[#b0c0b4]" : "min-h-11 rounded-md px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100"}
+            className="min-h-11 rounded-xl px-3 text-sm text-[var(--text-muted)] hover:bg-[var(--bg-surface-hover)]"
           >
             {t("common.close")}
           </button>

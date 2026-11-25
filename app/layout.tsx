@@ -1,19 +1,15 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { cookies } from "next/headers";
 import "./globals.css";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { I18nProvider } from "@/lib/i18n/context";
 import { getI18n, htmlLang } from "@/lib/i18n/server";
+import { isThemePreference, THEME_BOOTSTRAP_SCRIPT, THEME_COOKIE } from "@/lib/theme";
 
 /**
- * The language for the document is resolved here, on the server, from the
- * reader's stored choice: `lang`, the metadata and every server-rendered string
- * below must agree on the first byte, or a Chinese reader sees an English page
- * that translates itself after hydration.
- *
- * Reading a request header makes this layout dynamic, and therefore the whole
- * tree with it. That is the accepted cost of a correct first paint; the only
- * routes it changes are the static auth/PWA ones.
+ * The language and appearance for the document are resolved here on the server
+ * from the reader's stored choices so the first byte agrees with hydrated state.
  */
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getI18n();
@@ -28,14 +24,25 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#18181b",
+  themeColor: "#0d1512",
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const { locale, messages } = await getI18n();
+  const [{ locale, messages }, cookieStore] = await Promise.all([getI18n(), cookies()]);
+  const rawTheme = cookieStore.get(THEME_COOKIE)?.value;
+  const themePreference = isThemePreference(rawTheme) ? rawTheme : "system";
+  const initialDataTheme = themePreference === "light" ? "light" : "dark";
 
   return (
-    <html lang={htmlLang(locale)}>
+    <html
+      lang={htmlLang(locale)}
+      data-theme={initialDataTheme}
+      data-theme-preference={themePreference}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
+      </head>
       <body className="min-h-screen bg-zinc-50 text-zinc-900 antialiased">
         <I18nProvider locale={locale} messages={messages}>
           {children}

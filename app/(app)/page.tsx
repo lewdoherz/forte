@@ -175,20 +175,20 @@ export default async function DashboardPage() {
       <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <section
           aria-labelledby="next-workout-heading"
-          className="flex min-w-0 flex-col justify-between rounded-2xl bg-zinc-900 p-5 text-white sm:p-6 [&_a]:focus-visible:ring-2 [&_a]:focus-visible:ring-white [&_a]:focus-visible:ring-offset-4 [&_a]:focus-visible:ring-offset-zinc-900 [&_button]:focus-visible:ring-2 [&_button]:focus-visible:ring-white [&_button]:focus-visible:ring-offset-4 [&_button]:focus-visible:ring-offset-zinc-900"
+          className="training-hero flex min-w-0 flex-col justify-between rounded-2xl p-5 sm:p-6 [&_a]:focus-visible:ring-2 [&_a]:focus-visible:ring-white [&_a]:focus-visible:ring-offset-4 [&_button]:focus-visible:ring-2 [&_button]:focus-visible:ring-white [&_button]:focus-visible:ring-offset-4"
         >
           <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
+            <p className="training-hero-muted text-xs font-semibold uppercase tracking-widest">
               {t(activeWorkout ? "dashboard.hero.eyebrowActive" : "dashboard.hero.eyebrowIdle")}
             </p>
             <h2 id="next-workout-heading" className="mt-3 break-words text-2xl font-semibold tracking-tight sm:text-3xl">
               {activeWorkout ? activeWorkout.title : t("dashboard.hero.titleIdle")}
             </h2>
-            <p className="mt-3 max-w-md text-sm leading-relaxed text-zinc-300">
+            <p className="training-hero-muted mt-3 max-w-md text-sm leading-relaxed">
               {t(activeWorkout ? "dashboard.hero.bodyActive" : "dashboard.hero.bodyIdle")}
             </p>
             {activeWorkout ? (
-              <p className="mt-3 text-xs text-zinc-400">
+              <p className="training-hero-muted mt-3 text-xs">
                 {t("dashboard.hero.started", {
                   date: formatDateTime(locale, activeWorkout.started_at, timeZone),
                 })}
@@ -201,7 +201,7 @@ export default async function DashboardPage() {
             {activeWorkout ? (
               <Link
                 href={`/workouts/${activeWorkout.id}`}
-                className="inline-flex min-h-12 items-center justify-center rounded-lg bg-white px-5 text-sm font-semibold text-zinc-900 hover:bg-zinc-200"
+                className="training-action inline-flex min-h-12 items-center justify-center rounded-lg px-5 text-sm font-semibold"
               >
                 {t("dashboard.hero.resume")} <span aria-hidden="true" className="ml-3">→</span>
               </Link>
@@ -209,7 +209,7 @@ export default async function DashboardPage() {
               <form action={startEmptyWorkoutFormAction}>
                 <button
                   type="submit"
-                  className="inline-flex min-h-12 items-center justify-center rounded-lg bg-white px-5 text-sm font-semibold text-zinc-900 hover:bg-zinc-200"
+                  className="training-action inline-flex min-h-12 items-center justify-center rounded-lg px-5 text-sm font-semibold"
                 >
                   {t("dashboard.hero.startEmpty")} <span aria-hidden="true" className="ml-3">→</span>
                 </button>
@@ -217,7 +217,7 @@ export default async function DashboardPage() {
             )}
             <Link
               href="/routines"
-              className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-zinc-200 underline decoration-zinc-500 underline-offset-4 hover:text-white"
+              className="training-hero-muted inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-medium underline underline-offset-4 hover:text-white"
             >
               {t("dashboard.hero.chooseRoutine")}
             </Link>

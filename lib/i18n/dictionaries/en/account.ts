@@ -63,6 +63,37 @@ export const account = {
   "account.sessions.thisDevice": "This device",
   "account.sessions.meta": "{address} · started {started} · expires {expires}",
   "account.sessions.signOutOthers": "Sign out everywhere else",
+  "account.sessions.freshRequired":
+    "For your security, sign in again to view or sign out other devices. Your current session on this device remains active.",
+  "account.sessions.unavailable":
+    "Could not load the full device list right now. Try again when connected.",
+  "account.methods.unavailable":
+    "Could not load linked sign-in methods right now. Try again when connected.",
+
+  "account.preferences.title": "Device preferences",
+  "account.preferences.description":
+    "Stored on this device and available offline.",
+  "account.appearance.title": "Appearance",
+  "account.appearance.description": "Choose how forte looks on this device.",
+  "account.appearance.system": "System",
+  "account.appearance.light": "Light",
+  "account.appearance.dark": "Dark",
+
+  "account.rest.title": "Rest timer",
+  "account.rest.description":
+    "Default rest duration and completion alerts for active workouts. Stored on this device and available offline.",
+  "account.rest.defaultDuration": "Default rest duration",
+  "account.rest.sound": "Completion sound",
+  "account.rest.soundHint": "Play a chime when the rest timer reaches zero.",
+  "account.rest.vibration": "Completion vibration",
+  "account.rest.vibrationHint": "Vibrate when the rest timer finishes, where supported.",
+  "account.rest.preview": "Preview alert",
+  "account.rest.previewed": "Alert preview triggered.",
+  "account.rest.previewMuted": "Enable sound or vibration to preview an alert.",
+
+  "account.offline.banner":
+    "You are offline. Appearance and rest-timer preferences work below; account actions need an internet connection.",
+  "account.offline.requiresConnection": "Requires an internet connection.",
 
   "account.data.title": "Your data",
   "account.data.description":

@@ -4,9 +4,11 @@ import {
   advanceRestCountdown,
   dismissRestCountdown,
   emptyRestCountdown,
+  markRestCountdownAlerted,
   parseRestCountdown,
   reconcileRestCountdown,
   restCountdownStorageKey,
+  shouldTriggerRestAlert,
   type RestCountdownInput,
 } from "../lib/rest-countdown";
 
@@ -78,4 +80,26 @@ assert.notEqual(restCountdownStorageKey("workout", "user-1"), restCountdownStora
 assert.notEqual(restCountdownStorageKey("workout-1", "user"), restCountdownStorageKey("workout-2", "user"));
 assert.deepEqual(parseRestCountdown("{invalid"), emptyRestCountdown());
 assert.deepEqual(parseRestCountdown(JSON.stringify({ version: 1, current: {}, seenKeys: [] })), emptyRestCountdown());
+
+// Fire-once alert assertions: natural expiry, skip, -15s / +15s adjustment, reload/resume.
+assert.equal(shouldTriggerRestAlert(running), false, "running timer must not trigger completion alert");
+assert.equal(shouldTriggerRestAlert(skipped), false, "skipped timer must never trigger completion alert");
+assert.equal(shouldTriggerRestAlert(finished), true, "natural expiry triggers completion alert");
+const alerted = markRestCountdownAlerted(finished);
+assert.equal(shouldTriggerRestAlert(alerted), false, "alerted timer must never fire twice");
+const parsedAlerted = parseRestCountdown(JSON.stringify(alerted));
+assert.equal(shouldTriggerRestAlert(parsedAlerted), false, "alerted key survives serialization");
+const minusExpired = adjustRestCountdown(running, -15, start + 80_000);
+assert.equal(shouldTriggerRestAlert(minusExpired), true, "-15s crossing zero triggers alert once");
+assert.equal(shouldTriggerRestAlert(markRestCountdownAlerted(minusExpired)), false, "-15s expiry fires only once");
+const plusExtended = adjustRestCountdown(running, 15, start + 80_000);
+assert.equal(shouldTriggerRestAlert(plusExtended), false, "+15s extension stays running without alerting");
+assert.equal(
+  shouldTriggerRestAlert(advanceRestCountdown(plusExtended, start + 105_000)),
+  true,
+  "extended timer alerts once when new deadline expires",
+);
+const resumedAfterExpiry = reconcileRestCountdown(parseRestCountdown(JSON.stringify(running)), input, start + 95_000, true);
+assert.equal(shouldTriggerRestAlert(resumedAfterExpiry), false, "stale expired timer on resume must not alert");
+
 console.log("Rest countdown assertions passed.");

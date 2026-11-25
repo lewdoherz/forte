@@ -16,18 +16,21 @@ export default async function ProfilePage() {
     <main className="training mx-auto min-w-0 max-w-3xl px-4 py-6 sm:px-6 sm:py-10">
       <header className="mb-6">
         <h1 className="text-3xl font-semibold tracking-tight">{t("nav.profile")}</h1>
-        <p className="mt-2 text-sm text-[#b0c0b4]">{t("common.profileHub.subtitle")}</p>
+        <p className="mt-2 text-sm text-[var(--text-muted)]">{t("common.profileHub.subtitle")}</p>
       </header>
       <ul className="space-y-3">
         {SHORTCUTS.map(({ href, title, description, icon }) => (
           <li key={href}>
-            <Link href={href} className="flex min-h-20 min-w-0 items-center gap-4 rounded-2xl border border-[#34463a] bg-[#17221c] p-4 hover:border-[#50705b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d6f077]">
-              <NavigationIcon name={icon} className="h-6 w-6 shrink-0 text-[#d6f077]" />
+            <Link
+              href={href}
+              className="training-panel flex min-h-20 min-w-0 items-center gap-4 rounded-2xl p-4 hover:border-[var(--border-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-text)]"
+            >
+              <NavigationIcon name={icon} className="h-6 w-6 shrink-0 text-[var(--accent-text)]" />
               <span className="min-w-0 flex-1">
                 <span className="block text-base font-semibold">{t(title)}</span>
-                <span className="mt-1 block break-words text-sm text-[#b0c0b4]">{t(description)}</span>
+                <span className="mt-1 block break-words text-sm text-[var(--text-muted)]">{t(description)}</span>
               </span>
-              <span aria-hidden="true" className="shrink-0 text-[#b0c0b4]">→</span>
+              <span aria-hidden="true" className="shrink-0 text-[var(--text-muted)]">→</span>
             </Link>
           </li>
         ))}

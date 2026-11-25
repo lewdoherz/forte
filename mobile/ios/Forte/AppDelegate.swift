@@ -1,8 +1,10 @@
 import UIKit
 import WebKit
 import AuthenticationServices
+import AudioToolbox
 import CryptoKit
 import Security
+import UserNotifications
 
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -16,7 +18,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 }
 
-final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegate, ASWebAuthenticationPresentationContextProviding {
+final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, ASWebAuthenticationPresentationContextProviding {
+    private static let restNotificationId = "com.lewdoherz.forte.rest-timer"
+    private static let offlineStartPath = "/offline-start"
+
     private var web: WKWebView!
     private var errorPanel: UIStackView!
     private var lastPage: URL!
@@ -33,7 +38,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(white: 0.095, alpha: 1)
+        view.backgroundColor = UIColor(red: 13.0/255.0, green: 21.0/255.0, blue: 18.0/255.0, alpha: 1)
         guard let host = Bundle.main.object(forInfoDictionaryKey: "ForteHost") as? String,
               let url = URL(string: "https://" + host), url.host == host,
               url.user == nil, url.password == nil, url.port == nil, url.path.isEmpty else {
@@ -46,6 +51,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         config.limitsNavigationsToAppBoundDomains = true
         config.applicationNameForUserAgent = "ForteIOS/1"
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        config.userContentController.add(self, name: "forteRestTimer")
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -78,18 +84,77 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         web.allowsBackForwardNavigationGestures = true
         reloadPage()
     }
+
     private func safeHTTPS(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "https" && url.host != nil && url.user == nil && url.password == nil
     }
+
     private func sameOrigin(_ url: URL) -> Bool {
         safeHTTPS(url) && url.host?.lowercased() == origin.host?.lowercased() && (url.port == nil || url.port == 443)
     }
+
     @objc private func reloadPage() {
         errorPanel.isHidden = true
         web.isHidden = false
         web.load(URLRequest(url: lastPage))
     }
+
     private func showError() { web.isHidden = true; errorPanel.isHidden = false }
+
+    private func showFreshOfflineShell() {
+        errorPanel.isHidden = true
+        web.isHidden = false
+        let base = origin.appendingPathComponent("offline-start")
+        web.loadHTMLString(Self.freshOfflineHTML, baseURL: base)
+    }
+
+    // Tightly scoped non-token message handler for rest-timer sound/vibration/background notifications only.
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "forteRestTimer",
+              let frameURL = message.frameInfo.request.url, sameOrigin(frameURL),
+              let body = message.body as? [String: Any],
+              let action = body["action"] as? String else { return }
+
+        let center = UNUserNotificationCenter.current()
+        if action == "cancel" {
+            center.removePendingNotificationRequests(withIdentifiers: [Self.restNotificationId])
+            center.removeDeliveredNotifications(withIdentifiers: [Self.restNotificationId])
+            return
+        }
+        if action == "preview" {
+            let sound = (body["sound"] as? Bool) ?? true
+            let vibrate = (body["vibrate"] as? Bool) ?? true
+            if sound { AudioServicesPlaySystemSound(1007) }
+            if vibrate {
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.success)
+                AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+            }
+            return
+        }
+        if action == "schedule" {
+            center.removePendingNotificationRequests(withIdentifiers: [Self.restNotificationId])
+            let sound = (body["sound"] as? Bool) ?? true
+            let vibrate = (body["vibrate"] as? Bool) ?? true
+            guard sound || vibrate,
+                  let triggerAtMs = body["triggerAtMs"] as? Double else { return }
+            let delay = (triggerAtMs / 1000.0) - Date().timeIntervalSince1970
+            guard delay > 0.5 else { return }
+            let title = (body["title"] as? String) ?? "Rest finished"
+            let subtitle = (body["body"] as? String) ?? "Ready for your next set."
+            center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                guard granted else { return }
+                let content = UNMutableNotificationContent()
+                content.title = title
+                content.body = subtitle
+                if sound { content.sound = .default }
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)
+                let req = UNNotificationRequest(identifier: Self.restNotificationId, content: content, trigger: trigger)
+                center.add(req, withCompletionHandler: nil)
+            }
+        }
+    }
+
     private func randomToken() -> String? {
         var bytes = Data(count: 32)
         let result = bytes.withUnsafeMutableBytes { buffer in
@@ -97,19 +162,23 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         }
         return result == errSecSuccess ? base64URL(bytes) : nil
     }
+
     private func base64URL(_ data: Data) -> String {
         data.base64EncodedString().replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
+
     private func validToken(_ value: String) -> Bool {
         value.utf8.count == 43 && value.utf8.allSatisfy {
             (65...90).contains($0) || (97...122).contains($0) ||
             (48...57).contains($0) || $0 == 45 || $0 == 95
         }
     }
+
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         view.window!
     }
+
     private func finishAuth(showFailure: Bool, notifyPage: Bool = true) {
         authTimeout?.cancel()
         authTimeout = nil
@@ -130,6 +199,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             present(alert, animated: true)
         }
     }
+
     private func startAuth(_ url: URL) {
         guard pendingAuth == nil else { return }
         guard view.window != nil,
@@ -176,6 +246,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         DispatchQueue.main.asyncAfter(deadline: .now() + 300, execute: timeout)
         if !session.start() { finishAuth(showFailure: true) }
     }
+
     private func receiveAuth(_ url: URL, state: String) {
         guard let pending = pendingAuth, pending.state == state, pending.expires > Date(),
               url.scheme == "forte", url.host == "auth", url.path == "/callback",
@@ -231,7 +302,6 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
                     self.finishAuth(showFailure: true)
                     return
                 }
-                // Once the valid cookie is being committed, a timeout must not abandon the installation.
                 self.authTimeout?.cancel()
                 self.authTimeout = nil
                 self.web.configuration.websiteDataStore.httpCookieStore.setCookie(cookie) { [weak self] in
@@ -245,6 +315,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             }
         }.resume()
     }
+
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { decisionHandler(.cancel); return }
         if sameOrigin(url) {
@@ -271,21 +342,48 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             }
         }
     }
+
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        if let url = webView.url, sameOrigin(url) { lastPage = url }
+        if let url = webView.url, sameOrigin(url), url.path != Self.offlineStartPath { lastPage = url }
     }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        if (error as NSError).code != NSURLErrorCancelled { showError() }
+        let code = (error as NSError).code
+        if code == NSURLErrorCancelled { return }
+        if [NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost, NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost, NSURLErrorTimedOut].contains(code) {
+            showFreshOfflineShell()
+        } else {
+            showError()
+        }
     }
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         if (error as NSError).code != NSURLErrorCancelled { showError() }
     }
+
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if response.isForMainFrame, let http = response.response as? HTTPURLResponse, http.statusCode >= 500 {
             showError(); decisionHandler(.cancel)
         } else { decisionHandler(.allow) }
     }
+
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { showError() }
+
+    private static let freshOfflineHTML = """
+    <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <title>forte — offline</title>
+    <style>
+      body{margin:0;padding:1.5rem;background:#0d1512;color:#eef5ef;font-family:-apple-system,system-ui,sans-serif}
+      main{max-width:28rem;margin:2rem auto;display:grid;gap:1rem}
+      .card{background:#17221c;border:1px solid #34463a;border-radius:1rem;padding:1rem}
+      .btn{display:block;width:100%;min-height:2.75rem;border-radius:.75rem;border:0;background:#d6f077;color:#142017;font-weight:700;font-size:.95rem}
+      p{color:#b0c0b4;line-height:1.5;font-size:.9rem}
+    </style></head><body><main><div class="card">
+      <h1 style="margin:0 0 .5rem">forte</h1>
+      <p>This device has not completed first-time online setup yet. Connect once and sign in to sync your routines, exercises, and history for full offline use.</p>
+      <button class="btn" onclick="location.assign(location.origin + '/')">Connect &amp; sign in</button>
+    </div></main></body></html>
+    """
 }
 
 // The one-time code and verifier must never follow an HTTP redirect.

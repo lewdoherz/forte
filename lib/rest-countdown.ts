@@ -10,6 +10,8 @@ export interface RestCountdownState {
   /** A high-water mark prevents undo from reviving an older completed set. */
   latestAnchorTime: number | null;
   seenKeys: string[];
+  /** Keys for which completion alerts have already fired; guarantees fire-once. */
+  alertedKeys?: string[];
   current: RestCountdown | null;
 }
 
@@ -22,7 +24,7 @@ export interface RestCountdownInput {
 }
 
 export function emptyRestCountdown(): RestCountdownState {
-  return { version: 1, latestAnchorTime: null, seenKeys: [], current: null };
+  return { version: 1, latestAnchorTime: null, seenKeys: [], alertedKeys: [], current: null };
 }
 
 export function restCountdownStorageKey(workoutId: string, userId?: string): string {
@@ -43,6 +45,10 @@ export function parseRestCountdown(raw: string | null): RestCountdownState {
       !Array.isArray(state.seenKeys) ||
       !state.seenKeys.every((key: unknown) => typeof key === "string")
     ) return emptyRestCountdown();
+    const alertedKeys =
+      Array.isArray(state.alertedKeys) && state.alertedKeys.every((k: unknown) => typeof k === "string")
+        ? (state.alertedKeys as string[])
+        : [];
     let current: RestCountdown | null = null;
     if (state.current !== null) {
       if (!state.current || typeof state.current !== "object") return emptyRestCountdown();
@@ -64,6 +70,7 @@ export function parseRestCountdown(raw: string | null): RestCountdownState {
       version: 1,
       latestAnchorTime: state.latestAnchorTime,
       seenKeys: state.seenKeys,
+      alertedKeys,
       current,
     };
   } catch {
@@ -74,6 +81,24 @@ export function parseRestCountdown(raw: string | null): RestCountdownState {
 export function dismissRestCountdown(state: RestCountdownState): RestCountdownState {
   if (!state.current || state.current.phase === "dismissed") return state;
   return { ...state, current: { ...state.current, phase: "dismissed" } };
+}
+
+/** Whether a completion alert should fire for the active finished timer (once per timer key). */
+export function shouldTriggerRestAlert(state: RestCountdownState): boolean {
+  if (state.current?.phase !== "finished") return false;
+  const alerted = state.alertedKeys ?? [];
+  return !alerted.includes(state.current.key);
+}
+
+/** Records that the completion alert for the current timer has fired so it never replays. */
+export function markRestCountdownAlerted(state: RestCountdownState): RestCountdownState {
+  if (!state.current) return state;
+  const alerted = state.alertedKeys ?? [];
+  if (alerted.includes(state.current.key)) return state;
+  return {
+    ...state,
+    alertedKeys: [...alerted, state.current.key],
+  };
 }
 
 /** Reconcile set identity, never render time or a fresh duration, with the dock. */
@@ -110,6 +135,7 @@ export function reconcileRestCountdown(
     version: 1,
     latestAnchorTime: Math.max(state.latestAnchorTime ?? anchorTime, anchorTime),
     seenKeys: [...state.seenKeys, key],
+    alertedKeys: state.alertedKeys ?? [],
     current: { key, anchorId, deadline, phase: duration > 0 && deadline > now ? "running" : "dismissed" },
   };
 }

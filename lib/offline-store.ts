@@ -1,68 +1,107 @@
+import type { ExerciseType, RoutineTree } from "@/schema/types";
 import type { LoggedWorkout } from "@/lib/workout-sync";
+import type { PreviousPerformance } from "@/lib/previous-performance";
+import type { RoutineInput } from "@/lib/routines";
 
 /**
- * Offline store for the active workout document.
+ * Account-scoped offline store in IndexedDB (`forte-offline`, v2).
  *
- * One IndexedDB database per origin, written by hand because the feature does
- * not justify a dependency. The database belongs to exactly one user: the owner
- * id is recorded in `meta` when the store is opened, and opening for a
- * different user clears the previous user's records rather than serving them.
- * Without that, the next person on the device would see someone else's training
- * — the worst failure this feature can have.
- *
- * IndexedDB stores structured clones, so `Date` fields survive the round trip
- * as `Date`; there is no serialisation layer here.
+ * One IndexedDB database per origin. The database belongs to exactly one user:
+ * `meta.owner_id` records the owner, and opening for a different user atomically
+ * clears every store and private route cache before returning. Re-authenticating
+ * as the same user after session expiry preserves all pending work.
  */
 
 const DB_NAME = "forte-offline";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
-/**
- * Private route snapshots use their own cache family. Static assets are safe to
- * keep across accounts; rendered workout HTML is not.
- *
- * Kept in step with `PRIVATE_CACHE_PREFIX` in `public/sw.js`.
- */
 const PRIVATE_CACHE_PREFIX = "forte-private-";
 const CLEAR_PRIVATE_CACHE_MESSAGE = "clear-private-cache";
+const CACHE_PRIVATE_ROUTE_MESSAGE = "cache-private-route";
+const WARM_OFFLINE_SHELL_MESSAGE = "warm-offline-shell";
 
-/** The active workout documents, keyed by workout id. */
 const WORKOUTS = "workouts";
-/** Workout ids with unsynced local changes; presence means pending. */
 const PENDING = "pending";
-/** Single-user bookkeeping: the owning user id and the last sync timestamp. */
 const META = "meta";
+const ROUTINES = "routines";
+const PENDING_ROUTINES = "pending_routines";
+const CATALOG = "catalog";
 
 const OWNER_KEY = "owner_id";
 const SYNCED_KEY = "last_synced_at";
+const CATALOG_KEY = "snapshot";
 
-const STORE_NAMES = [WORKOUTS, PENDING, META];
+const STORE_NAMES = [WORKOUTS, PENDING, META, ROUTINES, PENDING_ROUTINES, CATALOG];
+
+export const LOCAL_GUEST_OWNER = "local-guest";
+
+export interface OfflineCatalogExercise {
+  id: string;
+  slug: string;
+  title: string;
+  primary_muscle: string;
+  secondary_muscles: string[];
+  equipment: string;
+  exercise_type: ExerciseType;
+  how_to: string | null;
+  is_custom: boolean;
+}
+
+export interface OfflineVocabularyEntry {
+  code: string;
+  display_name: string;
+}
+
+export interface OfflineProfileSummary {
+  id: string;
+  email: string;
+  displayName: string;
+  timeZone: string;
+  locale: string;
+}
+
+export interface OfflineCatalogSnapshot {
+  profile: OfflineProfileSummary;
+  muscles: OfflineVocabularyEntry[];
+  equipment: OfflineVocabularyEntry[];
+  exercises: OfflineCatalogExercise[];
+  previousPerformances: Record<string, PreviousPerformance>;
+  cachedAt: string;
+}
+
+export interface PendingRoutineEntry {
+  id: string;
+  op: "upsert" | "delete";
+  input?: RoutineInput;
+  updatedAt: string;
+}
 
 export interface OfflineStore {
+  ownerId(): Promise<string | null>;
   readWorkout(workoutId: string): Promise<LoggedWorkout | undefined>;
+  listWorkouts(): Promise<LoggedWorkout[]>;
   writeWorkout(workout: LoggedWorkout): Promise<void>;
   deleteWorkout(workoutId: string): Promise<void>;
   markPending(workoutId: string): Promise<void>;
   clearPending(workoutId: string): Promise<void>;
   pendingWorkoutIds(): Promise<string[]>;
+  readRoutine(routineId: string): Promise<RoutineTree | undefined>;
+  listRoutines(): Promise<RoutineTree[]>;
+  writeRoutine(routine: RoutineTree): Promise<void>;
+  deleteRoutine(routineId: string): Promise<void>;
+  markRoutinePending(entry: PendingRoutineEntry): Promise<void>;
+  clearRoutinePending(routineId: string): Promise<void>;
+  pendingRoutines(): Promise<PendingRoutineEntry[]>;
+  readCatalog(): Promise<OfflineCatalogSnapshot | undefined>;
+  writeCatalog(snapshot: OfflineCatalogSnapshot): Promise<void>;
   lastSyncedAt(): Promise<string | null>;
   setLastSyncedAt(iso: string): Promise<void>;
   clear(): Promise<void>;
 }
 
-/**
- * The one cached connection. Opening is idempotent because a page with several
- * call sites would otherwise hold several connections, which also blocks
- * version upgrades until every tab closes.
- */
 let connection: Promise<IDBDatabase> | null = null;
-/**
- * Serialises ownership checks, so two concurrent opens cannot interleave a read
- * of the owner with another call's clear.
- */
 let ownerGate: Promise<unknown> = Promise.resolve();
 
-/** Promisifies a single request; transaction completion is handled separately. */
 function fromRequest<T>(request: IDBRequest<T>): Promise<T> {
   const { promise, resolve, reject } = Promise.withResolvers<T>();
   request.onsuccess = () => resolve(request.result);
@@ -70,11 +109,6 @@ function fromRequest<T>(request: IDBRequest<T>): Promise<T> {
   return promise;
 }
 
-/**
- * Runs `run` inside one transaction and resolves when that transaction commits,
- * not merely when its last request succeeds. Rejection aborts the transaction so
- * a partial write is never committed.
- */
 function transact<T>(
   db: IDBDatabase,
   names: string[],
@@ -87,8 +121,6 @@ function transact<T>(
   try {
     tx = db.transaction(names, mode);
   } catch (error) {
-    // A connection closed by a version change throws here rather than firing an
-    // event; reject so callers still get a promise.
     return Promise.reject(error);
   }
 
@@ -116,7 +148,7 @@ function transact<T>(
         try {
           tx.abort();
         } catch {
-          // The transaction had already finished; nothing left to abort.
+          // Already finished.
         }
       },
     );
@@ -135,8 +167,6 @@ function openDatabase(): Promise<IDBDatabase> {
   }
 
   request.onupgradeneeded = () => {
-    // Version upgrades create only what is missing, so a future version can add
-    // a store without dropping existing records.
     const db = request.result;
     for (const name of STORE_NAMES) {
       if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
@@ -145,8 +175,6 @@ function openDatabase(): Promise<IDBDatabase> {
 
   request.onsuccess = () => {
     const db = request.result;
-    // Another tab upgrading the schema cannot proceed while this connection is
-    // open, so close it and let the next call reopen at the new version.
     db.onversionchange = () => {
       db.close();
       if (connection === promise) connection = null;
@@ -156,11 +184,9 @@ function openDatabase(): Promise<IDBDatabase> {
 
   request.onerror = () =>
     reject(request.error ?? new Error("Failed to open the offline database."));
-  // An upgrade blocked by another connection would otherwise hang forever.
   request.onblocked = () =>
     reject(new Error("The offline database is blocked by another open connection."));
 
-  // Drop a failed open so a later call retries instead of replaying the rejection.
   promise.catch(() => {
     if (connection === promise) connection = null;
   });
@@ -168,10 +194,7 @@ function openDatabase(): Promise<IDBDatabase> {
   return promise;
 }
 
-/** Chains `task` after any in-flight ownership check. */
 function serialized<T>(task: () => Promise<T>): Promise<T> {
-  // Run whether the previous check settled or failed: one failed open must not
-  // wedge every later call.
   const next = ownerGate.then(task, task);
   ownerGate = next.then(
     () => undefined,
@@ -180,11 +203,6 @@ function serialized<T>(task: () => Promise<T>): Promise<T> {
   return next;
 }
 
-/**
- * Records `userId` as the database owner, clearing the records when a different
- * user was stored. Returns whether the owner changed, so the caller can also
- * discard private route snapshots owned by the previous account.
- */
 async function claimOwner(db: IDBDatabase, userId: string): Promise<boolean> {
   return transact(db, STORE_NAMES, "readwrite", async (tx) => {
     const meta = tx.objectStore(META);
@@ -192,9 +210,9 @@ async function claimOwner(db: IDBDatabase, userId: string): Promise<boolean> {
     if (owner === userId) return false;
 
     if (owner !== undefined) {
-      await fromRequest(tx.objectStore(WORKOUTS).clear());
-      await fromRequest(tx.objectStore(PENDING).clear());
-      await fromRequest(meta.clear());
+      for (const name of STORE_NAMES) {
+        await fromRequest(tx.objectStore(name).clear());
+      }
     }
     await fromRequest(meta.put(userId, OWNER_KEY));
     return true;
@@ -210,16 +228,29 @@ function createStore(db: IDBDatabase): OfflineStore {
     });
 
   return {
+    ownerId: () =>
+      read([META], async (tx) => {
+        const value = await fromRequest<string | undefined>(tx.objectStore(META).get(OWNER_KEY));
+        return value ?? null;
+      }),
+
     readWorkout: (workoutId) =>
       read([WORKOUTS], (tx) =>
         fromRequest<LoggedWorkout | undefined>(tx.objectStore(WORKOUTS).get(workoutId)),
       ),
 
+    listWorkouts: () =>
+      read([WORKOUTS], async (tx) => {
+        const items = await fromRequest<LoggedWorkout[]>(tx.objectStore(WORKOUTS).getAll());
+        return items.sort(
+          (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
+        );
+      }),
+
     writeWorkout: (workout) =>
       write([WORKOUTS], (tx) => fromRequest(tx.objectStore(WORKOUTS).put(workout, workout.id))),
 
     deleteWorkout: (workoutId) =>
-      // A pending id whose document is gone is a dangling pointer, so both go.
       write([WORKOUTS, PENDING], async (tx) => {
         await fromRequest(tx.objectStore(WORKOUTS).delete(workoutId));
         await fromRequest(tx.objectStore(PENDING).delete(workoutId));
@@ -237,6 +268,46 @@ function createStore(db: IDBDatabase): OfflineStore {
         return keys.map((key) => String(key));
       }),
 
+    readRoutine: (routineId) =>
+      read([ROUTINES], (tx) =>
+        fromRequest<RoutineTree | undefined>(tx.objectStore(ROUTINES).get(routineId)),
+      ),
+
+    listRoutines: () =>
+      read([ROUTINES], async (tx) => {
+        const items = await fromRequest<RoutineTree[]>(tx.objectStore(ROUTINES).getAll());
+        return items.sort((a, b) => a.title.localeCompare(b.title));
+      }),
+
+    writeRoutine: (routine) =>
+      write([ROUTINES], (tx) => fromRequest(tx.objectStore(ROUTINES).put(routine, routine.id))),
+
+    deleteRoutine: (routineId) =>
+      write([ROUTINES], (tx) => fromRequest(tx.objectStore(ROUTINES).delete(routineId))),
+
+    markRoutinePending: (entry) =>
+      write([PENDING_ROUTINES], (tx) =>
+        fromRequest(tx.objectStore(PENDING_ROUTINES).put(entry, entry.id)),
+      ),
+
+    clearRoutinePending: (routineId) =>
+      write([PENDING_ROUTINES], (tx) =>
+        fromRequest(tx.objectStore(PENDING_ROUTINES).delete(routineId)),
+      ),
+
+    pendingRoutines: () =>
+      read([PENDING_ROUTINES], (tx) =>
+        fromRequest<PendingRoutineEntry[]>(tx.objectStore(PENDING_ROUTINES).getAll()),
+      ),
+
+    readCatalog: () =>
+      read([CATALOG], (tx) =>
+        fromRequest<OfflineCatalogSnapshot | undefined>(tx.objectStore(CATALOG).get(CATALOG_KEY)),
+      ),
+
+    writeCatalog: (snapshot) =>
+      write([CATALOG], (tx) => fromRequest(tx.objectStore(CATALOG).put(snapshot, CATALOG_KEY))),
+
     lastSyncedAt: () =>
       read([META], async (tx) => {
         const value = await fromRequest<string | undefined>(tx.objectStore(META).get(SYNCED_KEY));
@@ -247,21 +318,14 @@ function createStore(db: IDBDatabase): OfflineStore {
       write([META], (tx) => fromRequest(tx.objectStore(META).put(iso, SYNCED_KEY))),
 
     clear: () =>
-      // The sign-out path: the owner id goes with everything it owns, so the
-      // next sign-in begins from an empty store.
       write(STORE_NAMES, async (tx) => {
-        await fromRequest(tx.objectStore(WORKOUTS).clear());
-        await fromRequest(tx.objectStore(PENDING).clear());
-        await fromRequest(tx.objectStore(META).clear());
+        for (const name of STORE_NAMES) {
+          await fromRequest(tx.objectStore(name).clear());
+        }
       }),
   };
 }
 
-/**
- * Drops personalized route snapshots. The message invalidates an active
- * worker's in-flight cache writes; the direct Cache Storage deletion also works
- * before a page is controlled by that worker.
- */
 async function clearPrivateRouteCaches(): Promise<void> {
   if (
     typeof navigator !== "undefined" &&
@@ -280,11 +344,6 @@ async function clearPrivateRouteCaches(): Promise<void> {
   );
 }
 
-/**
- * Clears every personalized offline artifact before a session is ended or an
- * account is deleted. Static build assets stay cached because they contain no
- * user data and are shared safely by every account on the origin.
- */
 export async function clearOfflineClientData(): Promise<void> {
   const operations: Promise<unknown>[] = [clearPrivateRouteCaches()];
   if (typeof indexedDB !== "undefined") {
@@ -298,11 +357,6 @@ export async function clearOfflineClientData(): Promise<void> {
   }
 }
 
-/**
- * Asks the controlling worker to snapshot the current workout route. This is
- * needed after a client-side navigation, which has no document-navigation
- * response for the worker to cache.
- */
 export function cacheCurrentOfflineRoute(): void {
   if (
     typeof navigator === "undefined" ||
@@ -313,17 +367,37 @@ export function cacheCurrentOfflineRoute(): void {
     return;
   }
   navigator.serviceWorker.controller.postMessage({
-    type: "cache-private-route",
+    type: CACHE_PRIVATE_ROUTE_MESSAGE,
     url: location.href,
   });
 }
 
 /**
- * Opens the store scoped to `userId`, clearing every personalized offline
- * artifact left by a different user. Safe to call repeatedly: a re-authentication
- * by the same account keeps its unsynced workout, while an account change clears
- * both IndexedDB and private route snapshots before either can be read.
+ * Asks the active service worker to cache the static offline app shell
+ * (`/offline-app`) and any public exercise thumbnails so cold launch works
+ * in airplane mode. Contains zero personalized HTML.
  */
+export function warmOfflineShell(thumbnailSlugs: string[] = []): void {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  const thumbnails = [...new Set(thumbnailSlugs)]
+    .filter(Boolean)
+    .slice(0, 120)
+    .map((slug) => `/exercise-media/thumbnails/${encodeURIComponent(slug)}.jpg`);
+  const send = (target: ServiceWorker | null | undefined) => {
+    target?.postMessage({
+      type: WARM_OFFLINE_SHELL_MESSAGE,
+      thumbnails,
+    });
+  };
+  if (navigator.serviceWorker.controller) {
+    send(navigator.serviceWorker.controller);
+  } else {
+    void navigator.serviceWorker.ready
+      .then((reg) => send(reg.active))
+      .catch(() => {});
+  }
+}
+
 export async function openOfflineStore(userId: string): Promise<OfflineStore> {
   if (typeof indexedDB === "undefined") {
     throw new Error("Offline logging needs IndexedDB, which this browser does not provide.");
@@ -335,10 +409,22 @@ export async function openOfflineStore(userId: string): Promise<OfflineStore> {
 }
 
 /**
- * Claims the offline data for an authenticated account before navigation.
- * Login is online, so discard any earlier route snapshot unconditionally; the
- * current logger can warm a fresh copy without risking another account's HTML.
+ * Opens the existing device store during an offline cold start when no server
+ * session check is possible. Returns `null` if no account has claimed the
+ * device yet (fresh install or after sign-out).
  */
+export async function openExistingOfflineStore(): Promise<{
+  ownerId: string;
+  store: OfflineStore;
+} | null> {
+  if (typeof indexedDB === "undefined") return null;
+  const db = await openDatabase();
+  const store = createStore(db);
+  const owner = await store.ownerId();
+  if (!owner) return null;
+  return { ownerId: owner, store };
+}
+
 export async function prepareOfflineDataForUser(userId: string): Promise<void> {
   await clearPrivateRouteCaches();
   await openOfflineStore(userId);

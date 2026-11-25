@@ -50,6 +50,11 @@ export const routines = {
   "routines.editor.ungroup": "Ungroup",
   "routines.editor.supersetShort": "+SS",
   "routines.editor.nameRequired": "Name is required.",
+  "routines.editor.addExercise": "Add exercise",
+  "routines.editor.restDefault": "Default",
+  "routines.editor.restCustom": "Custom (seconds)",
+  "routines.editor.setColumn": "Set",
+  "routines.editor.exerciseNotesPlaceholder": "Add cues or form notes…",
 
   "routines.setType.warmup": "Warm-up",
   "routines.setType.normal": "Normal",

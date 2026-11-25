@@ -21,6 +21,10 @@ interface SessionListProps {
   currentToken: string | null;
   /** The owner's zone, so session times read consistently with the rest of the app. */
   timeZone: string;
+  /** True when Better Auth's fresh-session window (>24h) blocks listing other devices. */
+  freshSessionRequired?: boolean;
+  /** True when the session list could not be fetched due to a transient error. */
+  unavailable?: boolean;
 }
 
 /**
@@ -28,14 +32,36 @@ interface SessionListProps {
  * prettified into a device name: guessing "Chrome on macOS" from it would look
  * authoritative while often being wrong, and this is a security-relevant list.
  */
-export async function SessionList({ sessions, currentToken, timeZone }: SessionListProps) {
+export async function SessionList({
+  sessions,
+  currentToken,
+  timeZone,
+  freshSessionRequired = false,
+  unavailable = false,
+}: SessionListProps) {
   const { locale, t } = await getI18n();
   const others = sessions.filter((session) => session.token !== currentToken);
 
   return (
-    <section className="mt-10">
+    <section className="mt-10 border-t border-[var(--border-subtle)] pt-6">
       <h2 className="text-lg font-semibold">{t("account.sessions.title")}</h2>
-      <p className="mt-1 text-sm text-zinc-500">{t("account.sessions.description")}</p>
+      <p className="mt-1 text-sm text-[var(--text-muted)]">{t("account.sessions.description")}</p>
+
+      {freshSessionRequired ? (
+        <p
+          role="status"
+          className="mt-3 rounded-xl border border-[var(--warning-border)] bg-[var(--warning-bg)] px-3.5 py-2.5 text-sm text-[var(--warning-text)]"
+        >
+          {t("account.sessions.freshRequired")}
+        </p>
+      ) : unavailable ? (
+        <p
+          role="status"
+          className="mt-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-2.5 text-sm text-[var(--text-muted)]"
+        >
+          {t("account.sessions.unavailable")}
+        </p>
+      ) : null}
 
       <ul className="mt-4 divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white shadow-sm">
         {sessions.map((session) => {

@@ -18,4 +18,27 @@ export const offline = {
   "offline.body.workout":
     "A workout already in progress still works: log sets, edit them, and finish the workout. Everything is stored on this device and syncs the next time you are online.",
   "offline.retry": "Try again",
+  "offline.badge.local": "Saved on this device",
+  "offline.badge.synced": "Synced",
+  "offline.badge.syncing": "Syncing…",
+  "offline.badge.authRequired": "Saved on this device · Sign in to sync",
+  "offline.status.offlineMode": "Offline mode",
+  "offline.status.pendingCount": "{count} unsynced change on this device|{count} unsynced changes on this device",
+  "offline.status.allSynced": "All local changes synced",
+  "offline.status.retrySync": "Retry sync",
+  "offline.status.signInToSync": "Sign in to sync",
+  "offline.status.backOnline": "Connected · open online view",
+  "offline.fresh.title": "Ready when you are",
+  "offline.fresh.body":
+    "This device has not completed first-time online setup yet. Connect once and sign in to sync your account, routines, and history for full offline use — or start using forte locally on this device right now.",
+  "offline.fresh.connect": "Connect & sign in",
+  "offline.fresh.useLocal": "Use offline on this device",
+  "offline.fresh.localNotice":
+    "Local-only mode: workouts and preferences stay on this device until you sign in.",
+  "offline.shell.historyTitle": "Workout history",
+  "offline.shell.historyEmpty": "No saved workouts on this device yet.",
+  "offline.shell.exercisesEmpty": "No exercises cached on this device yet. Connect once to download the exercise library.",
+  "offline.shell.editRoutine": "Edit routine",
+  "offline.shell.startRoutine": "Start routine",
+  "offline.shell.savedLocalFinish": "Saved on this device. Will sync once you reconnect.",
 } as const;

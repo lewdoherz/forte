@@ -4,9 +4,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Executes the production worker in a small service-worker-shaped runtime. The
- * assertions exercise observable cache behavior: which requests are intercepted,
- * what survives offline, and what an account transition deletes.
+ * Executes the production worker in a small service-worker-shaped runtime.
+ * Verifies cache isolation, public static/thumbnail/shell warming, private
+ * workout fallback, RSC exclusion, and account-change cleanup.
  */
 
 const ORIGIN = "https://forte.example";
@@ -87,7 +87,14 @@ async function networkFetch(input: Request | string): Promise<Response> {
   const url = keyOf(input);
   if (deferredNetwork) return deferredNetwork.promise;
   if (offline) throw new TypeError("offline");
-  return response(`network:${new URL(url).pathname}`, url);
+  const pathname = new URL(url).pathname;
+  if (pathname === "/offline-app") {
+    return response(
+      `<html><script src="/_next/static/chunks/offline-shell.js"></script><div>offline-shell</div></html>`,
+      url,
+    );
+  }
+  return response(`network:${pathname}`, url);
 }
 
 const self = {
@@ -157,17 +164,18 @@ function request(url: string, mode: RequestMode = "cors", headers?: HeadersInit)
 }
 
 await cacheStorage.open("forte-v2");
+await cacheStorage.open("forte-static-v3");
 await dispatchExtendable("install");
 await dispatchExtendable("activate");
-check("activation retires the old all-request cache", !stores.has("forte-v2"));
+check("activation retires older caches", !stores.has("forte-v2") && !stores.has("forte-static-v3"));
 check(
   "activation creates separate static and private caches",
-  stores.has("forte-static-v3") && stores.has("forte-private-v3"),
+  stores.has("forte-static-v4") && stores.has("forte-private-v4"),
 );
 
 const accountUrl = `${ORIGIN}/account`;
 const onlineAccount = await dispatchFetch(request(accountUrl, "navigate"));
-check("an authenticated non-workout navigation still uses the network", await onlineAccount.response?.text() === "network:/account");
+check("an authenticated non-workout navigation still uses the network", (await onlineAccount.response?.text()) === "network:/account");
 offline = true;
 const offlineAccount = await dispatchFetch(request(accountUrl, "navigate"));
 check(
@@ -177,7 +185,7 @@ check(
 offline = false;
 
 const onlineWorkout = await dispatchFetch(request(PRIVATE_WORKOUT_URL, "navigate"));
-check("a workout navigation is served online", await onlineWorkout.response?.text() === `network:/workouts/${WORKOUT_ID}`);
+check("a workout navigation is served online", (await onlineWorkout.response?.text()) === `network:/workouts/${WORKOUT_ID}`);
 offline = true;
 const unwarmedWorkout = await dispatchFetch(request(PRIVATE_WORKOUT_URL, "navigate"));
 check(
@@ -191,7 +199,7 @@ offline = true;
 const offlineWorkout = await dispatchFetch(request(PRIVATE_WORKOUT_URL, "navigate"));
 check(
   "the explicitly warmed workout route survives offline",
-  await offlineWorkout.response?.text() === `network:/workouts/${WORKOUT_ID}`,
+  (await offlineWorkout.response?.text()) === `network:/workouts/${WORKOUT_ID}`,
 );
 offline = false;
 
@@ -204,17 +212,46 @@ const staticUrl = `${ORIGIN}/_next/static/chunks/app.js`;
 await dispatchFetch(request(staticUrl));
 offline = true;
 const cachedStatic = await dispatchFetch(request(staticUrl));
-check("an immutable build asset survives offline", await cachedStatic.response?.text() === "network:/_next/static/chunks/app.js");
+check("an immutable build asset survives offline", (await cachedStatic.response?.text()) === "network:/_next/static/chunks/app.js");
+offline = false;
+
+const thumbUrl = `${ORIGIN}/exercise-media/thumbnails/squat-barbell.jpg`;
+await dispatchFetch(request(thumbUrl));
+offline = true;
+const cachedThumb = await dispatchFetch(request(thumbUrl));
+check("a public exercise thumbnail survives offline", (await cachedThumb.response?.text()) === "network:/exercise-media/thumbnails/squat-barbell.jpg");
+offline = false;
+
+await dispatchMessage({
+  type: "warm-offline-shell",
+  thumbnails: ["/exercise-media/thumbnails/inverted-row.jpg"],
+});
+offline = true;
+const coldStartRoot = await dispatchFetch(request(`${ORIGIN}/`, "navigate"));
+check(
+  "cold launch offline serves the zero-user-data /offline-app shell once warmed",
+  (await coldStartRoot.response?.text())?.includes("offline-shell") === true,
+);
+const warmedShellChunk = await dispatchFetch(request(`${ORIGIN}/_next/static/chunks/offline-shell.js`));
+check(
+  "warming /offline-app also caches its static JS chunks",
+  (await warmedShellChunk.response?.text()) === "network:/_next/static/chunks/offline-shell.js",
+);
+const warmedThumb = await dispatchFetch(request(`${ORIGIN}/exercise-media/thumbnails/inverted-row.jpg`));
+check(
+  "warming /offline-app caches requested public thumbnails",
+  (await warmedThumb.response?.text()) === "network:/exercise-media/thumbnails/inverted-row.jpg",
+);
 offline = false;
 
 await dispatchMessage({ type: "clear-private-cache" });
-check("account cleanup deletes private caches", !stores.has("forte-private-v3"));
-check("account cleanup preserves shared static assets", stores.has("forte-static-v3"));
+check("account cleanup deletes private caches", !stores.has("forte-private-v4"));
+check("account cleanup preserves shared static assets", stores.has("forte-static-v4"));
 offline = true;
 const clearedWorkout = await dispatchFetch(request(PRIVATE_WORKOUT_URL, "navigate"));
 check(
-  "a cleared account cannot recover its workout snapshot",
-  (await clearedWorkout.response?.text())?.includes("You are offline") === true,
+  "a cleared account cannot recover its private workout HTML snapshot",
+  (await clearedWorkout.response?.text()) !== `network:/workouts/${WORKOUT_ID}`,
 );
 offline = false;
 
@@ -223,7 +260,7 @@ offline = true;
 const warmedWorkout = await dispatchFetch(request(PRIVATE_WORKOUT_URL, "navigate"));
 check(
   "a client-side logger transition can warm its exact route",
-  await warmedWorkout.response?.text() === `network:/workouts/${WORKOUT_ID}`,
+  (await warmedWorkout.response?.text()) === `network:/workouts/${WORKOUT_ID}`,
 );
 offline = false;
 
@@ -242,7 +279,7 @@ await racingWarm;
 deferredNetwork = undefined;
 check(
   "a response started before cleanup cannot recreate the private cache",
-  !stores.has("forte-private-v3") || stores.get("forte-private-v3")?.entries.size === 0,
+  !stores.has("forte-private-v4") || stores.get("forte-private-v4")?.entries.size === 0,
 );
 
 console.log(output.join("\n"));

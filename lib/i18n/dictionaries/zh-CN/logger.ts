@@ -34,9 +34,10 @@ export const logger = {
   "logger.finish.finishing": "结束中…",
 
   /* 指标下方的同步状态行。显示哪一种状态由存储区的待同步标记决定。 */
-  "logger.sync.saved": "所有改动已保存",
-  "logger.sync.pending": "有改动未同步 · 保存在本设备",
-  "logger.sync.offline": "离线 · 改动保存在本设备",
+  "logger.sync.saved": "已同步 · 所有改动已保存",
+  "logger.sync.pending": "已保存在本设备 · 同步中…",
+  "logger.sync.offline": "已保存在本设备 · 离线",
+  "logger.sync.authRequired": "已保存在本设备 · 登录后同步",
 
   /* 动作列表上方的失败提示。`{message}` 是服务器给出的原因，因此文案拆成前缀与后缀。 */
   "logger.sync.unreachable": "无法连接服务器。改动已保存在本设备上。",

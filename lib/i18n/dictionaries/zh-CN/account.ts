@@ -62,6 +62,32 @@ export const account = {
   "account.sessions.thisDevice": "本设备",
   "account.sessions.meta": "{address} · 登录于 {started} · 有效期至 {expires}",
   "account.sessions.signOutOthers": "退出其他所有设备",
+  "account.sessions.freshRequired":
+    "出于安全原因，请重新登录以查看或退出其他设备。本设备上的当前会话仍然有效。",
+  "account.sessions.unavailable": "暂时无法加载完整设备列表，请在联网后重试。",
+  "account.methods.unavailable": "暂时无法加载已关联的登录方式，请在联网后重试。",
+
+  "account.preferences.title": "设备偏好设置",
+  "account.preferences.description": "保存在本设备上，离线时也可用。",
+  "account.appearance.title": "外观主题",
+  "account.appearance.description": "选择 forte 在本设备上的显示外观。",
+  "account.appearance.system": "跟随系统",
+  "account.appearance.light": "浅色",
+  "account.appearance.dark": "深色",
+
+  "account.rest.title": "组间休息计时",
+  "account.rest.description": "设置默认休息时长和结束提醒。保存在本设备上，离线时也可用。",
+  "account.rest.defaultDuration": "默认休息时长",
+  "account.rest.sound": "结束提示音",
+  "account.rest.soundHint": "休息倒计时结束时播放提示音。",
+  "account.rest.vibration": "结束震动",
+  "account.rest.vibrationHint": "休息倒计时结束时触发震动（需设备支持）。",
+  "account.rest.preview": "试听 / 测试提醒",
+  "account.rest.previewed": "已触发提醒预览。",
+  "account.rest.previewMuted": "请先开启提示音或震动后再预览。",
+
+  "account.offline.banner": "当前处于离线状态。外观与组间休息偏好仍可正常使用；账户操作需要网络连接。",
+  "account.offline.requiresConnection": "需要网络连接。",
 
   "account.data.title": "你的数据",
   "account.data.description":
