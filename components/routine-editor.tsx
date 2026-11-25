@@ -7,6 +7,7 @@ import { SET_TYPES } from "@/schema/types";
 import { normaliseSupersetKeys } from "@/lib/supersets";
 import { saveRoutine } from "@/lib/routine-actions";
 import type { RoutineInput } from "@/lib/routines";
+import { syncOfflineData } from "@/lib/offline-sync";
 import { useI18n } from "@/lib/i18n/context";
 import { formatDuration } from "@/lib/i18n/format";
 import type { MessageKey } from "@/lib/i18n";
@@ -485,6 +486,7 @@ export function RoutineEditor({
         return;
       }
       if (!onSaveOverride && result.id) {
+        void syncOfflineData();
         router.push(`/routines/${result.id}`);
         router.refresh();
       } else {

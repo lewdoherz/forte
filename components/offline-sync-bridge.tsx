@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n/context";
 import {
   OFFLINE_SYNC_EVENT,
@@ -22,9 +22,11 @@ import {
  */
 export function OfflineSyncBridge({ userId }: { userId: string }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { t } = useI18n();
   const [snapshot, setSnapshot] = useState<OfflineSyncSnapshot | null>(null);
   const [online, setOnline] = useState(true);
+  const lastBootstrapPathRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -75,6 +77,29 @@ export function OfflineSyncBridge({ userId }: { userId: string }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per userId
   }, [userId]);
+
+  // Keep the offline IndexedDB snapshot fresh when navigating back to core hubs
+  // after online edits (e.g. creating or editing a routine or finishing a workout).
+  useEffect(() => {
+    if (!online || !pathname) return;
+    const isHub =
+      pathname === "/" ||
+      pathname === "/workout" ||
+      pathname === "/routines" ||
+      pathname === "/workouts" ||
+      /^\/routines\/[0-9a-f-]{36}$/i.test(pathname);
+    if (!isHub) {
+      lastBootstrapPathRef.current = pathname;
+      return;
+    }
+    if (lastBootstrapPathRef.current === null) {
+      lastBootstrapPathRef.current = pathname;
+      return;
+    }
+    if (lastBootstrapPathRef.current === pathname) return;
+    lastBootstrapPathRef.current = pathname;
+    void syncOfflineData(userId).then((res) => setSnapshot(res));
+  }, [online, pathname, userId]);
 
   useEffect(() => {
     if (!online || !snapshot || snapshot.pendingCount === 0 || snapshot.status === "auth_required") {
