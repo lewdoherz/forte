@@ -1,6 +1,6 @@
-import type { RoutineTree, WorkoutSet } from "@/schema/types";
+import type { RoutineFolder, RoutineTree, WorkoutSet } from "@/schema/types";
 import type { LoggedWorkout, WorkoutSyncInput } from "@/lib/workout-sync";
-import type { RoutineInput } from "@/lib/routines";
+import type { RoutineFolderInput, RoutineInput } from "@/lib/routines";
 import {
   getOfflineStoreEpoch,
   LOCAL_GUEST_OWNER,
@@ -9,6 +9,7 @@ import {
   warmOfflineShell,
   type OfflineCatalogSnapshot,
   type OfflineStore,
+  type PendingFolderEntry,
   type PendingRoutineEntry,
 } from "@/lib/offline-store";
 
@@ -25,6 +26,7 @@ export interface OfflineSyncSnapshot {
   pendingCount: number;
   pendingWorkoutIds: string[];
   pendingRoutineIds: string[];
+  pendingFolderIds: string[];
   lastSyncedAt: string | null;
   error: string | null;
   flushedCount?: number;
@@ -61,10 +63,20 @@ function hydrateDatesOnWorkout(raw: unknown): LoggedWorkout {
   };
 }
 
+function hydrateDatesOnFolder(raw: unknown): RoutineFolder {
+  const f = raw as RoutineFolder & { created_at: string | Date; updated_at: string | Date };
+  return {
+    ...f,
+    created_at: new Date(f.created_at),
+    updated_at: new Date(f.updated_at),
+  };
+}
+
 function hydrateDatesOnRoutine(raw: unknown): RoutineTree {
   const r = raw as RoutineTree & { created_at: string | Date; updated_at: string | Date };
   return {
     ...r,
+    folder: r.folder ? hydrateDatesOnFolder(r.folder) : null,
     created_at: new Date(r.created_at),
     updated_at: new Date(r.updated_at),
     exercises: (r.exercises ?? []).map((ex) => ({
@@ -80,7 +92,10 @@ function hydrateDatesOnRoutine(raw: unknown): RoutineTree {
   };
 }
 
-export function workoutToSyncPayload(doc: LoggedWorkout): {
+export function workoutToSyncPayload(
+  doc: LoggedWorkout,
+  catalogSlugs?: Set<string>,
+): {
   sync: WorkoutSyncInput;
   createdMeta: {
     title: string;
@@ -88,7 +103,40 @@ export function workoutToSyncPayload(doc: LoggedWorkout): {
     routineId: string | null;
     startedAt: string;
   };
+  templateSlugs: Record<string, string>;
+  customTemplates: Array<{
+    id: string;
+    title: string;
+    exercise_type: LoggedWorkout["exercises"][number]["template"]["exercise_type"];
+  }>;
 } {
+  const templateSlugs: Record<string, string> = {};
+  const customTemplates: Array<{
+    id: string;
+    title: string;
+    exercise_type: LoggedWorkout["exercises"][number]["template"]["exercise_type"];
+  }> = [];
+  const seenCustom = new Set<string>();
+
+  for (const ex of doc.exercises) {
+    if (ex.template?.slug) {
+      templateSlugs[ex.template_id] = ex.template.slug;
+    }
+    if (
+      catalogSlugs &&
+      ex.template?.slug &&
+      !catalogSlugs.has(ex.template.slug) &&
+      !seenCustom.has(ex.template_id)
+    ) {
+      seenCustom.add(ex.template_id);
+      customTemplates.push({
+        id: ex.template_id,
+        title: ex.template.title || "Local Exercise",
+        exercise_type: ex.template.exercise_type,
+      });
+    }
+  }
+
   return {
     sync: {
       workoutId: doc.id,
@@ -123,6 +171,8 @@ export function workoutToSyncPayload(doc: LoggedWorkout): {
       routineId: doc.routine_id,
       startedAt: new Date(doc.started_at).toISOString(),
     },
+    templateSlugs,
+    customTemplates,
   };
 }
 
@@ -133,26 +183,30 @@ export function emitSyncSnapshot(snapshot: OfflineSyncSnapshot): void {
 }
 
 export async function readOfflineSyncSnapshot(store: OfflineStore): Promise<OfflineSyncSnapshot> {
-  const [pendingWorkoutIds, pendingRoutines, lastSyncedAt] = await Promise.all([
+  const [pendingWorkoutIds, pendingRoutines, pendingFolders, lastSyncedAt] = await Promise.all([
     store.pendingWorkoutIds(),
     store.pendingRoutines(),
+    store.pendingFolders(),
     store.lastSyncedAt(),
   ]);
   const pendingRoutineIds = pendingRoutines.map((r) => r.id);
-  const pendingCount = pendingWorkoutIds.length + pendingRoutineIds.length;
+  const pendingFolderIds = pendingFolders.map((f) => f.id);
+  const pendingCount =
+    pendingWorkoutIds.length + pendingRoutineIds.length + pendingFolderIds.length;
   const online = typeof navigator === "undefined" ? true : navigator.onLine;
   return {
     status: pendingCount === 0 ? "synced" : online ? "idle" : "offline",
     pendingCount,
     pendingWorkoutIds,
     pendingRoutineIds,
+    pendingFolderIds,
     lastSyncedAt,
     error: null,
   };
 }
 
 /**
- * Flushes pending offline routines and workouts to `/api/offline/sync`.
+ * Flushes pending offline folders, routines, and workouts to `/api/offline/sync`.
  * Preserves all pending items if offline, on transient error, or on HTTP 401
  * session expiry so work is never lost and retries remain idempotent.
  */
@@ -177,23 +231,18 @@ export async function flushOfflineQueue(store: OfflineStore): Promise<OfflineSyn
 
   emitSyncSnapshot({ ...base, status: "syncing" });
 
-  const [pendingRoutines, pendingWorkoutIds] = await Promise.all([
+  const [pendingFolders, pendingRoutines, pendingWorkoutIds, catalog] = await Promise.all([
+    store.pendingFolders(),
     store.pendingRoutines(),
     store.pendingWorkoutIds(),
+    store.readCatalog(),
   ]);
+  const catalogSlugs = catalog ? new Set(catalog.exercises.map((e) => e.slug)) : undefined;
 
-  const workoutItems: Array<{
-    sync: WorkoutSyncInput;
-    createdMeta: {
-      title: string;
-      notes: string | null;
-      routineId: string | null;
-      startedAt: string;
-    };
-  }> = [];
+  const workoutItems = [];
   for (const id of pendingWorkoutIds) {
     const doc = await store.readWorkout(id);
-    if (doc) workoutItems.push(workoutToSyncPayload(doc));
+    if (doc) workoutItems.push(workoutToSyncPayload(doc, catalogSlugs));
   }
 
   let response: Response;
@@ -203,10 +252,16 @@ export async function flushOfflineQueue(store: OfflineStore): Promise<OfflineSyn
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        folders: pendingFolders.map((entry) => ({
+          id: entry.id,
+          op: entry.op,
+          input: entry.input,
+        })),
         routines: pendingRoutines.map((entry) => ({
           id: entry.id,
           op: entry.op,
           input: entry.input,
+          templateSlugs: entry.templateSlugs,
         })),
         workouts: workoutItems,
       }),
@@ -244,6 +299,7 @@ export async function flushOfflineQueue(store: OfflineStore): Promise<OfflineSyn
   const data = (await response.json()) as {
     ok?: boolean;
     syncedAt?: string;
+    folders?: Array<{ id: string; ok: boolean; error?: string }>;
     routines?: Array<{ id: string; ok: boolean; error?: string }>;
     workouts?: Array<{ id: string; ok: boolean; error?: string }>;
   };
@@ -254,6 +310,14 @@ export async function flushOfflineQueue(store: OfflineStore): Promise<OfflineSyn
 
   let hadFailure = false;
   let flushedCount = 0;
+  for (const f of data.folders ?? []) {
+    if (f.ok) {
+      await store.clearFolderPending(f.id);
+      flushedCount += 1;
+    } else {
+      hadFailure = true;
+    }
+  }
   for (const r of data.routines ?? []) {
     if (r.ok) {
       await store.clearRoutinePending(r.id);
@@ -288,7 +352,7 @@ export async function flushOfflineQueue(store: OfflineStore): Promise<OfflineSyn
 
 /**
  * Fetches `/api/offline/bootstrap` and merges server state into IndexedDB
- * without overwriting any locally pending routine or workout.
+ * without overwriting any locally pending folder, routine, or workout.
  */
 export async function refreshOfflineBootstrap(store: OfflineStore): Promise<boolean> {
   const startEpoch = getOfflineStoreEpoch();
@@ -314,6 +378,7 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
     muscles: OfflineCatalogSnapshot["muscles"];
     equipment: OfflineCatalogSnapshot["equipment"];
     exercises: OfflineCatalogSnapshot["exercises"];
+    folders?: unknown[];
     routines: unknown[];
     activeWorkout: unknown | null;
     recentWorkouts: unknown[];
@@ -324,15 +389,25 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
   if (stale() || payload.profile.id !== owner) return false;
   if ((await store.ownerId()) !== owner || stale()) return false;
 
-  const [pendingWorkoutIds, pendingRoutines, existingRoutines, existingWorkouts] = await Promise.all([
+  const [
+    pendingWorkoutIds,
+    pendingRoutines,
+    pendingFolders,
+    existingFolders,
+    existingRoutines,
+    existingWorkouts,
+  ] = await Promise.all([
     store.pendingWorkoutIds(),
     store.pendingRoutines(),
+    store.pendingFolders(),
+    store.listFolders(),
     store.listRoutines(),
     store.listWorkouts(),
   ]);
   if (stale()) return false;
   const pendingWorkoutSet = new Set(pendingWorkoutIds);
   const pendingRoutineSet = new Set(pendingRoutines.map((r) => r.id));
+  const pendingFolderSet = new Set(pendingFolders.map((f) => f.id));
 
   await store.writeCatalog({
     profile: payload.profile,
@@ -342,6 +417,23 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
     previousPerformances: payload.previousPerformances,
     cachedAt: payload.cachedAt,
   });
+
+  // Merge folders without clobbering pending local folder edits.
+  const remoteFolderIds = new Set<string>();
+  for (const rawFolder of payload.folders ?? []) {
+    if (stale()) return false;
+    const folder = hydrateDatesOnFolder(rawFolder);
+    remoteFolderIds.add(folder.id);
+    if (!pendingFolderSet.has(folder.id)) {
+      await store.writeFolder(folder);
+    }
+  }
+  for (const local of existingFolders) {
+    if (stale()) return false;
+    if (!remoteFolderIds.has(local.id) && !pendingFolderSet.has(local.id)) {
+      await store.deleteFolder(local.id);
+    }
+  }
 
   // Merge routines: keep pending local routines intact; remove non-pending routines deleted on server.
   const remoteRoutineIds = new Set<string>();
@@ -378,24 +470,31 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
       await store.writeWorkout(workout);
     }
   }
-  // Remove stale non-pending active workouts that were discarded/finished elsewhere.
   for (const local of existingWorkouts) {
     if (stale()) return false;
-    if (local.ended_at === null && !remoteWorkoutIds.has(local.id) && !pendingWorkoutSet.has(local.id)) {
+    if (
+      local.ended_at === null &&
+      !remoteWorkoutIds.has(local.id) &&
+      !pendingWorkoutSet.has(local.id)
+    ) {
       await store.deleteWorkout(local.id);
     }
   }
   if (stale()) return false;
 
-  // Warm the offline shell + thumbnails for exercises in routines, workouts, and top catalog rows.
+  // Warm the offline shell + full catalog thumbnails for PWA offline use.
   const slugs = new Set<string>();
-  for (const r of payload.routines as Array<{ exercises?: Array<{ template?: { slug?: string } }> }>) {
+  for (const r of payload.routines as Array<{
+    exercises?: Array<{ template?: { slug?: string } }>;
+  }>) {
     for (const ex of r.exercises ?? []) if (ex.template?.slug) slugs.add(ex.template.slug);
   }
-  for (const w of payload.recentWorkouts as Array<{ exercises?: Array<{ template?: { slug?: string } }> }>) {
+  for (const w of payload.recentWorkouts as Array<{
+    exercises?: Array<{ template?: { slug?: string } }>;
+  }>) {
     for (const ex of w.exercises ?? []) if (ex.template?.slug) slugs.add(ex.template.slug);
   }
-  for (const ex of payload.exercises.slice(0, 60)) {
+  for (const ex of payload.exercises) {
     if (ex.slug) slugs.add(ex.slug);
   }
   warmOfflineShell([...slugs]);
@@ -405,8 +504,8 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
 
 /**
  * Full sync cycle for an authenticated account (or existing offline owner):
- * 1. Flushes pending routines + workouts first so server state is up to date.
- * 2. Refreshes the offline catalog/routines/history snapshot and warms the SW.
+ * 1. Flushes pending folders + routines + workouts first so server state is up to date.
+ * 2. Refreshes the offline catalog/folders/routines/history snapshot and warms the SW.
  */
 export async function syncOfflineData(userId?: string): Promise<OfflineSyncSnapshot> {
   if (inflightSync) return inflightSync;
@@ -424,6 +523,7 @@ export async function syncOfflineData(userId?: string): Promise<OfflineSyncSnaps
         pendingCount: 0,
         pendingWorkoutIds: [],
         pendingRoutineIds: [],
+        pendingFolderIds: [],
         lastSyncedAt: null,
         error: null,
       };
@@ -444,6 +544,30 @@ export async function syncOfflineData(userId?: string): Promise<OfflineSyncSnaps
   }
 }
 
+function routineTreeToInput(routine: RoutineTree): RoutineInput {
+  return {
+    id: routine.id,
+    title: routine.title,
+    folder_id: routine.folder_id,
+    position: routine.position,
+    notes: routine.notes,
+    exercises: routine.exercises.map((ex) => ({
+      template_id: ex.template_id,
+      superset_key: ex.superset_key,
+      rest_seconds: ex.rest_seconds,
+      notes: ex.notes,
+      sets: ex.sets.map((s) => ({
+        set_type: s.set_type,
+        reps: s.reps,
+        weight_kg: s.weight_kg,
+        duration_seconds: s.duration_seconds,
+        distance_meters: s.distance_meters,
+        metrics: s.metrics,
+      })),
+    })),
+  };
+}
+
 /**
  * Saves a created or edited routine locally in IndexedDB and queues it for sync.
  */
@@ -455,23 +579,38 @@ export async function saveRoutineOffline(
 ): Promise<RoutineTree> {
   const now = new Date();
   const id = input.id ?? crypto.randomUUID();
-  const existing = await store.readRoutine(id);
+  const [existing, folders, allRoutines] = await Promise.all([
+    store.readRoutine(id),
+    store.listFolders(),
+    store.listRoutines(),
+  ]);
   const exerciseMap = new Map((catalog?.exercises ?? []).map((e) => [e.id, e]));
+  const nextFolderId =
+    input.folder_id !== undefined ? (input.folder_id ?? null) : (existing?.folder_id ?? null);
+  const folderObj = nextFolderId ? (folders.find((f) => f.id === nextFolderId) ?? null) : null;
+  const maxPosition = allRoutines
+    .filter((r) => (r.folder_id ?? null) === nextFolderId)
+    .reduce((max, r) => Math.max(max, r.position), -1);
+  const nextPosition =
+    input.position !== undefined ? input.position : (existing?.position ?? maxPosition + 1);
 
+  const templateSlugs: Record<string, string> = {};
   const routineTree: RoutineTree = {
     id,
     owner_id: ownerId,
-    folder_id: null,
-    folder: null,
+    folder_id: nextFolderId,
+    folder: folderObj,
     title: input.title.trim(),
     notes: input.notes?.trim() || null,
-    position: existing?.position ?? 0,
+    position: nextPosition,
     created_at: existing?.created_at ?? now,
     updated_at: now,
     exercises: input.exercises.map((ex, i) => {
       const exId = crypto.randomUUID();
       const cat = exerciseMap.get(ex.template_id);
       const existingEx = existing?.exercises.find((e) => e.template_id === ex.template_id);
+      const slug = cat?.slug ?? existingEx?.template.slug ?? ex.template_id;
+      templateSlugs[ex.template_id] = slug;
       return {
         id: exId,
         routine_id: id,
@@ -484,7 +623,7 @@ export async function saveRoutineOffline(
         updated_at: now,
         template: existingEx?.template ?? {
           id: ex.template_id,
-          slug: cat?.slug ?? ex.template_id,
+          slug,
           title: cat?.title ?? "Exercise",
           title_zh: null,
           exercise_type: cat?.exercise_type ?? "weight_reps",
@@ -493,8 +632,8 @@ export async function saveRoutineOffline(
           equipment: cat?.equipment ?? "other",
           how_to: cat?.how_to ?? null,
           how_to_zh: null,
-          media_url: null,
-          duration_record_direction: "higher" as const,
+          media_url: cat?.media_url ?? null,
+          duration_record_direction: cat?.duration_record_direction ?? "higher",
           is_custom: cat?.is_custom ?? false,
           owner_id: null,
           archived_at: null,
@@ -527,14 +666,138 @@ export async function saveRoutineOffline(
   const entry: PendingRoutineEntry = {
     id,
     op: "upsert",
-    input: { ...input, id },
+    input: { ...input, id, folder_id: nextFolderId, position: nextPosition },
+    templateSlugs,
     updatedAt: now.toISOString(),
   };
 
-  // Mark pending BEFORE writing the routine document so a crash never leaves an unqueued edit.
   await store.markRoutinePending(entry);
   await store.writeRoutine(routineTree);
   return routineTree;
+}
+
+export async function deleteRoutineOffline(store: OfflineStore, routineId: string): Promise<void> {
+  const entry: PendingRoutineEntry = {
+    id: routineId,
+    op: "delete",
+    updatedAt: new Date().toISOString(),
+  };
+  await store.markRoutinePending(entry);
+  await store.deleteRoutine(routineId);
+}
+
+export async function duplicateRoutineOffline(
+  store: OfflineStore,
+  ownerId: string,
+  routine: RoutineTree,
+  catalog: OfflineCatalogSnapshot | undefined,
+): Promise<RoutineTree> {
+  const copySuffix = " (copy)";
+  const base = routine.title.slice(0, 120 - copySuffix.length);
+  return saveRoutineOffline(
+    store,
+    ownerId,
+    {
+      ...routineTreeToInput(routine),
+      id: undefined,
+      title: `${base}${copySuffix}`,
+    },
+    catalog,
+  );
+}
+
+export async function saveRoutineFolderOffline(
+  store: OfflineStore,
+  ownerId: string,
+  input: RoutineFolderInput,
+): Promise<RoutineFolder> {
+  const now = new Date();
+  const id = input.id ?? crypto.randomUUID();
+  const existingFolders = await store.listFolders();
+  const existing = existingFolders.find((f) => f.id === id);
+  const maxPos = existingFolders.reduce((m, f) => Math.max(m, f.position), -1);
+  const folder: RoutineFolder = {
+    id,
+    owner_id: ownerId,
+    title: input.title.trim(),
+    position: input.position ?? existing?.position ?? maxPos + 1,
+    created_at: existing?.created_at ?? now,
+    updated_at: now,
+  };
+  const entry: PendingFolderEntry = {
+    id,
+    op: "upsert",
+    input: { id, title: folder.title, position: folder.position },
+    updatedAt: now.toISOString(),
+  };
+  await store.markFolderPending(entry);
+  await store.writeFolder(folder);
+  return folder;
+}
+
+export async function deleteRoutineFolderOffline(
+  store: OfflineStore,
+  folderId: string,
+): Promise<void> {
+  const now = new Date();
+  const routines = await store.listRoutines();
+  for (const routine of routines) {
+    if (routine.folder_id !== folderId) continue;
+    const moved: RoutineTree = { ...routine, folder_id: null, folder: null, updated_at: now };
+    const templateSlugs: Record<string, string> = {};
+    for (const ex of moved.exercises) templateSlugs[ex.template_id] = ex.template.slug;
+    await store.markRoutinePending({
+      id: moved.id,
+      op: "upsert",
+      input: routineTreeToInput(moved),
+      templateSlugs,
+      updatedAt: now.toISOString(),
+    });
+    await store.writeRoutine(moved);
+  }
+  await store.markFolderPending({
+    id: folderId,
+    op: "delete",
+    updatedAt: now.toISOString(),
+  });
+  await store.deleteFolder(folderId);
+}
+
+/**
+ * Updates folder assignments and display order for one or more routines locally
+ * and queues each updated routine for cloud sync.
+ */
+export async function organizeRoutinesOffline(
+  store: OfflineStore,
+  updates: Array<{ id: string; folder_id: string | null; position: number }>,
+): Promise<void> {
+  if (updates.length === 0) return;
+  const now = new Date();
+  const folders = await store.listFolders();
+  const folderById = new Map(folders.map((f) => [f.id, f]));
+
+  for (const item of updates) {
+    const routine = await store.readRoutine(item.id);
+    if (!routine) continue;
+    const nextFolder = item.folder_id ? (folderById.get(item.folder_id) ?? null) : null;
+    const next: RoutineTree = {
+      ...routine,
+      folder_id: nextFolder?.id ?? null,
+      folder: nextFolder,
+      position: Math.max(0, Math.floor(item.position)),
+      updated_at: now,
+    };
+    const templateSlugs: Record<string, string> = {};
+    for (const ex of next.exercises) templateSlugs[ex.template_id] = ex.template.slug;
+    await store.markRoutinePending({
+      id: next.id,
+      op: "upsert",
+      input: routineTreeToInput(next),
+      templateSlugs,
+      updatedAt: now.toISOString(),
+    });
+    await store.writeRoutine(next);
+  }
 }
 
 /**

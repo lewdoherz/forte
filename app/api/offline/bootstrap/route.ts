@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth-session";
 import { getUserProfile } from "@/lib/users";
 import { getVocabularies, listExercises } from "@/lib/exercises";
-import { getRoutineTree, listRoutines } from "@/lib/routines";
+import { getRoutineTree, listRoutineFolders, listRoutines } from "@/lib/routines";
 import { getActiveWorkout, getWorkoutTree, listWorkouts } from "@/lib/workouts";
 import { getPreviousPerformances, type PreviousPerformance } from "@/lib/previous-performance";
 import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
@@ -26,11 +26,12 @@ export async function GET() {
   }
 
   const userId = session.user.id;
-  const [profile, { muscles, equipment }, exercises, routineSummaries, activeSummary, historyPage] =
+  const [profile, { muscles, equipment }, exercises, folders, routineSummaries, activeSummary, historyPage] =
     await Promise.all([
       getUserProfile(db, userId),
       getVocabularies(db),
       listExercises(db, userId, {}),
+      listRoutineFolders(db, userId),
       listRoutines(db, userId),
       getActiveWorkout(db, userId),
       listWorkouts(db, userId),
@@ -40,7 +41,7 @@ export async function GET() {
     Promise.all(routineSummaries.map((r) => getRoutineTree(db, r.id, userId))),
     activeSummary ? getWorkoutTree(db, activeSummary.id, userId) : Promise.resolve(undefined),
     Promise.all(
-      historyPage.completed.slice(0, 30).map((w) => getWorkoutTree(db, w.id, userId)),
+      historyPage.completed.slice(0, 80).map((w) => getWorkoutTree(db, w.id, userId)),
     ),
   ]);
 
@@ -89,8 +90,11 @@ export async function GET() {
         equipment: e.equipment,
         exercise_type: e.exercise_type,
         how_to: e.how_to,
+        media_url: e.media_url,
+        duration_record_direction: e.duration_record_direction,
         is_custom: e.is_custom,
       })),
+      folders,
       routines,
       activeWorkout: activeWorkout ?? null,
       recentWorkouts,

@@ -100,11 +100,15 @@ export function RestTimer({
     const commitState = (state: RestCountdownState, now: number, active: boolean) => {
       let nextState = state;
       if (active && shouldTriggerRestAlert(nextState)) {
+        const key = nextState.current
+          ? `${nextState.current.key}@${nextState.current.deadline}`
+          : undefined;
         nextState = markRestCountdownAlerted(nextState);
         cancelNativeRestAlert();
         triggerRestCompletionAlert({
           soundEnabled: prefsRef.current.soundEnabled,
           vibrationEnabled: prefsRef.current.vibrationEnabled,
+          timerKey: key,
         });
       } else if (active && nextState.current?.phase === "running") {
         scheduleNativeRestAlert({
@@ -186,11 +190,13 @@ export function RestTimer({
     const now = Date.now();
     let state = change(previous.state, now);
     if (workoutActive && shouldTriggerRestAlert(state)) {
+      const key = state.current ? `${state.current.key}@${state.current.deadline}` : undefined;
       state = markRestCountdownAlerted(state);
       cancelNativeRestAlert();
       triggerRestCompletionAlert({
         soundEnabled: prefsRef.current.soundEnabled,
         vibrationEnabled: prefsRef.current.vibrationEnabled,
+        timerKey: key,
       });
     } else if (workoutActive && state.current?.phase === "running") {
       scheduleNativeRestAlert({

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ExerciseType, SetType, WorkoutSet } from "@/schema/types";
+import type { DurationRecordDirection, ExerciseType, SetType, WorkoutSet } from "@/schema/types";
 import {
   cacheCurrentOfflineRoute,
   LOCAL_GUEST_OWNER,
@@ -46,6 +46,10 @@ export interface LoggerLibraryExercise extends PickerExercise {
   exercise_type: ExerciseType;
   equipment: string;
   secondary_muscles: string[];
+  how_to?: string | null;
+  media_url?: string | null;
+  duration_record_direction?: DurationRecordDirection;
+  is_custom?: boolean;
 }
 
 type ConfirmState =
@@ -103,6 +107,8 @@ export function WorkoutLogger({
   equipment,
   library,
   previous,
+  recentExerciseIds = [],
+  workouts = [],
   offlineShellMode = false,
   onMinimize,
   onFinishedLocally,
@@ -115,6 +121,8 @@ export function WorkoutLogger({
   equipment: VocabularyEntry[];
   library: LoggerLibraryExercise[];
   previous: Record<string, PreviousPerformance>;
+  recentExerciseIds?: string[];
+  workouts?: LoggedWorkout[];
   /** True when mounted inside `/offline-app` (uses `/api/offline/sync` and local navigation). */
   offlineShellMode?: boolean;
   onMinimize?: () => void;
@@ -973,6 +981,9 @@ export function WorkoutLogger({
             muscles={muscles}
             equipment={equipment}
             excludeIds={addedTemplateIds}
+            recentIds={recentExerciseIds}
+            workouts={workouts}
+            timeZone={timeZone}
             onAdd={addExercises}
             onClose={() => setPickerOpen(false)}
           />

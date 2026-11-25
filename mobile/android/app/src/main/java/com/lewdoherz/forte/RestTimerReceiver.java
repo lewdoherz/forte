@@ -8,7 +8,6 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.media.AudioAttributes;
-import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 
@@ -19,26 +18,51 @@ public final class RestTimerReceiver extends BroadcastReceiver {
     public static final String EXTRA_BODY = "body";
     public static final String EXTRA_SOUND = "sound";
     public static final String EXTRA_VIBRATE = "vibrate";
-    private static volatile String lastPostedKey = null;
+    public static final long[] VIBRATION_PATTERN = new long[]{0, 220, 100, 260};
 
-    public static void clearLastPostedKey() {
-        lastPostedKey = null;
+    private static volatile String lastAlertedKey = null;
+
+    public static synchronized void markKeyAlerted(String key) {
+        if (key != null && !key.isEmpty()) {
+            lastAlertedKey = key;
+        }
+    }
+
+    public static synchronized boolean isKeyAlerted(String key) {
+        return key != null && !key.isEmpty() && key.equals(lastAlertedKey);
+    }
+
+    public static synchronized void clearLastAlertedKey() {
+        lastAlertedKey = null;
     }
 
     public static String channelIdFor(boolean sound, boolean vibrate) {
-        if (sound && vibrate) return "forte_rest_sv_v1";
-        if (sound) return "forte_rest_s_v1";
-        if (vibrate) return "forte_rest_v_v1";
-        return "forte_rest_quiet_v1";
+        if (sound && vibrate) return "forte_rest_sv_v2";
+        if (sound) return "forte_rest_s_v2";
+        if (vibrate) return "forte_rest_v_v2";
+        return "forte_rest_quiet_v2";
+    }
+
+    public static Uri localChimeUri(Context context) {
+        return Uri.parse("android.resource://" + context.getPackageName() + "/" + R.raw.rest_chime);
     }
 
     public static void ensureChannels(Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return;
-        Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+
+        // Clean up superseded v1 channels that used default ringtone + USAGE_ALARM.
+        for (String legacy : new String[]{"forte_rest_sv_v1", "forte_rest_s_v1", "forte_rest_v_v1", "forte_rest_quiet_v1"}) {
+            if (manager.getNotificationChannel(legacy) != null) {
+                manager.deleteNotificationChannel(legacy);
+            }
+        }
+
+        Uri soundUri = localChimeUri(context);
+        // USAGE_NOTIFICATION respects the phone's Notification volume, Ringer mode, and Do Not Disturb.
         AudioAttributes audio = new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build();
 
@@ -61,7 +85,7 @@ public final class RestTimerReceiver extends BroadcastReceiver {
         NotificationChannel channel = new NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH);
         channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         channel.enableVibration(vibrate);
-        if (vibrate) channel.setVibrationPattern(new long[]{0, 180, 90, 220});
+        if (vibrate) channel.setVibrationPattern(VIBRATION_PATTERN);
         if (sound != null) channel.setSound(sound, audio);
         else channel.setSound(null, null);
         manager.createNotificationChannel(channel);
@@ -85,18 +109,16 @@ public final class RestTimerReceiver extends BroadcastReceiver {
             String title,
             String body
     ) {
-        if (key != null && !key.isEmpty() && key.equals(lastPostedKey)) {
-            return;
-        }
-        if (key != null && !key.isEmpty()) {
-            lastPostedKey = key;
-        }
+        if (isKeyAlerted(key)) return;
+        markKeyAlerted(key);
+
+        if (!sound && !vibrate) return;
         if (title == null || title.isEmpty()) title = "Rest finished";
         if (body == null || body.isEmpty()) body = "Ready for your next set.";
 
         ensureChannels(context);
         NotificationManager manager = context.getSystemService(NotificationManager.class);
-        if (manager == null) return;
+        if (manager == null || !manager.areNotificationsEnabled()) return;
 
         Intent launch = new Intent(context, MainActivity.class);
         launch.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -116,14 +138,14 @@ public final class RestTimerReceiver extends BroadcastReceiver {
                 .setContentTitle(title)
                 .setContentText(body)
                 .setAutoCancel(true)
-                .setCategory(Notification.CATEGORY_ALARM)
+                .setCategory(Notification.CATEGORY_REMINDER)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setContentIntent(tap);
 
         try {
             manager.notify(NOTIFICATION_ID, builder.build());
         } catch (SecurityException ignored) {
-            // POST_NOTIFICATIONS denied on Android 13+; foreground visual/audio/vibration still works.
+            // POST_NOTIFICATIONS denied on Android 13+; Settings diagnostics guide the user.
         }
     }
 }

@@ -164,13 +164,13 @@ function request(url: string, mode: RequestMode = "cors", headers?: HeadersInit)
 }
 
 await cacheStorage.open("forte-v2");
-await cacheStorage.open("forte-static-v3");
+await cacheStorage.open("forte-static-v4");
 await dispatchExtendable("install");
 await dispatchExtendable("activate");
-check("activation retires older caches", !stores.has("forte-v2") && !stores.has("forte-static-v3"));
+check("activation retires older caches", !stores.has("forte-v2") && !stores.has("forte-static-v4"));
 check(
   "activation creates separate static and private caches",
-  stores.has("forte-static-v4") && stores.has("forte-private-v4"),
+  stores.has("forte-static-v5") && stores.has("forte-private-v5"),
 );
 
 const accountUrl = `${ORIGIN}/account`;
@@ -242,11 +242,26 @@ check(
   "warming /offline-app caches requested public thumbnails",
   (await warmedThumb.response?.text()) === "network:/exercise-media/thumbnails/inverted-row.jpg",
 );
+const warmedCatalog = await dispatchFetch(request(`${ORIGIN}/offline-catalog.json`));
+check(
+  "warming /offline-app caches built-in catalog JSON",
+  (await warmedCatalog.response?.text()) === "network:/offline-catalog.json",
+);
+const warmedHeatmap = await dispatchFetch(request(`${ORIGIN}/body-heatmap/male_front_base.png`));
+check(
+  "warming /offline-app caches body-heatmap layers",
+  (await warmedHeatmap.response?.text()) === "network:/body-heatmap/male_front_base.png",
+);
+const warmedAudio = await dispatchFetch(request(`${ORIGIN}/audio/rest_chime.wav`));
+check(
+  "warming /offline-app caches local rest chime audio",
+  (await warmedAudio.response?.text()) === "network:/audio/rest_chime.wav",
+);
 offline = false;
 
 await dispatchMessage({ type: "clear-private-cache" });
-check("account cleanup deletes private caches", !stores.has("forte-private-v4"));
-check("account cleanup preserves shared static assets", stores.has("forte-static-v4"));
+check("account cleanup deletes private caches", !stores.has("forte-private-v5"));
+check("account cleanup preserves shared static assets", stores.has("forte-static-v5"));
 offline = true;
 const clearedWorkout = await dispatchFetch(request(PRIVATE_WORKOUT_URL, "navigate"));
 check(
@@ -279,7 +294,7 @@ await racingWarm;
 deferredNetwork = undefined;
 check(
   "a response started before cleanup cannot recreate the private cache",
-  !stores.has("forte-private-v4") || stores.get("forte-private-v4")?.entries.size === 0,
+  !stores.has("forte-private-v5") || stores.get("forte-private-v5")?.entries.size === 0,
 );
 
 console.log(output.join("\n"));

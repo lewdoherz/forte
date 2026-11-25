@@ -15,6 +15,9 @@ const eslintConfig = defineConfig([
     "mobile/**/.native-review-tmp/**",
     "mobile/**/build/**",
     "mobile/**/.gradle/**",
+    "mobile/android/app/src/main/assets/www/**",
+    "mobile/ios/Forte/OfflineBundle/**",
+    "mobile/offline-dist/**",
   ]),
 ]);
 

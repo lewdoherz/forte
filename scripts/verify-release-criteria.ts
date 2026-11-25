@@ -161,7 +161,13 @@ try {
       (await vibSwitch.getAttribute("aria-checked")) === "true",
   );
   await page.getByRole("button", { name: "Preview alert", exact: true }).click();
-  check("Preview alert reports confirmation", (await page.evaluate(() => document.body.innerText)).includes("Alert preview triggered."));
+  const previewText = await page.evaluate(() => document.body.innerText);
+  check(
+    "Preview alert reports confirmation",
+    previewText.includes("Alert preview triggered.") ||
+      previewText.includes("Vibrated (sound off).") ||
+      previewText.includes("Played local chime"),
+  );
 
   // Capture Light theme Dashboard screenshot
   await page.goto("/");
@@ -253,10 +259,10 @@ try {
   await page.goto("/");
   await page.waitForSelector('h1:text-is("Dashboard")', { timeout: 15_000 });
 
-  // Wait for service worker controller, /offline-app cached in forte-static-v4, AND IndexedDB populated
+  // Wait for service worker controller, /offline-app cached in forte-static-v5, AND IndexedDB populated
   await page.waitForFunction(async () => {
     if (!navigator.serviceWorker?.controller) return false;
-    const cache = await caches.open("forte-static-v4");
+    const cache = await caches.open("forte-static-v5");
     const hasShell = Boolean(await cache.match("/offline-app"));
     if (!hasShell) return false;
     return await new Promise<boolean>((resolve) => {
@@ -285,17 +291,23 @@ try {
   await context.setOffline(true);
   page = await context.newPage();
   await page.goto("/", { waitUntil: "domcontentloaded", timeout: 25_000 });
-  await page.getByRole("heading", { name: "Workout history", exact: true }).waitFor({ timeout: 20_000 });
-  check("Cold launch in airplane mode boots offline-capable shell from `/`", true);
+  await page.getByRole("heading", { name: "Dashboard", exact: true }).waitFor({ timeout: 20_000 });
+  check("Cold launch in airplane mode boots normal Forte Home/Dashboard from `/`", true);
 
-  // Browse exercises & thumbnails offline
-  await page.getByRole("button", { name: "Exercises", exact: true }).click();
-  await page.getByPlaceholder("Search exercises").fill("Squat");
-  await page.getByText("Squat (Barbell)", { exact: true }).waitFor({ timeout: 10_000 });
-  check("Exercises and thumbnails browseable offline", true);
+  // Browse exercises & thumbnails + full Exercise Detail (Overhead Press) offline via Profile -> Exercises
+  await page.getByRole("button", { name: "Profile", exact: true }).click();
+  await page.getByRole("button", { name: /Exercises/i }).click();
+  await page.getByPlaceholder("Search exercises").fill("Overhead Press (Barbell)");
+  await page.getByRole("button", { name: /Overhead Press \(Barbell\)/i }).first().click();
+  const detailText = await page.evaluate(() => document.body.innerText);
+  check(
+    "Exercises, thumbnails, primary/secondary muscles, and How-to open offline for an unviewed exercise",
+    detailText.includes("Shoulders") && detailText.includes("Triceps") && detailText.includes("collarbone"),
+  );
 
   // Check Settings offline: Appearance & rest preferences work offline while account shows offline state
   await page.getByRole("button", { name: "Profile", exact: true }).click();
+  await page.getByRole("button", { name: /Settings/i }).first().click();
   const offlineSettingsText = await page.evaluate(() => document.body.innerText);
   check(
     "Offline Settings keeps Appearance & Rest timer usable and shows clear offline account state",
@@ -344,14 +356,14 @@ try {
   await page.getByRole("button", { name: "Finish", exact: true }).click();
   const reviewDialog = page.getByRole("dialog", { name: "Review workout", exact: true });
   await reviewDialog.getByRole("button", { name: "Save workout", exact: true }).click();
-  await page.getByRole("heading", { name: "Workout complete", exact: true }).waitFor({ timeout: 15_000 });
-  check("Finishing workout offline shows local recap with 'Saved on this device'", (await page.evaluate(() => document.body.innerText)).includes("Saved on this device"));
+  await page.getByRole("button", { name: /Back to workouts/i }).waitFor({ timeout: 15_000 });
+  check("Finishing workout offline shows full workout detail with 'Saved on this device'", (await page.evaluate(() => document.body.innerText)).includes("Saved on this device"));
 
-  // Cold launch AGAIN offline and confirm finished workout is in History
+  // Cold launch AGAIN offline and confirm finished workout is in Home & History
   await page.close();
   page = await context.newPage();
   await page.goto("/", { waitUntil: "domcontentloaded", timeout: 25_000 });
-  await page.getByRole("heading", { name: "Workout history", exact: true }).waitFor({ timeout: 15_000 });
+  await page.getByRole("heading", { name: "Dashboard", exact: true }).waitFor({ timeout: 15_000 });
   const historyTextOffline = await page.evaluate(() => document.body.innerText);
   check(
     "Cold launch after finishing offline shows workout in local history as 'Saved on this device'",
@@ -382,7 +394,9 @@ try {
     await retryBtn.click();
   }
   await page.waitForFunction(
-    () => document.body.innerText.includes("All local changes synced") || document.body.innerText.includes("Connected · open online view"),
+    () =>
+      document.body.innerText.includes("Synced") &&
+      !document.body.innerText.includes("Retry sync"),
     undefined,
     { timeout: 20_000 },
   );
@@ -438,7 +452,7 @@ try {
   // Go offline, edit a routine AND complete a workout so BOTH are unsynced on device
   await context.setOffline(true);
   await page.goto("/", { waitUntil: "domcontentloaded", timeout: 25_000 });
-  await page.getByRole("heading", { name: "Workout history", exact: true }).waitFor({ timeout: 20_000 });
+  await page.getByRole("heading", { name: "Dashboard", exact: true }).waitFor({ timeout: 20_000 });
 
   await page.getByRole("button", { name: "Workout", exact: true }).click();
   await page.locator("li", { hasText: "Leg Day Offline Edited" }).first().getByRole("button", { name: "Edit routine", exact: true }).click();
@@ -456,7 +470,7 @@ try {
   await vaultedSet1.getByRole("button", { name: "Undo completed set", exact: true }).waitFor({ timeout: 10_000 });
   await page.getByRole("button", { name: "Finish", exact: true }).click();
   await page.getByRole("dialog", { name: "Review workout", exact: true }).getByRole("button", { name: "Save workout", exact: true }).click();
-  await page.getByRole("heading", { name: "Workout complete", exact: true }).waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: /Back to workouts/i }).waitFor({ timeout: 15_000 });
 
   // Block /api/offline/sync while coming online so Account A signs out WITH unsynced changes still pending
   await context.route("**/api/offline/sync", async (route) => {
@@ -508,9 +522,11 @@ try {
   // Confirm signed-out /offline-app cannot see Account A's pending changes
   await page.goto("/offline-app");
   await page.waitForTimeout(500);
+  const signedOutOfflineText = await page.evaluate(() => document.body.innerText);
   check(
     "Signed-out offline shell cannot see previous account's vaulted changes",
-    !(await page.evaluate(() => document.body.innerText)).includes("Vaulted Routine Edit"),
+    !signedOutOfflineText.includes("Vaulted Routine Edit"),
+    signedOutOfflineText.includes("Vaulted Routine Edit") ? signedOutOfflineText.slice(0, 300).replace(/\s+/g, " ") : "",
   );
 
   // Unblock sync and sign up + sign in as a SECOND account (Account B)
@@ -596,6 +612,96 @@ try {
       recoveredRoutines.rows.length === 1 &&
       recoveredRoutines.rows[0].owner_id === accountAId,
     `calls=${vaultRetryCalls} workouts=${recoveredWorkouts.rows.length} routines=${recoveredRoutines.rows.length}`,
+  );
+  await context.unroute("**/api/offline/sync");
+
+  // =========================================================================
+  // 6. Picker detail inspection (selection retained), routine folders, & legacy 3-set migration
+  // =========================================================================
+  await context.setOffline(true);
+  await page.goto("/", { waitUntil: "domcontentloaded", timeout: 25_000 });
+  await page.getByRole("heading", { name: "Dashboard", exact: true }).waitFor({ timeout: 15_000 });
+
+  // Create a routine folder offline, create a routine inside it using multi-select + inspect detail
+  await page.getByRole("button", { name: "Workout", exact: true }).click();
+  await page.getByRole("button", { name: "+ New folder", exact: true }).click();
+  await page.getByPlaceholder("Folder name").fill("Upper Split");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: /Upper Split/i }).waitFor({ timeout: 10_000 });
+
+  await page.getByRole("button", { name: "+ Create routine", exact: true }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Press Day");
+  await page.getByLabel("Folder", { exact: true }).selectOption({ label: "Upper Split" });
+  await page.getByRole("button", { name: "+ Add exercise", exact: true }).click();
+  const offlinePicker = page.getByRole("dialog", { name: "Add exercise", exact: true });
+  // Select Bench Press (Barbell), search Overhead Press (Barbell), inspect detail, return with selection intact!
+  await offlinePicker.getByRole("searchbox").fill("Bench Press (Barbell)");
+  await offlinePicker.getByRole("button", { name: "Select Bench Press (Barbell)", exact: true }).click();
+  await offlinePicker.getByRole("searchbox").fill("Overhead Press (Barbell)");
+  await offlinePicker.getByRole("button", { name: "Details and history for Overhead Press (Barbell)", exact: true }).click();
+  const inspectedText = await offlinePicker.innerText();
+  check(
+    "In-picker Exercise Detail shows muscles and How-to offline",
+    inspectedText.includes("Shoulders") && inspectedText.includes("Triceps") && inspectedText.includes("collarbone"),
+    inspectedText.slice(0, 200),
+  );
+  await offlinePicker.getByRole("button", { name: "Select Overhead Press (Barbell)", exact: true }).click();
+  await offlinePicker.getByRole("button", { name: "Add 2 exercises", exact: true }).click();
+  await page.getByRole("button", { name: "Create routine", exact: true }).click();
+  await page.getByText("Press Day", { exact: true }).waitFor({ timeout: 10_000 });
+  check("Picker multi-select survived inspecting Exercise Detail and saved into folder offline", true);
+
+  // Inject a legacy previous-RC 3-set Quick local workout and verify lossless migration + explicit import!
+  await context.setOffline(false);
+  await page.evaluate(() => {
+    window.localStorage.removeItem("forte:legacy-quick-migrated:v1");
+    window.localStorage.setItem(
+      "forte:fresh-offline-history:v1",
+      JSON.stringify([
+        {
+          title: "Previous RC 3-Set Workout",
+          finishedAt: new Date().toISOString(),
+          completedSets: 3,
+          sets: [
+            { exercise: "Squat", kg: "80", reps: "8", done: true },
+            { exercise: "Squat", kg: "85", reps: "8", done: true },
+            { exercise: "Squat", kg: "90", reps: "6", done: true },
+          ],
+        },
+      ]),
+    );
+  });
+  await page.goto("/");
+  await page.waitForSelector('h1:text-is("Dashboard")', { timeout: 15_000 });
+  await page.getByRole("button", { name: "Add to my account", exact: true }).waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Add to my account", exact: true }).click();
+  await page.waitForTimeout(2500);
+  const migratedDb = await pool.query<{ id: string; sets: number }>(
+    `SELECT w.id, count(ws.id)::int AS sets
+     FROM workout w
+     JOIN workout_exercise we ON we.workout_id = w.id
+     JOIN workout_set ws ON ws.workout_exercise_id = we.id
+     WHERE w.title = 'Previous RC 3-Set Workout' AND w.owner_id = $1
+     GROUP BY w.id`,
+    [accountAId],
+  );
+  const folderDb = await pool.query<{ id: string; title: string }>(
+    "SELECT id, title FROM routine_folder WHERE owner_id = $1 AND title = 'Upper Split'",
+    [accountAId],
+  );
+  const routineInFolderDb = await pool.query<{ folder_id: string | null }>(
+    "SELECT folder_id FROM routine WHERE owner_id = $1 AND title = 'Press Day'",
+    [accountAId],
+  );
+  check(
+    "Previous RC 3-set Quick local workout migrates losslessly and explicitly associates into account",
+    migratedDb.rows.length === 1 && migratedDb.rows[0].sets === 3,
+    `rows=${migratedDb.rows.length} sets=${migratedDb.rows[0]?.sets ?? 0}`,
+  );
+  check(
+    "Offline routine folder and folder assignment sync cleanly to PostgreSQL",
+    folderDb.rows.length === 1 && routineInFolderDb.rows[0]?.folder_id === folderDb.rows[0].id,
+    `folders=${folderDb.rows.length}`,
   );
 
   console.log(`\n${checks - failures}/${checks} release-criteria checks passed.`);

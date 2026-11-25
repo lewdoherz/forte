@@ -1,31 +1,101 @@
 import UIKit
 import WebKit
 import AuthenticationServices
+import AVFoundation
 import AudioToolbox
 import CryptoKit
+import Network
 import Security
 import UserNotifications
 
 @main
-final class AppDelegate: UIResponder, UIApplicationDelegate {
+final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     var window: UIWindow?
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = ShellController()
         window.makeKeyAndVisible()
         self.window = window
         return true
     }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
+    }
+}
+
+/// Serves bundled exercise thumbnails, body-heatmap PNGs, catalog JSON, and local audio
+/// from `Forte.app/OfflineBundle/` on the custom `forte-asset://` scheme so the offline
+/// HTML document can run on the real `https://<FORTE_HOST>` origin with shared IndexedDB.
+private final class BundledAssetSchemeHandler: NSObject, WKURLSchemeHandler {
+    private let bundleRoot: URL?
+
+    override init() {
+        self.bundleRoot = Bundle.main.resourceURL?.appendingPathComponent("OfflineBundle", isDirectory: true)
+        super.init()
+    }
+
+    private static func mimeType(for path: String) -> String {
+        let lower = path.lowercased()
+        if lower.hasSuffix(".json") { return "application/json; charset=utf-8" }
+        if lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg") { return "image/jpeg" }
+        if lower.hasSuffix(".png") { return "image/png" }
+        if lower.hasSuffix(".svg") { return "image/svg+xml" }
+        if lower.hasSuffix(".wav") { return "audio/wav" }
+        if lower.hasSuffix(".css") { return "text/css; charset=utf-8" }
+        if lower.hasSuffix(".js") { return "application/javascript; charset=utf-8" }
+        return "application/octet-stream"
+    }
+
+    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        guard let root = bundleRoot,
+              let url = urlSchemeTask.request.url else {
+            urlSchemeTask.didFailWithError(NSError(domain: NSURLErrorDomain, code: NSURLErrorFileDoesNotExist))
+            return
+        }
+        let rawPath = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !rawPath.isEmpty, !rawPath.contains("..") else {
+            urlSchemeTask.didFailWithError(NSError(domain: NSURLErrorDomain, code: NSURLErrorNoPermissionsToReadFile))
+            return
+        }
+        let fileURL = root.appendingPathComponent(rawPath)
+        guard let data = try? Data(contentsOf: fileURL) else {
+            urlSchemeTask.didFailWithError(NSError(domain: NSURLErrorDomain, code: NSURLErrorFileDoesNotExist))
+            return
+        }
+        let headers: [String: String] = [
+            "Content-Type": Self.mimeType(for: rawPath),
+            "Content-Length": String(data.count),
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store"
+        ]
+        if let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers) {
+            urlSchemeTask.didReceive(response)
+            urlSchemeTask.didReceive(data)
+            urlSchemeTask.didFinish()
+        } else {
+            urlSchemeTask.didFailWithError(NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotParseResponse))
+        }
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 }
 
 final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, ASWebAuthenticationPresentationContextProviding {
     private static let restNotificationId = "com.lewdoherz.forte.rest-timer"
-    private static let offlineStartPath = "/offline-start"
+    private static let offlineAppPath = "/offline-app"
 
     private var web: WKWebView!
     private var errorPanel: UIStackView!
     private var lastPage: URL!
     private var origin: URL!
+    private var chimePlayer: AVAudioPlayer?
+    private let pathMonitor = NWPathMonitor()
+    private var networkSatisfied = true
+    private var loadedInitialPage = false
     private struct PendingAuth {
         let state: String
         let verifier: String
@@ -49,9 +119,10 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
         config.limitsNavigationsToAppBoundDomains = true
-        config.applicationNameForUserAgent = "ForteIOS/1"
+        config.applicationNameForUserAgent = "ForteIOS/2"
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
         config.userContentController.add(self, name: "forteRestTimer")
+        config.setURLSchemeHandler(BundledAssetSchemeHandler(), forURLScheme: "forte-asset")
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -82,7 +153,36 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             errorPanel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24)
         ])
         web.allowsBackForwardNavigationGestures = true
-        reloadPage()
+        errorPanel.isHidden = true
+
+        // Check reachability immediately so offline launches open the bundled normal Forte app
+        // with zero network timeout or auth wait.
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.networkSatisfied = (path.status == .satisfied)
+                if !self.loadedInitialPage {
+                    self.loadedInitialPage = true
+                    if self.networkSatisfied {
+                        self.reloadPage()
+                    } else {
+                        self.showBundledOfflineApp()
+                    }
+                }
+            }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "com.lewdoherz.forte.net"))
+
+        // Safety fallback if NWPathMonitor does not emit synchronously on launch.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, !self.loadedInitialPage else { return }
+            self.loadedInitialPage = true
+            self.reloadPage()
+        }
+    }
+
+    deinit {
+        pathMonitor.cancel()
     }
 
     private func safeHTTPS(_ url: URL) -> Bool {
@@ -96,16 +196,68 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     @objc private func reloadPage() {
         errorPanel.isHidden = true
         web.isHidden = false
+        if !networkSatisfied {
+            showBundledOfflineApp()
+            return
+        }
         web.load(URLRequest(url: lastPage))
     }
 
     private func showError() { web.isHidden = true; errorPanel.isHidden = false }
 
-    private func showFreshOfflineShell() {
+    private func showBundledOfflineApp() {
         errorPanel.isHidden = true
         web.isHidden = false
-        let base = origin.appendingPathComponent("offline-start")
-        web.loadHTMLString(Self.freshOfflineHTML, baseURL: base)
+        if let bundleHTML = Bundle.main.resourceURL?
+            .appendingPathComponent("OfflineBundle", isDirectory: true)
+            .appendingPathComponent("offline-app.html"),
+           let html = try? String(contentsOf: bundleHTML, encoding: .utf8) {
+            let base = origin.appendingPathComponent("offline-app")
+            web.loadHTMLString(html, baseURL: base)
+            return
+        }
+        showError()
+    }
+
+    private func playLocalChime() {
+        guard let url = Bundle.main.url(forResource: "rest_chime", withExtension: "wav") else {
+            AudioServicesPlaySystemSound(1007)
+            return
+        }
+        do {
+            // `.ambient` respects the hardware Silent/Ring switch and Focus/DND modes.
+            try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.prepareToPlay()
+            player.play()
+            chimePlayer = player
+        } catch {
+            AudioServicesPlaySystemSound(1007)
+        }
+    }
+
+    private func emitNotificationStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let authorized = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+                let js = """
+                window.dispatchEvent(new CustomEvent('forte:native-alert-status', { detail: {
+                  platform: 'ios',
+                  notificationsEnabled: \(authorized ? "true" : "false"),
+                  postNotificationsGranted: \(authorized ? "true" : "false"),
+                  channelBlocked: false,
+                  dndBlocking: false,
+                  ringerMode: 'unknown',
+                  notificationVolumeZero: false,
+                  hasVibrator: true,
+                  exactAlarmsAllowed: true
+                }}));
+                """
+                self.web.evaluateJavaScript(js, completionHandler: nil)
+            }
+        }
     }
 
     // Tightly scoped non-token message handler for rest-timer sound/vibration/background notifications only.
@@ -116,6 +268,16 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
               let action = body["action"] as? String else { return }
 
         let center = UNUserNotificationCenter.current()
+        if action == "status" {
+            emitNotificationStatus()
+            return
+        }
+        if action == "requestPermission" {
+            center.requestAuthorization(options: [.alert, .sound]) { [weak self] _, _ in
+                self?.emitNotificationStatus()
+            }
+            return
+        }
         if action == "cancel" {
             center.removePendingNotificationRequests(withIdentifiers: [Self.restNotificationId])
             center.removeDeliveredNotifications(withIdentifiers: [Self.restNotificationId])
@@ -124,7 +286,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         if action == "preview" {
             let sound = (body["sound"] as? Bool) ?? true
             let vibrate = (body["vibrate"] as? Bool) ?? true
-            if sound { AudioServicesPlaySystemSound(1007) }
+            if sound { playLocalChime() }
             if vibrate {
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
@@ -142,12 +304,15 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             guard delay > 0.5 else { return }
             let title = (body["title"] as? String) ?? "Rest finished"
             let subtitle = (body["body"] as? String) ?? "Ready for your next set."
-            center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
+                self?.emitNotificationStatus()
                 guard granted else { return }
                 let content = UNMutableNotificationContent()
                 content.title = title
                 content.body = subtitle
-                if sound { content.sound = .default }
+                if sound {
+                    content.sound = UNNotificationSound(named: UNNotificationSoundName("rest_chime.wav"))
+                }
                 let trigger = UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)
                 let req = UNNotificationRequest(identifier: Self.restNotificationId, content: content, trigger: trigger)
                 center.add(req, withCompletionHandler: nil)
@@ -344,14 +509,14 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        if let url = webView.url, sameOrigin(url), url.path != Self.offlineStartPath { lastPage = url }
+        if let url = webView.url, sameOrigin(url), url.path != Self.offlineAppPath { lastPage = url }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let code = (error as NSError).code
         if code == NSURLErrorCancelled { return }
         if [NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost, NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost, NSURLErrorTimedOut].contains(code) {
-            showFreshOfflineShell()
+            showBundledOfflineApp()
         } else {
             showError()
         }
@@ -368,22 +533,6 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { showError() }
-
-    private static let freshOfflineHTML = """
-    <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-    <title>forte — offline</title>
-    <style>
-      body{margin:0;padding:1.5rem;background:#0d1512;color:#eef5ef;font-family:-apple-system,system-ui,sans-serif}
-      main{max-width:28rem;margin:2rem auto;display:grid;gap:1rem}
-      .card{background:#17221c;border:1px solid #34463a;border-radius:1rem;padding:1rem}
-      .btn{display:block;width:100%;min-height:2.75rem;border-radius:.75rem;border:0;background:#d6f077;color:#142017;font-weight:700;font-size:.95rem}
-      p{color:#b0c0b4;line-height:1.5;font-size:.9rem}
-    </style></head><body><main><div class="card">
-      <h1 style="margin:0 0 .5rem">forte</h1>
-      <p>This device has not completed first-time online setup yet. Connect once and sign in to sync your routines, exercises, and history for full offline use.</p>
-      <button class="btn" onclick="location.assign(location.origin + '/')">Connect &amp; sign in</button>
-    </div></main></body></html>
-    """
 }
 
 // The one-time code and verifier must never follow an HTTP redirect.

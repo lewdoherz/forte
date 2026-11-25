@@ -1,15 +1,17 @@
 /* Hand-written service worker: static asset & offline-shell cache + isolated private workout cache.
  *
- * - Shared static cache (`forte-static-v4`): immutable `/_next/static/*` chunks,
- *   PWA icons/manifest, public exercise thumbnails (`/exercise-media/thumbnails/*`),
- *   and the zero-user-data `/offline-app` shell (which reads account-scoped data
- *   exclusively from IndexedDB).
- * - Private route cache (`forte-private-v4`): exact `/workouts/[id]` HTML snapshot
+ * - Shared static cache (`forte-static-v5`): immutable `/_next/static/*` chunks,
+ *   PWA icons/manifest, built-in exercise catalog (`/offline-catalog.json`),
+ *   public exercise thumbnails (`/exercise-media/thumbnails/*`), body-heatmap
+ *   layers (`/body-heatmap/*`), local rest chime (`/audio/rest_chime.wav`),
+ *   and the zero-user-data `/offline-app` shell (which reads account-scoped or
+ *   device-local data exclusively from IndexedDB).
+ * - Private route cache (`forte-private-v5`): exact `/workouts/[id]` HTML snapshot
  *   explicitly warmed by the active logger and purged on every account transition.
  * - Authenticated non-workout HTML and Next RSC/prefetch payloads are NEVER cached.
  */
 
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
 const STATIC_CACHE_NAME = `forte-static-${CACHE_VERSION}`;
 const PRIVATE_CACHE_NAME = `forte-private-${CACHE_VERSION}`;
 const CACHE_PREFIX = "forte-";
@@ -19,6 +21,48 @@ const CLEAR_PRIVATE_CACHE_MESSAGE = "clear-private-cache";
 const CACHE_PRIVATE_ROUTE_MESSAGE = "cache-private-route";
 const WARM_OFFLINE_SHELL_MESSAGE = "warm-offline-shell";
 const OFFLINE_APP_PATH = "/offline-app";
+const NAV_TIMEOUT_MS = 2500;
+
+const CORE_STATIC_PATHS = [
+  "/offline-catalog.json",
+  "/audio/rest_chime.wav",
+  "/body-heatmap/male_front_base.png",
+  "/body-heatmap/male_back_base.png",
+  "/body-heatmap/male_front_abdominals.png",
+  "/body-heatmap/male_back_abdominals.png",
+  "/body-heatmap/male_front_abductors.png",
+  "/body-heatmap/male_back_abductors(empty).png",
+  "/body-heatmap/male_front_adductors.png",
+  "/body-heatmap/male_back_adductors.png",
+  "/body-heatmap/male_front_biceps.png",
+  "/body-heatmap/male_back_biceps.png",
+  "/body-heatmap/male_front_calves.png",
+  "/body-heatmap/male_back_calves.png",
+  "/body-heatmap/male_front_chest.png",
+  "/body-heatmap/male_back_chest(empty).png",
+  "/body-heatmap/male_front_forearms.png",
+  "/body-heatmap/male_back_forearms.png",
+  "/body-heatmap/male_front_glutes(empty).png",
+  "/body-heatmap/male_back_glutes.png",
+  "/body-heatmap/male_front_hamstrings(empty).png",
+  "/body-heatmap/male_back_hamstrings.png",
+  "/body-heatmap/male_front_lats.png",
+  "/body-heatmap/male_back_lats.png",
+  "/body-heatmap/male_front_lower_back(empty).png",
+  "/body-heatmap/male_back_lower_back.png",
+  "/body-heatmap/male_front_neck.png",
+  "/body-heatmap/male_back_neck.png",
+  "/body-heatmap/male_front_quadriceps.png",
+  "/body-heatmap/male_back_quadriceps.png",
+  "/body-heatmap/male_front_shoulder.png",
+  "/body-heatmap/male_back_shoulder.png",
+  "/body-heatmap/male_front_traps.png",
+  "/body-heatmap/male_back_traps.png",
+  "/body-heatmap/male_front_triceps.png",
+  "/body-heatmap/male_back_triceps.png",
+  "/body-heatmap/male_front_upper-back.png",
+  "/body-heatmap/male_back_upper-back.png",
+];
 
 let privateCacheEpoch = 0;
 
@@ -114,6 +158,9 @@ function isStaticAssetPath(pathname) {
   return (
     pathname.startsWith("/_next/static/") ||
     pathname.startsWith("/exercise-media/thumbnails/") ||
+    pathname.startsWith("/body-heatmap/") ||
+    pathname.startsWith("/audio/") ||
+    pathname === "/offline-catalog.json" ||
     pathname === "/manifest.webmanifest" ||
     pathname === "/icon" ||
     pathname === "/apple-icon" ||
@@ -146,10 +193,27 @@ async function fetchPrivateSnapshot(url, epoch) {
   await putPrivateSnapshot(request, response.clone(), epoch);
 }
 
+async function cacheUrlsInBatches(cache, paths, batchSize = 8) {
+  for (let i = 0; i < paths.length; i += batchSize) {
+    await Promise.all(
+      paths.slice(i, i + batchSize).map(async (rawPath) => {
+        const assetUrl = new URL(rawPath, self.location.origin).href;
+        if (await cache.match(assetUrl)) return;
+        try {
+          const res = await fetch(new Request(assetUrl, { credentials: "omit" }));
+          if (res.ok && res.type !== "opaque") await cache.put(assetUrl, res);
+        } catch {
+          // Non-fatal: transient drop.
+        }
+      }),
+    );
+  }
+}
+
 /**
  * Fetches `/offline-app` WITHOUT credentials (so it can never carry user data),
  * caches its HTML plus every `/_next/static/*` script/stylesheet it references,
- * and caches requested public exercise thumbnails.
+ * caches the built-in catalog, body-heatmap art, audio chime, and public thumbnails.
  */
 async function warmOfflineShellAssets(thumbnails) {
   const cache = await caches.open(STATIC_CACHE_NAME);
@@ -185,7 +249,6 @@ async function warmOfflineShellAssets(thumbnails) {
           }
         }),
       );
-      // Commit `/offline-app` HTML atomically only after every chunk it references is cached.
       if (allAssetsCached) {
         await cache.put(shellUrl, shellCopy);
       }
@@ -194,33 +257,30 @@ async function warmOfflineShellAssets(thumbnails) {
     // Offline or unreachable during warm; retry on next online visit.
   }
 
+  await cacheUrlsInBatches(cache, CORE_STATIC_PATHS, 8);
+
   if (Array.isArray(thumbnails)) {
     const valid = thumbnails.filter(
       (rawPath) => typeof rawPath === "string" && rawPath.startsWith("/exercise-media/thumbnails/"),
     );
-    const BATCH = 8;
-    for (let i = 0; i < valid.length; i += BATCH) {
-      await Promise.all(
-        valid.slice(i, i + BATCH).map(async (rawPath) => {
-          const thumbUrl = new URL(rawPath, self.location.origin).href;
-          if (await cache.match(thumbUrl)) return;
-          try {
-            const res = await fetch(new Request(thumbUrl, { credentials: "omit" }));
-            if (res.ok && res.type !== "opaque") await cache.put(thumbUrl, res);
-          } catch {
-            // Non-fatal: missing thumbnail or transient drop.
-          }
-        }),
-      );
-    }
+    await cacheUrlsInBatches(cache, valid, 12);
+  }
+}
+
+async function fetchWithShortTimeout(request, timeoutMs) {
+  if (typeof AbortController === "undefined") return fetch(request);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(request, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 async function respondToNavigation(request, url) {
   const isPrivateWorkout = isPrivateWorkoutPath(url.pathname);
-  try {
-    return await fetch(request);
-  } catch {
+  const fallback = async () => {
     if (isPrivateWorkout) {
       const cached = await caches.match(request, { cacheName: PRIVATE_CACHE_NAME });
       if (cached) return cached;
@@ -233,6 +293,16 @@ async function respondToNavigation(request, url) {
       status: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
+  };
+
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return fallback();
+  }
+
+  try {
+    return await fetchWithShortTimeout(request, NAV_TIMEOUT_MS);
+  } catch {
+    return fallback();
   }
 }
 
@@ -295,7 +365,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Never intercept Next RSC/prefetch GETs.
   if (isStaticAssetPath(url.pathname)) {
     event.respondWith(respondToStaticAsset(event, request));
   }

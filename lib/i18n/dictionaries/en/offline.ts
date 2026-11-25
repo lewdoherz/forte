@@ -41,4 +41,48 @@ export const offline = {
   "offline.shell.editRoutine": "Edit routine",
   "offline.shell.startRoutine": "Start routine",
   "offline.shell.savedLocalFinish": "Saved on this device. Will sync once you reconnect.",
+  "offline.badge.offlinePill": "Offline",
+  "offline.picker.recent": "Recent exercises",
+  "offline.picker.all": "All exercises",
+  "offline.picker.back": "Back to picker",
+  "offline.folders.new": "New folder",
+  "offline.folders.placeholder": "Folder name",
+  "offline.folders.default": "My routines",
+  "offline.folders.folderLabel": "Folder",
+  "offline.folders.none": "My routines (no folder)",
+  "offline.folders.moveTo": "Move to folder",
+  "offline.folders.rename": "Rename",
+  "offline.folders.delete": "Delete folder",
+  "offline.folders.moveUp": "Move up",
+  "offline.folders.moveDown": "Move down",
+  "offline.guest.bannerTitle": "Local-only training data on this device",
+  "offline.guest.bannerBody":
+    "{workouts} workout(s) and {routines} routine(s) were saved on this device before sign-in. Choose whether to add them to your account.",
+  "offline.guest.import": "Add to my account",
+  "offline.guest.importing": "Adding…",
+  "offline.guest.keepSeparate": "Keep on device only",
+  "offline.guest.discard": "Discard local data",
+  "offline.guest.imported": "Local workouts added to your account and queued to sync.",
+  "offline.rest.diag.dnd":
+    "Do Not Disturb is active on this device. Allow Forte notifications in Do Not Disturb settings to hear or feel rest alerts.",
+  "offline.rest.diag.silent":
+    "Your phone is in Silent mode. Switch ringer mode to Sound or Vibrate for rest alerts.",
+  "offline.rest.diag.vibrateMode":
+    "Your phone is in Vibrate mode, so sound is muted by Android while vibration still works.",
+  "offline.rest.diag.volumeZero":
+    "Notification volume is at 0%. Turn up Notification volume to hear the rest chime.",
+  "offline.rest.diag.notificationsOff":
+    "Notifications are disabled for Forte. Enable notifications so locked-screen rest alerts can appear.",
+  "offline.rest.diag.channelBlocked":
+    "This rest-timer notification channel is muted in Android settings.",
+  "offline.rest.diag.exactAlarmOff":
+    "Exact alarm permission is off. Locked-screen timers may be delayed by Android Doze until enabled.",
+  "offline.rest.diag.noVibrator": "This device does not report a vibration motor.",
+  "offline.rest.diag.openNotifications": "Notification settings",
+  "offline.rest.diag.requestNotifications": "Allow notifications",
+  "offline.rest.diag.openExactAlarms": "Allow exact alarms",
+  "offline.rest.previewBlocked": "Blocked by device setting: {reason}",
+  "offline.rest.previewSoundOnly": "Played local chime (vibration off).",
+  "offline.rest.previewVibrateOnly": "Vibrated (sound off).",
+  "offline.rest.previewBoth": "Played local chime and vibrated.",
 } as const;

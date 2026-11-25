@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ExerciseType, RoutineTree, SetType } from "@/schema/types";
+import type { DurationRecordDirection, ExerciseType, RoutineFolder, RoutineTree, SetType } from "@/schema/types";
+import type { LoggedWorkout } from "@/lib/workout-sync";
 import { SET_TYPES } from "@/schema/types";
 import { normaliseSupersetKeys } from "@/lib/supersets";
 import { saveRoutine } from "@/lib/routine-actions";
@@ -165,6 +166,10 @@ export interface RoutineEditorExercise extends PickerExercise {
   secondary_muscles: string[];
   exercise_type: ExerciseType;
   equipment?: string;
+  how_to?: string | null;
+  media_url?: string | null;
+  duration_record_direction?: DurationRecordDirection;
+  is_custom?: boolean;
 }
 
 interface RoutineEditorProps {
@@ -172,6 +177,11 @@ interface RoutineEditorProps {
   muscles: VocabularyEntry[];
   equipment: VocabularyEntry[];
   initial?: RoutineTree;
+  folders?: RoutineFolder[];
+  initialFolderId?: string | null;
+  recentExerciseIds?: string[];
+  workouts?: LoggedWorkout[];
+  timeZone?: string;
   /** Optional override for offline saving inside the offline app shell. */
   onSaveOverride?: (input: RoutineInput) => Promise<{ id?: string; error?: string }>;
   onCancel?: () => void;
@@ -187,6 +197,11 @@ export function RoutineEditor({
   muscles,
   equipment,
   initial,
+  folders = [],
+  initialFolderId,
+  recentExerciseIds = [],
+  workouts = [],
+  timeZone = "UTC",
   onSaveOverride,
   onCancel,
 }: RoutineEditorProps) {
@@ -194,6 +209,9 @@ export function RoutineEditor({
   const i18n = useI18n();
   const { locale, t } = i18n;
   const [title, setTitle] = useState(initial?.title ?? "");
+  const [folderId, setFolderId] = useState<string>(
+    initial?.folder_id ?? initialFolderId ?? "",
+  );
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [exercises, setExercises] = useState<ExerciseDraft[]>(() =>
     (initial?.exercises ?? []).map((e) => ({
@@ -461,6 +479,8 @@ export function RoutineEditor({
     const input: RoutineInput = {
       id: initial?.id,
       title: title.trim(),
+      folder_id: folderId ? folderId : null,
+      position: initial?.position,
       notes: notes.trim() || null,
       exercises: exercises.map((ex) => ({
         template_id: ex.template_id,
@@ -744,6 +764,25 @@ export function RoutineEditor({
               />
             </label>
 
+            {folders.length > 0 ? (
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium">{t("offline.folders.folderLabel")}</span>
+                <select
+                  aria-label={t("offline.folders.folderLabel")}
+                  value={folderId}
+                  onChange={(e) => setFolderId(e.target.value)}
+                  className="training-input min-h-11 w-full rounded-xl px-3 text-base"
+                >
+                  <option value="">{t("offline.folders.none")}</option>
+                  {folders.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+
             <label className="block space-y-1.5">
               <span className="text-sm font-medium">{t("routines.editor.notesOptional")}</span>
               <textarea
@@ -884,6 +923,9 @@ export function RoutineEditor({
             muscles={muscles}
             equipment={equipment}
             excludeIds={addedIds}
+            recentIds={recentExerciseIds}
+            workouts={workouts}
+            timeZone={timeZone}
             onAdd={addExercises}
             onClose={() => setPickerOpen(false)}
           />

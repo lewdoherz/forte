@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { formatDuration } from "@/lib/i18n/format";
+import type { MessageKey } from "@/lib/i18n";
 import {
   readThemePreference,
   saveThemePreference,
@@ -11,15 +12,43 @@ import {
 } from "@/lib/theme";
 import {
   DEFAULT_REST_PREFS,
+  NATIVE_ALERT_STATUS_EVENT,
+  openNativeExactAlarmSettings,
+  openNativeNotificationSettings,
+  readNativeRestAlertStatus,
   readRestPreferences,
+  requestNativeNotificationPermission,
   REST_PREFS_EVENT,
   triggerRestCompletionAlert,
   writeRestPreferences,
+  type AlertBlockReason,
+  type NativeRestAlertStatus,
   type RestPreferences,
 } from "@/lib/rest-prefs";
 
 const REST_OPTIONS = [0, 30, 45, 60, 90, 120, 180, 300];
 const THEME_OPTIONS: readonly ThemePreference[] = ["system", "light", "dark"];
+
+function reasonMessageKey(reason: AlertBlockReason): MessageKey {
+  switch (reason) {
+    case "dnd":
+      return "offline.rest.diag.dnd";
+    case "silent":
+      return "offline.rest.diag.silent";
+    case "vibrate_mode":
+      return "offline.rest.diag.vibrateMode";
+    case "volume_zero":
+      return "offline.rest.diag.volumeZero";
+    case "notifications_off":
+      return "offline.rest.diag.notificationsOff";
+    case "channel_blocked":
+      return "offline.rest.diag.channelBlocked";
+    case "exact_alarm_off":
+      return "offline.rest.diag.exactAlarmOff";
+    case "no_vibrator":
+      return "offline.rest.diag.noVibrator";
+  }
+}
 
 export function DevicePreferences({
   userId,
@@ -32,21 +61,42 @@ export function DevicePreferences({
   const [theme, setTheme] = useState<ThemePreference>("system");
   const [rest, setRest] = useState<RestPreferences>(DEFAULT_REST_PREFS);
   const [previewStatus, setPreviewStatus] = useState<string | null>(null);
+  const [nativeStatus, setNativeStatus] = useState<NativeRestAlertStatus | null>(null);
+
+  const refreshNativeStatus = useCallback((prefs: RestPreferences) => {
+    const status = readNativeRestAlertStatus(prefs.soundEnabled, prefs.vibrationEnabled);
+    if (status) setNativeStatus(status);
+  }, []);
 
   useEffect(() => {
     const syncFromStorage = () => {
       setTheme(readThemePreference());
-      setRest(readRestPreferences(userId));
+      const nextRest = readRestPreferences(userId);
+      setRest(nextRest);
+      refreshNativeStatus(nextRest);
+    };
+    const onNativeStatus = (event: Event) => {
+      const detail = (event as CustomEvent<NativeRestAlertStatus>).detail;
+      if (detail) setNativeStatus(detail);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") syncFromStorage();
     };
     const timer = window.setTimeout(syncFromStorage, 0);
     window.addEventListener(THEME_EVENT, syncFromStorage);
     window.addEventListener(REST_PREFS_EVENT, syncFromStorage);
+    window.addEventListener(NATIVE_ALERT_STATUS_EVENT, onNativeStatus);
+    window.addEventListener("focus", syncFromStorage);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener(THEME_EVENT, syncFromStorage);
       window.removeEventListener(REST_PREFS_EVENT, syncFromStorage);
+      window.removeEventListener(NATIVE_ALERT_STATUS_EVENT, onNativeStatus);
+      window.removeEventListener("focus", syncFromStorage);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [userId]);
+  }, [userId, refreshNativeStatus]);
 
   const restOptions = REST_OPTIONS.includes(rest.defaultRestSeconds)
     ? REST_OPTIONS
@@ -61,6 +111,7 @@ export function DevicePreferences({
     const next = writeRestPreferences(userId, patch);
     setRest(next);
     setPreviewStatus(null);
+    refreshNativeStatus(next);
   }
 
   function previewAlert() {
@@ -68,17 +119,63 @@ export function DevicePreferences({
       setPreviewStatus(t("account.rest.previewMuted"));
       return;
     }
-    triggerRestCompletionAlert({
+    const result = triggerRestCompletionAlert({
       soundEnabled: rest.soundEnabled,
       vibrationEnabled: rest.vibrationEnabled,
     });
-    setPreviewStatus(t("account.rest.previewed"));
+    refreshNativeStatus(rest);
+
+    if (result.blockedReasons.length > 0 && !result.soundPlayed && !result.vibrated) {
+      setPreviewStatus(
+        t("offline.rest.previewBlocked", {
+          reason: t(reasonMessageKey(result.blockedReasons[0])),
+        }),
+      );
+      return;
+    }
+    if (result.soundPlayed && result.vibrated) {
+      setPreviewStatus(t("offline.rest.previewBoth"));
+    } else if (result.soundPlayed) {
+      setPreviewStatus(t("offline.rest.previewSoundOnly"));
+    } else if (result.vibrated) {
+      const extra = result.blockedReasons.includes("vibrate_mode")
+        ? ` ${t("offline.rest.diag.vibrateMode")}`
+        : result.blockedReasons.includes("volume_zero")
+          ? ` ${t("offline.rest.diag.volumeZero")}`
+          : "";
+      setPreviewStatus(`${t("offline.rest.previewVibrateOnly")}${extra}`);
+    } else {
+      setPreviewStatus(t("account.rest.previewed"));
+    }
+  }
+
+  // Collect actionable diagnostics from the native platform so users know
+  // immediately if a permission or system mode prevents rest alert delivery.
+  const diagnostics: AlertBlockReason[] = [];
+  if (nativeStatus && (rest.soundEnabled || rest.vibrationEnabled)) {
+    if (nativeStatus.dndBlocking) diagnostics.push("dnd");
+    if (nativeStatus.ringerMode === "silent") diagnostics.push("silent");
+    else if (rest.soundEnabled && nativeStatus.ringerMode === "vibrate") diagnostics.push("vibrate_mode");
+    else if (rest.soundEnabled && nativeStatus.notificationVolumeZero) diagnostics.push("volume_zero");
+    if (!nativeStatus.notificationsEnabled || !nativeStatus.postNotificationsGranted) {
+      diagnostics.push("notifications_off");
+    } else if (nativeStatus.channelBlocked) {
+      diagnostics.push("channel_blocked");
+    }
+    if (rest.vibrationEnabled && !nativeStatus.hasVibrator) diagnostics.push("no_vibrator");
+    if (nativeStatus.platform === "android" && !nativeStatus.exactAlarmsAllowed) {
+      diagnostics.push("exact_alarm_off");
+    }
   }
 
   return (
     <section
       aria-labelledby="device-preferences-heading"
-      className={compact ? "space-y-4" : "mt-6 space-y-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5"}
+      className={
+        compact
+          ? "space-y-4"
+          : "mt-6 space-y-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5"
+      }
     >
       <div>
         <h2 id="device-preferences-heading" className="text-lg font-semibold">
@@ -215,6 +312,53 @@ export function DevicePreferences({
             </p>
           ) : null}
         </div>
+
+        {/* Native system setting / permission guidance whenever delivery would be blocked */}
+        {diagnostics.length > 0 ? (
+          <div
+            role="status"
+            className="space-y-2 rounded-xl border border-[var(--warning-border)] bg-[var(--warning-bg)] p-3.5 text-xs text-[var(--warning-text)]"
+          >
+            <ul className="space-y-1">
+              {diagnostics.map((reason) => (
+                <li key={reason}>• {t(reasonMessageKey(reason))}</li>
+              ))}
+            </ul>
+            {nativeStatus?.platform === "android" ? (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {diagnostics.includes("notifications_off") ? (
+                  <button
+                    type="button"
+                    onClick={() => requestNativeNotificationPermission()}
+                    className="min-h-9 rounded-lg border border-[var(--warning-border)] px-3 font-semibold"
+                  >
+                    {t("offline.rest.diag.requestNotifications")}
+                  </button>
+                ) : null}
+                {diagnostics.includes("notifications_off") ||
+                diagnostics.includes("channel_blocked") ||
+                diagnostics.includes("dnd") ? (
+                  <button
+                    type="button"
+                    onClick={() => openNativeNotificationSettings()}
+                    className="min-h-9 rounded-lg border border-[var(--warning-border)] px-3 font-semibold"
+                  >
+                    {t("offline.rest.diag.openNotifications")}
+                  </button>
+                ) : null}
+                {diagnostics.includes("exact_alarm_off") ? (
+                  <button
+                    type="button"
+                    onClick={() => openNativeExactAlarmSettings()}
+                    className="min-h-9 rounded-lg border border-[var(--warning-border)] px-3 font-semibold"
+                  >
+                    {t("offline.rest.diag.openExactAlarms")}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </section>
   );

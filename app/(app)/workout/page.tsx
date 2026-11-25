@@ -1,17 +1,18 @@
-import Link from "next/link";
 import { requireSessionUserId } from "@/lib/auth-session";
 import { db } from "@/lib/db";
 import { getI18n } from "@/lib/i18n/server";
-import { listRoutines } from "@/lib/routines";
+import { listRoutineFolders, listRoutines } from "@/lib/routines";
 import { getActiveWorkout } from "@/lib/workouts";
-import { startEmptyWorkoutFormAction, startWorkoutFormAction } from "@/lib/workout-actions";
+import { startEmptyWorkoutFormAction } from "@/lib/workout-actions";
 import { WorkoutResumeLink } from "@/components/app-frame";
 import { NavigationIcon } from "@/components/bottom-nav";
+import { RoutineFolderManager } from "@/components/routine-folder-manager";
 
 export default async function WorkoutPage() {
   const userId = await requireSessionUserId();
   const { t } = await getI18n();
-  const [routines, activeWorkout] = await Promise.all([
+  const [folders, routines, activeWorkout] = await Promise.all([
+    listRoutineFolders(db, userId),
     listRoutines(db, userId),
     getActiveWorkout(db, userId),
   ]);
@@ -46,53 +47,7 @@ export default async function WorkoutPage() {
           <span aria-hidden="true" className="text-xl">+</span>
         </button>
       </form>
-      <section aria-labelledby="routine-heading" className="mt-8">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 id="routine-heading" className="text-xl font-semibold">{t("common.workoutHub.routines")}</h2>
-          <Link href="/routines" className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--accent-text)] underline underline-offset-4">
-            {t("common.workoutHub.manage")}
-          </Link>
-        </div>
-        {routines.length > 0 ? (
-          <ul className="mt-3 grid gap-3 md:grid-cols-2">
-            {routines.map((routine) => (
-              <li key={routine.id} className="training-panel flex min-w-0 flex-col rounded-2xl p-4">
-                <Link href={`/routines/${routine.id}`} className="flex min-h-11 items-center break-words text-base font-semibold hover:underline">
-                  {routine.title}
-                </Link>
-                <p className="mt-1 text-xs text-[var(--text-muted)]">
-                  {t("common.plural.exercises", { count: routine.exercise_count })}
-                </p>
-                <p className="mt-2 line-clamp-2 break-words text-sm text-[var(--text-muted)]">
-                  {routine.exercise_names.length ? routine.exercise_names.join(" · ") : t("common.workoutHub.noExercises")}
-                </p>
-                <form action={startWorkoutFormAction} className="mt-auto pt-4">
-                  <input type="hidden" name="routineId" value={routine.id} />
-                  <button
-                    type="submit"
-                    aria-label={t("common.workoutHub.startRoutineLabel", { title: routine.title })}
-                    className="training-elevated flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-4 py-2 text-sm font-semibold text-[var(--accent-text)] hover:bg-[var(--bg-surface-hover)]"
-                  >
-                    {t("common.workoutHub.startRoutine")}
-                    <span aria-hidden="true">→</span>
-                  </button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="training-panel mt-3 rounded-2xl border-dashed p-5 text-sm leading-relaxed text-[var(--text-muted)]">
-            {t("common.workoutHub.empty")}
-          </p>
-        )}
-        <Link
-          href="/routines/new"
-          className="mt-4 flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[var(--border-subtle)] px-4 text-sm font-semibold hover:bg-[var(--bg-surface)]"
-        >
-          <span aria-hidden="true">+</span>
-          {t("common.workoutHub.create")}
-        </Link>
-      </section>
+      <RoutineFolderManager folders={folders} routines={routines} />
     </main>
   );
 }

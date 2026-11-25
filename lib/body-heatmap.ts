@@ -57,11 +57,13 @@ export const HEATMAP_BASE_ART: Record<HeatmapSide, string> = {
  */
 export const HEATMAP_ASPECT_RATIO = 0.42105263;
 
+import { resolveAssetUrl } from "@/lib/builtin-catalog";
+
 /**
  * Public URL for an art file. Parentheses appear in the `(empty)` names and are
  * legal in a path segment, so encoding leaves them alone; the helper exists so
  * no caller concatenates the prefix by hand.
  */
 export function heatmapArtUrl(file: string): string {
-  return `/body-heatmap/${encodeURIComponent(file)}`;
+  return resolveAssetUrl(`/body-heatmap/${encodeURIComponent(file)}`);
 }

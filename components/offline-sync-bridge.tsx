@@ -9,6 +9,12 @@ import {
   syncOfflineData,
   type OfflineSyncSnapshot,
 } from "@/lib/offline-sync";
+import {
+  claimLocalGuestDataIntoAccount,
+  discardLocalGuestData,
+  readLocalGuestDataSummary,
+  type LocalGuestDataSummary,
+} from "@/lib/legacy-local-migration";
 
 /**
  * Mounted inside the authenticated AppFrame.
@@ -26,7 +32,40 @@ export function OfflineSyncBridge({ userId }: { userId: string }) {
   const { t } = useI18n();
   const [snapshot, setSnapshot] = useState<OfflineSyncSnapshot | null>(null);
   const [online, setOnline] = useState(true);
+  const [guestSummary, setGuestSummary] = useState<LocalGuestDataSummary | null>(null);
+  const [guestDismissed, setGuestDismissed] = useState(false);
+  const [importingGuest, setImportingGuest] = useState(false);
+  const [guestNotice, setGuestNotice] = useState<string | null>(null);
   const lastBootstrapPathRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void readLocalGuestDataSummary().then((summary) => {
+      if (active && summary.hasAny) setGuestSummary(summary);
+    });
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  async function handleImportGuestData() {
+    setImportingGuest(true);
+    try {
+      await claimLocalGuestDataIntoAccount(userId);
+      setGuestSummary(null);
+      setGuestNotice(t("offline.guest.imported"));
+      const res = await syncOfflineData(userId);
+      setSnapshot(res);
+      router.refresh();
+    } finally {
+      setImportingGuest(false);
+    }
+  }
+
+  async function handleDiscardGuestData() {
+    await discardLocalGuestData();
+    setGuestSummary(null);
+  }
 
   useEffect(() => {
     let active = true;
@@ -125,7 +164,8 @@ export function OfflineSyncBridge({ userId }: { userId: string }) {
         snapshot.status === "auth_required" ||
         snapshot.status === "error"));
 
-  if (!showBanner) return null;
+  const showGuestPrompt = Boolean(guestSummary?.hasAny && !guestDismissed);
+  if (!showBanner && !showGuestPrompt && !guestNotice) return null;
 
   const isAuth = snapshot?.status === "auth_required";
   const isSyncing = snapshot?.status === "syncing";
@@ -134,8 +174,62 @@ export function OfflineSyncBridge({ userId }: { userId: string }) {
   return (
     <div
       role="status"
-      className="mx-auto max-w-6xl px-4 pt-3 sm:px-6"
+      className="mx-auto max-w-6xl space-y-2 px-4 pt-3 sm:px-6"
     >
+      {guestNotice ? (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-[var(--badge-border)] bg-[var(--badge-bg)] px-3.5 py-2.5 text-xs font-medium text-[var(--badge-text)]">
+          <span>{guestNotice}</span>
+          <button
+            type="button"
+            onClick={() => setGuestNotice(null)}
+            className="rounded px-2 py-0.5 hover:opacity-80"
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
+
+      {showGuestPrompt && guestSummary ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-strong)] bg-[var(--bg-surface)] px-4 py-3 text-xs">
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-[var(--text-primary)]">
+              {t("offline.guest.bannerTitle")}
+            </p>
+            <p className="mt-0.5 text-[var(--text-muted)]">
+              {t("offline.guest.bannerBody", {
+                workouts: guestSummary.workoutCount,
+                routines: guestSummary.routineCount,
+              })}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={importingGuest}
+              onClick={() => void handleImportGuestData()}
+              className="training-action min-h-9 rounded-lg px-3 font-bold disabled:opacity-50"
+            >
+              {importingGuest ? t("offline.guest.importing") : t("offline.guest.import")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setGuestDismissed(true)}
+              className="min-h-9 rounded-lg border border-[var(--border-subtle)] px-3 font-semibold hover:bg-[var(--bg-surface-hover)]"
+            >
+              {t("offline.guest.keepSeparate")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDiscardGuestData()}
+              className="min-h-9 rounded-lg px-2.5 font-semibold text-[var(--danger-text)] hover:bg-[var(--danger-bg)]"
+            >
+              {t("offline.guest.discard")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {showBanner ? (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--warning-border)] bg-[var(--warning-bg)] px-3.5 py-2.5 text-xs text-[var(--warning-text)]">
         <div className="min-w-0 flex-1">
           <span className="font-semibold">
@@ -180,6 +274,7 @@ export function OfflineSyncBridge({ userId }: { userId: string }) {
           )}
         </div>
       </div>
+      ) : null}
     </div>
   );
 }
