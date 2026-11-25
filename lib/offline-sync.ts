@@ -2,6 +2,7 @@ import type { RoutineTree, WorkoutSet } from "@/schema/types";
 import type { LoggedWorkout, WorkoutSyncInput } from "@/lib/workout-sync";
 import type { RoutineInput } from "@/lib/routines";
 import {
+  getOfflineStoreEpoch,
   LOCAL_GUEST_OWNER,
   openExistingOfflineStore,
   openOfflineStore,
@@ -156,6 +157,7 @@ export async function readOfflineSyncSnapshot(store: OfflineStore): Promise<Offl
  * session expiry so work is never lost and retries remain idempotent.
  */
 export async function flushOfflineQueue(store: OfflineStore): Promise<OfflineSyncSnapshot> {
+  const startEpoch = getOfflineStoreEpoch();
   const owner = await store.ownerId();
   const base = await readOfflineSyncSnapshot(store);
   if (!owner || owner === LOCAL_GUEST_OWNER) {
@@ -246,6 +248,10 @@ export async function flushOfflineQueue(store: OfflineStore): Promise<OfflineSyn
     workouts?: Array<{ id: string; ok: boolean; error?: string }>;
   };
 
+  if (getOfflineStoreEpoch() !== startEpoch) {
+    return await readOfflineSyncSnapshot(store);
+  }
+
   let hadFailure = false;
   let flushedCount = 0;
   for (const r of data.routines ?? []) {
@@ -285,6 +291,8 @@ export async function flushOfflineQueue(store: OfflineStore): Promise<OfflineSyn
  * without overwriting any locally pending routine or workout.
  */
 export async function refreshOfflineBootstrap(store: OfflineStore): Promise<boolean> {
+  const startEpoch = getOfflineStoreEpoch();
+  const stale = () => getOfflineStoreEpoch() !== startEpoch;
   const owner = await store.ownerId();
   if (!owner || owner === LOCAL_GUEST_OWNER) return false;
   if (typeof navigator !== "undefined" && !navigator.onLine) return false;
@@ -299,7 +307,7 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
   } catch {
     return false;
   }
-  if (!response.ok) return false;
+  if (!response.ok || stale()) return false;
 
   const payload = (await response.json()) as {
     profile: OfflineCatalogSnapshot["profile"];
@@ -313,7 +321,8 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
     cachedAt: string;
   };
 
-  if (payload.profile.id !== owner) return false;
+  if (stale() || payload.profile.id !== owner) return false;
+  if ((await store.ownerId()) !== owner || stale()) return false;
 
   const [pendingWorkoutIds, pendingRoutines, existingRoutines, existingWorkouts] = await Promise.all([
     store.pendingWorkoutIds(),
@@ -321,6 +330,7 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
     store.listRoutines(),
     store.listWorkouts(),
   ]);
+  if (stale()) return false;
   const pendingWorkoutSet = new Set(pendingWorkoutIds);
   const pendingRoutineSet = new Set(pendingRoutines.map((r) => r.id));
 
@@ -336,6 +346,7 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
   // Merge routines: keep pending local routines intact; remove non-pending routines deleted on server.
   const remoteRoutineIds = new Set<string>();
   for (const rawRoutine of payload.routines) {
+    if (stale()) return false;
     const routine = hydrateDatesOnRoutine(rawRoutine);
     remoteRoutineIds.add(routine.id);
     if (!pendingRoutineSet.has(routine.id)) {
@@ -343,6 +354,7 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
     }
   }
   for (const local of existingRoutines) {
+    if (stale()) return false;
     if (!remoteRoutineIds.has(local.id) && !pendingRoutineSet.has(local.id)) {
       await store.deleteRoutine(local.id);
     }
@@ -351,6 +363,7 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
   // Merge active + recent completed workouts without clobbering pending local workouts.
   const remoteWorkoutIds = new Set<string>();
   if (payload.activeWorkout) {
+    if (stale()) return false;
     const active = hydrateDatesOnWorkout(payload.activeWorkout);
     remoteWorkoutIds.add(active.id);
     if (!pendingWorkoutSet.has(active.id)) {
@@ -358,6 +371,7 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
     }
   }
   for (const rawWorkout of payload.recentWorkouts) {
+    if (stale()) return false;
     const workout = hydrateDatesOnWorkout(rawWorkout);
     remoteWorkoutIds.add(workout.id);
     if (!pendingWorkoutSet.has(workout.id)) {
@@ -366,10 +380,12 @@ export async function refreshOfflineBootstrap(store: OfflineStore): Promise<bool
   }
   // Remove stale non-pending active workouts that were discarded/finished elsewhere.
   for (const local of existingWorkouts) {
+    if (stale()) return false;
     if (local.ended_at === null && !remoteWorkoutIds.has(local.id) && !pendingWorkoutSet.has(local.id)) {
       await store.deleteWorkout(local.id);
     }
   }
+  if (stale()) return false;
 
   // Warm the offline shell + thumbnails for exercises in routines, workouts, and top catalog rows.
   const slugs = new Set<string>();

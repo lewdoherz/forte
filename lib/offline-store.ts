@@ -104,6 +104,16 @@ export interface OfflineStore {
 
 let connection: Promise<IDBDatabase> | null = null;
 let ownerGate: Promise<unknown> = Promise.resolve();
+let storeEpoch = 0;
+
+/**
+ * Monotonic generation counter incremented on sign-out, account deletion, and
+ * account switch so in-flight background refreshes cannot write stale records
+ * back into `forte-offline` after cleanup.
+ */
+export function getOfflineStoreEpoch(): number {
+  return storeEpoch;
+}
 
 function fromRequest<T>(request: IDBRequest<T>): Promise<T> {
   const { promise, resolve, reject } = Promise.withResolvers<T>();
@@ -395,6 +405,7 @@ async function claimOwner(db: IDBDatabase, userId: string): Promise<boolean> {
 
   let ownerChanged = false;
   if (currentOwner !== userId) {
+    storeEpoch += 1;
     if (currentOwner !== undefined && currentOwner !== LOCAL_GUEST_OWNER) {
       // Preserve the previous account's unsynced work in its private vault before clearing.
       await stashPendingToVault(db, currentOwner);
@@ -407,6 +418,7 @@ async function claimOwner(db: IDBDatabase, userId: string): Promise<boolean> {
       }
       await fromRequest(tx.objectStore(META).put(userId, OWNER_KEY));
     });
+    storeEpoch += 1;
     ownerChanged = true;
   }
 
@@ -543,12 +555,14 @@ async function clearPrivateRouteCaches(): Promise<void> {
 export async function clearOfflineClientData(options?: {
   discardPending?: boolean;
 }): Promise<void> {
+  storeEpoch += 1;
   const discardPending = options?.discardPending ?? false;
   const operations: Promise<unknown>[] = [clearPrivateRouteCaches()];
   if (typeof indexedDB !== "undefined") {
     operations.push(
       openDatabase().then((db) =>
         serialized(async () => {
+          storeEpoch += 1;
           const owner = await transact(db, [META], "readonly", (tx) =>
             fromRequest<string | undefined>(tx.objectStore(META).get(OWNER_KEY)),
           );
@@ -560,6 +574,7 @@ export async function clearOfflineClientData(options?: {
             }
           }
           await createStore(db).clear();
+          storeEpoch += 1;
         }),
       ),
     );
