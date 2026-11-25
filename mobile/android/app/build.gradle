@@ -36,6 +36,10 @@ android {
         release { signingConfig signingConfigs.release }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    androidResources {
+        // Default AAPT2 ignores underscore-prefixed files/dirs; keep Next.js static chunks intact.
+        ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
     sourceSets {
         main {
             assets.srcDirs += layout.buildDirectory.dir('generated/offline-assets')
@@ -48,7 +52,7 @@ def prepareOfflineAssets = tasks.register('prepareOfflineAssets', Sync) {
     def publicDir = new File(repoRoot, 'public')
     into layout.buildDirectory.dir('generated/offline-assets/www')
     from(new File(offlineDist, 'android/offline-app.html'))
-    from(new File(offlineDist, '_next')) { into '_next' }
+    from(new File(offlineDist, '_next/static')) { into 'next-static' }
     from(new File(publicDir, 'offline-catalog.json'))
     from(new File(publicDir, 'exercise-media/thumbnails')) { into 'exercise-media/thumbnails' }
     from(new File(publicDir, 'body-heatmap')) { into 'body-heatmap' }

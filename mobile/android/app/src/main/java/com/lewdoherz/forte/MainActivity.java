@@ -112,7 +112,10 @@ public final class MainActivity extends ComponentActivity {
             InputStream stream = getAssets().open(assetPath);
             Map<String, String> headers = new HashMap<>();
             headers.put("Cache-Control", "no-store");
-            return new WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, stream);
+            String encoding = (mimeType.startsWith("text/") || mimeType.contains("javascript") || mimeType.contains("json") || mimeType.contains("svg"))
+                    ? "UTF-8"
+                    : null;
+            return new WebResourceResponse(mimeType, encoding, 200, "OK", headers, stream);
         } catch (IOException ignored) {
             return null;
         }
@@ -164,11 +167,15 @@ public final class MainActivity extends ComponentActivity {
         if (path.contains("..")) return null;
 
         // 1. Always serve bundled static catalogue, thumbnails, body heatmaps, audio, and matching chunks locally.
+        if (path.startsWith("/_next/static/")) {
+            String assetPath = BUNDLE_ROOT + "/next-static/" + path.substring("/_next/static/".length());
+            WebResourceResponse bundled = openBundledResponse(assetPath, mimeTypeFor(path));
+            if (bundled != null) return bundled;
+        }
         if (path.startsWith("/exercise-media/thumbnails/")
                 || path.startsWith("/body-heatmap/")
                 || path.startsWith("/audio/")
-                || "/offline-catalog.json".equals(path)
-                || path.startsWith("/_next/static/")) {
+                || "/offline-catalog.json".equals(path)) {
             String assetPath = BUNDLE_ROOT + path;
             WebResourceResponse bundled = openBundledResponse(assetPath, mimeTypeFor(path));
             if (bundled != null) return bundled;
