@@ -1,26 +1,28 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { resolveAssetUrl } from "@/lib/builtin-catalog";
 
 /** Where the exercise import puts thumbnails and videos, relative to the app. */
 const THUMBNAIL_PREFIX = "/exercise-media/thumbnails";
 
 /**
- * An exercise's thumbnail, by slug.
+ * Two rendered sizes for exercise thumbnails:
+ * - `sm`: compact lists (history cards, pickers, compact routine lists)
+ * - `md`: exercise headers (active logger, routine editor, workout recap, library)
  *
- * Most of the catalog has no artwork yet, so a failed load has to leave the page
- * looking the way it did before media existed rather than showing a broken
- * image: the element is invisible until it actually loads, and removes itself if
- * it does not. That is also why this is a plain `<img>` rather than
- * `next/image` — a missing file would be routed through the optimizer, logging a
- * server error per thumbnail, and the optimizer buys nothing for a fixed-size
- * local image.
+ * Circular white frame with ~15% inner padding (`p-1.5` / `p-2.5`) so every
+ * corner of a square illustration fits strictly inside the inscribed circle
+ * without clipping barbells, racks, benches, or feet.
  */
-/** Two rendered sizes: the full library row, and the compact history card. */
 const THUMBNAIL_SIZES = {
-  sm: { box: "h-10 w-10 rounded-lg", pixels: 40 },
-  md: { box: "h-20 w-20 rounded-xl", pixels: 80 },
+  sm: { frame: "h-11 w-11 p-1.5", pixels: 44 },
+  md: { frame: "h-16 w-16 p-2 sm:h-20 sm:w-20 sm:p-2.5", pixels: 80 },
 } as const;
+
+export function exerciseThumbnailUrl(slug: string): string {
+  return resolveAssetUrl(`${THUMBNAIL_PREFIX}/${encodeURIComponent(slug)}.jpg`);
+}
 
 export function ExerciseThumbnail({
   slug,
@@ -36,82 +38,103 @@ export function ExerciseThumbnail({
   useEffect(() => {
     const image = ref.current;
     if (!image || !image.complete) return;
-    // The browser can finish — and fail — the request before hydration attaches
-    // `onError`, which would leave the broken image on screen. A completed load
-    // with no intrinsic width is that same failure, observed one tick later.
     setStatus(image.naturalWidth === 0 ? "failed" : "loaded");
-  }, []);
+  }, [slug]);
 
   if (status === "failed") return null;
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- see the note above
-    <img
-      ref={ref}
-      src={`${THUMBNAIL_PREFIX}/${encodeURIComponent(slug)}.jpg`}
-      // Decorative: the exercise title sits beside it, so repeating it here would
-      // only make a screen reader say it twice.
-      alt=""
-      width={box.pixels}
-      height={box.pixels}
-      onLoad={() => setStatus("loaded")}
-      onError={() => setStatus("failed")}
-      className={`${box.box} shrink-0 border border-zinc-200 bg-white object-cover ${
+    <span
+      className={`exercise-thumb-frame inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-[var(--border-subtle)] bg-white shadow-xs ${box.frame} ${
         status === "loaded" ? "" : "invisible"
       }`}
-    />
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- local static thumbnails bypass optimizer */}
+      <img
+        ref={ref}
+        src={exerciseThumbnailUrl(slug)}
+        alt=""
+        width={box.pixels}
+        height={box.pixels}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setStatus("loaded")}
+        onError={() => setStatus("failed")}
+        className="h-full w-full object-contain"
+      />
+    </span>
   );
 }
 
 /**
- * The example video for an exercise.
+ * Demonstration visual for an exercise's How-to tab.
  *
- * `ExerciseVideo` renders only when the exercise row records where its media
- * lives (`media_url`), and that path is relative — the host comes from
- * `NEXT_PUBLIC_MEDIA_BASE_URL`. That keeps two things true at once: an exercise
- * whose video was never uploaded shows no player rather than a control pointing
- * at a 404, and switching blob stores stays a configuration change instead of a
- * data migration.
- *
- * The base URL is also the switch: unset means "no video hosting is configured",
- * and the element is not rendered at all. The thumbnail doubles as the poster
- * when one has been imported.
- *
- * It autoplays, and must also be `muted`: browsers refuse to start an unmuted
- * video without a user gesture, so an unmuted autoplay request would never
- * actually play. It is a silent demonstration loop — hence no `controls`
- * either — and `playsInline` keeps iOS from taking it fullscreen on open.
- *
- * The player takes the full width of its column with an automatic height, so
- * its own dimensions decide the box. The catalog is not one shape (720x452 and
- * 720x404 are both present), so a fixed `aspect-video` would letterbox the
- * mismatched files behind black side bars.
- *
- * `className` carries the column sizing, since only the page that places the
- * player knows how much room it has.
+ * Online with a configured remote video, renders the looping MP4 clip with the
+ * bundled illustration as poster. Offline (or when the clip fails or is absent),
+ * renders the bundled demonstration illustration cleanly with zero broken video
+ * chrome so every exercise works offline from first launch.
  */
 export function ExerciseVideo({
   slug,
   mediaUrl,
+  title = "",
   className = "",
 }: {
   slug: string;
   mediaUrl: string | null;
+  title?: string;
   className?: string;
 }) {
   const baseUrl = process.env.NEXT_PUBLIC_MEDIA_BASE_URL;
-  if (!baseUrl || !mediaUrl) return null;
+  const posterSrc = exerciseThumbnailUrl(slug);
+  const [videoFailed, setVideoFailed] = useState(false);
+  const [thumbFailed, setThumbFailed] = useState(false);
+  const [online, setOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+
+  useEffect(() => {
+    const sync = () => setOnline(navigator.onLine);
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, []);
+
+  const canPlayVideo = Boolean(online && baseUrl && mediaUrl && !videoFailed);
+
+  if (canPlayVideo && baseUrl && mediaUrl) {
+    return (
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="metadata"
+        poster={posterSrc}
+        onError={() => setVideoFailed(true)}
+        className={`max-h-72 w-full rounded-2xl border border-[var(--border-subtle)] bg-white object-contain ${className}`}
+      >
+        <source src={`${baseUrl.replace(/\/+$/, "")}/${mediaUrl}`} type="video/mp4" />
+      </video>
+    );
+  }
+
+  if (thumbFailed) return null;
 
   return (
-    <video
-      autoPlay
-      muted
-      playsInline
-      preload="auto"
-      poster={`${THUMBNAIL_PREFIX}/${encodeURIComponent(slug)}.jpg`}
-      className={`h-auto w-full rounded-xl border border-zinc-200 bg-black ${className}`}
+    <div
+      className={`flex items-center justify-center rounded-2xl border border-[var(--border-subtle)] bg-white p-4 shadow-xs ${className}`}
     >
-      <source src={`${baseUrl.replace(/\/+$/, "")}/${mediaUrl}`} type="video/mp4" />
-    </video>
+      {/* eslint-disable-next-line @next/next/no-img-element -- bundled static demonstration illustration */}
+      <img
+        src={posterSrc}
+        alt={title ? `${title} demonstration` : ""}
+        onError={() => setThumbFailed(true)}
+        className="max-h-60 w-auto max-w-full object-contain"
+      />
+    </div>
   );
 }

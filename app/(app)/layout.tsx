@@ -17,13 +17,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // Better Auth maps `name` to the nullable app_user.display_name column.
   // Reserved identity addresses must never be shown as contact information.
   const displayName =
-    session.user.name.trim() ||
+    (session.user.name ?? "").trim() ||
     (isPlaceholderEmail(session.user.email)
       ? t("account.providerFallbackName")
       : session.user.email);
 
   return (
     <AppFrame
+      userId={session.user.id}
       displayName={displayName}
       activeWorkout={activeWorkout ? {
         id: activeWorkout.id,

@@ -60,6 +60,14 @@ export interface Database {
     created_at: Generated<Date>;
     updated_at: Generated<Date>;
   };
+  routine_folder: {
+    id: Generated<string>;
+    owner_id: string;
+    title: string;
+    position: number;
+    created_at: Generated<Date>;
+    updated_at: Generated<Date>;
+  };
   routine: {
     id: Generated<string>;
     owner_id: string;

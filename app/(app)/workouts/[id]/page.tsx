@@ -84,6 +84,10 @@ export default async function WorkoutPage({
         exercise_type: exercise.exercise_type,
         equipment: exercise.equipment,
         secondary_muscles: exercise.secondary_muscles,
+        how_to: exercise.how_to,
+        media_url: exercise.media_url,
+        duration_record_direction: exercise.duration_record_direction,
+        is_custom: exercise.is_custom,
       }))}
       previous={previous}
     />

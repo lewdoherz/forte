@@ -521,6 +521,75 @@ export async function discardWorkout(db: Kysely<Database>, userId: string, worko
  * takes its sets with it. Applying the same document twice performs no writes
  * the second time.
  */
+export interface OfflineWorkoutCreateMeta {
+  title: string;
+  notes: string | null;
+  routineId: string | null;
+  startedAt: string;
+}
+
+/**
+ * Ensures an offline-started workout exists on the server under its
+ * client-generated UUID, then reconciles its full exercises/sets/endedAt
+ * document idempotently.
+ *
+ * - If the workout already exists for `userId` (e.g. interrupted-sync retry),
+ *   no duplicate workout row is created.
+ * - If the workout belongs to a different user, throws `not_found` without
+ *   revealing existence.
+ */
+export async function syncOfflineWorkoutDocument(
+  db: Kysely<Database>,
+  userId: string,
+  input: WorkoutSyncInput,
+  createdMeta?: OfflineWorkoutCreateMeta,
+): Promise<void> {
+  if (createdMeta) {
+    const startedAt = new Date(createdMeta.startedAt);
+    if (Number.isNaN(startedAt.getTime())) throw new Error("invalid_ended_at");
+
+    await db.transaction().execute(async (trx) => {
+      const existing = await trx
+        .selectFrom("workout")
+        .select(["id", "owner_id"])
+        .where("id", "=", input.workoutId)
+        .forUpdate()
+        .executeTakeFirst();
+
+      if (existing) {
+        if (existing.owner_id !== userId) throw new Error("not_found");
+        return;
+      }
+
+      let validRoutineId: string | null = null;
+      if (createdMeta.routineId) {
+        const ownedRoutine = await trx
+          .selectFrom("routine")
+          .select("id")
+          .where("id", "=", createdMeta.routineId)
+          .where("owner_id", "=", userId)
+          .executeTakeFirst();
+        if (ownedRoutine) validRoutineId = ownedRoutine.id;
+      }
+
+      await trx
+        .insertInto("workout")
+        .values({
+          id: input.workoutId,
+          owner_id: userId,
+          routine_id: validRoutineId,
+          title: createdMeta.title.trim().slice(0, 120) || "Workout",
+          notes: createdMeta.notes ? createdMeta.notes.slice(0, 2000) : null,
+          started_at: startedAt,
+          ended_at: null,
+        })
+        .execute();
+    });
+  }
+
+  await syncWorkoutDocument(db, userId, input);
+}
+
 export async function syncWorkoutDocument(
   db: Kysely<Database>,
   userId: string,

@@ -34,9 +34,10 @@ export const logger = {
 
   /* The quiet status line under the metrics. The store's pending marker decides
      which of the three states is shown, not the renderer. */
-  "logger.sync.saved": "All changes saved",
-  "logger.sync.pending": "Unsynced changes · kept on this device",
-  "logger.sync.offline": "Offline · changes kept on this device",
+  "logger.sync.saved": "Synced · All changes saved",
+  "logger.sync.pending": "Saved on this device · syncing…",
+  "logger.sync.offline": "Saved on this device · offline",
+  "logger.sync.authRequired": "Saved on this device · sign in to sync",
 
   /* Failure copy surfaced above the exercise list. `{message}` is the server's
      own reason, which is why the wording is split into a prefix and a suffix. */

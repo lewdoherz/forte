@@ -9,3 +9,5 @@
 *.p12
 *.mobileprovision
 **/.native-review-tmp/
+android/app/src/main/assets/www/
+ios/Forte/OfflineBundle/

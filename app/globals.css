@@ -5,6 +5,87 @@
   --app-safe-right: env(safe-area-inset-right, 0px);
   --app-safe-bottom: env(safe-area-inset-bottom, 0px);
   --app-safe-left: env(safe-area-inset-left, 0px);
+
+  /* Forte shared palette — Dark (default forest theme) */
+  --bg-canvas: #0d1512;
+  --bg-surface: #17221c;
+  --bg-surface-elevated: #203b2d;
+  --bg-surface-hover: #25382c;
+  --bg-input: #0d1512;
+  --bg-completed: #203c31;
+  --border-subtle: #34463a;
+  --border-strong: #50705b;
+  --border-completed: #42634e;
+  --text-primary: #eef5ef;
+  --text-muted: #b0c0b4;
+  --accent: #d6f077;
+  --accent-hover: #e1f69b;
+  --accent-fg: #142017;
+  --accent-text: #d6f077;
+  --accent-soft-bg: rgba(214, 240, 119, 0.12);
+  --check-done-bg: #8ac69c;
+  --check-done-fg: #102318;
+  --check-idle-bg: #26372c;
+  --check-idle-fg: #d6f077;
+  --rest-finished-bg: #203e30;
+  --rest-finished-border: #7db89c;
+  --danger-bg: #38251f;
+  --danger-border: #8c5a4f;
+  --danger-text: #ffc0b5;
+  --danger-solid: #913e32;
+  --warning-bg: #362c18;
+  --warning-border: #8a6c2d;
+  --warning-text: #f6d58e;
+  --badge-bg: #26351d;
+  --badge-border: #63783c;
+  --badge-text: #d6f077;
+  --hero-bg: #17221c;
+  --hero-border: #50705b;
+  --hero-fg: #eef5ef;
+  --hero-muted: #b0c0b4;
+  --nav-backdrop: rgba(13, 21, 18, 0.95);
+  --training-border: #34463a;
+}
+
+:root[data-theme="light"] {
+  --bg-canvas: #f4f7f4;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #e5efe8;
+  --bg-surface-hover: #ebf3ed;
+  --bg-input: #f8faf8;
+  --bg-completed: #e1f2e7;
+  --border-subtle: #cad8ce;
+  --border-strong: #7fa08b;
+  --border-completed: #5a9670;
+  --text-primary: #112018;
+  --text-muted: #455c4f;
+  --accent: #cde866;
+  --accent-hover: #bfe048;
+  --accent-fg: #132117;
+  --accent-text: #1c5c37;
+  --accent-soft-bg: #e2f0e6;
+  --check-done-bg: #1f6b41;
+  --check-done-fg: #ffffff;
+  --check-idle-bg: #e8f1eb;
+  --check-idle-fg: #1c5c37;
+  --rest-finished-bg: #dcf2e4;
+  --rest-finished-border: #3e8a5e;
+  --danger-bg: #fef2f2;
+  --danger-border: #fca5a5;
+  --danger-text: #b91c1c;
+  --danger-solid: #b91c1c;
+  --warning-bg: #fef9e7;
+  --warning-border: #d9a441;
+  --warning-text: #854d0e;
+  --badge-bg: #e7f3dc;
+  --badge-border: #7ea04a;
+  --badge-text: #2a4c14;
+  --hero-bg: #173023;
+  --hero-border: #2c523e;
+  --hero-fg: #f3f9f4;
+  --hero-muted: #c2d6c8;
+  --nav-backdrop: rgba(244, 247, 244, 0.96);
+  --training-border: #cad8ce;
 }
 
 body {
@@ -13,42 +94,174 @@ body {
   padding-left: var(--app-safe-left);
 }
 
-/* Forte training surfaces: a quiet forest palette, independent of auth pages. */
+/* Forte training surfaces: shared dark/light forest palette. */
 .training {
   color-scheme: dark;
-  color: #eef5ef;
+  color: var(--text-primary);
   font-family: "Segoe UI", system-ui, sans-serif;
-  --training-border: #34463a;
+  --training-border: var(--border-subtle);
 }
-.training-panel { border: 1px solid #34463a; background: #17221c; }
-.training-muted { color: #b0c0b4; }
-.training-action { background: #d6f077; color: #142017; }
-.training-action:hover:not(:disabled) { background: #e1f69b; }
-.training-input { border: 1px solid #34463a; background: #0d1512; color: #eef5ef; }
-.training :is(input, select, textarea) { font-size: max(16px, 1em); }
+
+:root[data-theme="light"] .training {
+  color-scheme: light;
+}
+
+.training-canvas {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+}
+.training-panel {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.training-elevated {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+}
+.training-muted {
+  color: var(--text-muted);
+}
+.training-accent-text {
+  color: var(--accent-text);
+}
+.training-action {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.training-action:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.training-input {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+.training-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.72;
+}
+.training :is(input, select, textarea) {
+  font-size: max(16px, 1em);
+}
 .training :is(button, a, input, select, textarea, summary):focus-visible {
-  outline: 2px solid #d6f077;
+  outline: 2px solid var(--accent-text);
   outline-offset: 3px;
 }
-.training input { scroll-margin-block: 10rem 8rem; }
-.training-dialog-backdrop { top: var(--dialog-top, 0px); height: var(--dialog-vh, 100dvh); }
-.training-picker-modal { display: flex; flex-direction: column; min-height: 0; }
-.training-picker-modal > div:first-child { flex-shrink: 0; }
-body:has(.training) { background: #0d1512; }
-/* Existing routes remain readable inside the new shell; auth is not re-themed. */
-.training :is(.bg-white, .bg-zinc-50, .bg-zinc-100) { background-color: #17221c; }
-.training :is(.border-zinc-100, .border-zinc-200, .border-zinc-300) { border-color: #34463a; }
-.training :is(.text-zinc-700, .text-zinc-800, .text-zinc-900) { color: #eef5ef; }
-.training :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) { color: #b0c0b4; }
-.training :is(input, select, textarea) { background-color: #0d1512; color: #eef5ef; border-color: #34463a; }
-.training :is(button, a).bg-zinc-900 { background-color: #d6f077; color: #142017; }
-.training :is(.hover\:bg-zinc-50, .hover\:bg-zinc-100):hover { background-color: #25382c; }
+.training input {
+  scroll-margin-block: 10rem 8rem;
+}
+.training-dialog-backdrop {
+  top: var(--dialog-top, 0px);
+  height: var(--dialog-vh, 100dvh);
+}
+.training-picker-modal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.training-picker-modal > div:first-child {
+  flex-shrink: 0;
+}
+body:has(.training) {
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+}
+
+/* Map legacy utility classes inside authenticated shell to shared semantic tokens */
+.training :is(.bg-white, .bg-zinc-50, .bg-zinc-100) {
+  background-color: var(--bg-surface);
+}
+/* Exercise thumbnails always keep a pure white circular frame for clean illustration blending */
+.training .exercise-thumb-frame {
+  background-color: #ffffff;
+}
+.training :is(.border-zinc-100, .border-zinc-200, .border-zinc-300) {
+  border-color: var(--border-subtle);
+}
+.training :is(.divide-zinc-100, .divide-zinc-200) > :not(:first-child) {
+  border-color: var(--border-subtle);
+}
+.training :is(.text-zinc-700, .text-zinc-800, .text-zinc-900) {
+  color: var(--text-primary);
+}
+.training :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--text-muted);
+}
+.training :is(input, select, textarea) {
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
+}
+.training :is(button, a).bg-zinc-900 {
+  background-color: var(--accent);
+  color: var(--accent-fg);
+}
+.training :is(.hover\:bg-zinc-50, .hover\:bg-zinc-100, .hover\:bg-zinc-200):hover {
+  background-color: var(--bg-surface-hover);
+}
+.training .bg-red-50 {
+  background-color: var(--danger-bg);
+}
+.training .border-red-300 {
+  border-color: var(--danger-border);
+}
+.training .text-red-700,
+.training .text-red-600 {
+  color: var(--danger-text);
+}
+.training .bg-green-100 {
+  background-color: var(--badge-bg);
+}
+.training .text-green-700,
+.training .text-emerald-800 {
+  color: var(--accent-text);
+}
+.training .text-amber-700 {
+  color: var(--warning-text);
+}
+.training .bg-sky-50,
+.training .bg-sky-100 {
+  background-color: var(--accent-soft-bg);
+}
+.training .text-sky-900 {
+  color: var(--accent-text);
+}
+.training .border-sky-300 {
+  border-color: var(--border-strong);
+}
+
+/* Dashboard hero card keeps high-contrast forest look in both themes */
+.training-hero {
+  background-color: var(--hero-bg);
+  border: 1px solid var(--hero-border);
+  color: var(--hero-fg);
+}
+.training-hero .training-hero-muted {
+  color: var(--hero-muted);
+}
+
 /* Any active logger, including an older draft, owns its entire screen. */
-.app-frame:has([data-active-logger]) > :is(aside, header, nav) { display: none; }
-.app-frame:has([data-active-logger]) > .app-content { padding: 0; }
-.app-frame:has([data-active-logger]) .resume-outside-logger { display: none; }
+.app-frame:has([data-active-logger]) > :is(aside, header, nav) {
+  display: none;
+}
+.app-frame:has([data-active-logger]) > .app-content {
+  padding: 0;
+}
+.app-frame:has([data-active-logger]) .resume-outside-logger {
+  display: none;
+}
 @media (max-height: 500px) {
-  .training-logger > header { padding-top: 0.25rem; padding-bottom: 0.25rem; }
-  .training-logger > header dl { margin-top: 0.125rem; }
-  .training-logger > header dl dd { font-size: 1rem; line-height: 1.25rem; }
+  .training-logger > header {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+  .training-logger > header dl {
+    margin-top: 0.125rem;
+  }
+  .training-logger > header dl dd {
+    font-size: 1rem;
+    line-height: 1.25rem;
+  }
 }

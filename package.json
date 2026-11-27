@@ -14,7 +14,9 @@
     "db:verify": "bun run schema/tests/verify-schema.ts && bun run schema/tests/verify-social.ts && bun run schema/tests/verify-auth.ts && bun run schema/tests/verify-auth-flow.ts && bun run schema/tests/verify-auth-retirement.ts && bun run schema/tests/verify-social-auth.ts && bun run schema/tests/verify-account-lifecycle.ts && bun run schema/tests/verify-workout-sync.ts && bun run schema/tests/verify-exercises.ts && bun run schema/tests/verify-routines.ts && bun run schema/tests/verify-workouts.ts && bun run schema/tests/verify-history.ts && bun run schema/tests/verify-records.ts && bun run schema/tests/verify-previous-performance.ts && bun run schema/tests/verify-record-history.ts && bun run schema/tests/verify-exercise-history.ts && bun run schema/tests/verify-exercise-stats.ts && bun run schema/tests/verify-timezone.ts && bun run schema/tests/verify-sharing.ts",
     "db:verify:postgres": "bun run scripts/verify-postgres.ts",
     "typecheck": "tsc --noEmit",
-    "verify:committed": "bun run scripts/verify-committed.ts"
+    "verify:committed": "bun run scripts/verify-committed.ts",
+    "catalog:generate": "bun run scripts/generate-offline-catalog.ts",
+    "mobile:bundle": "bun run scripts/build-mobile-bundle.ts"
   },
   "dependencies": {
     "@better-auth/kysely-adapter": "1.7.4",

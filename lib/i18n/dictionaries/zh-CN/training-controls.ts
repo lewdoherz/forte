@@ -16,7 +16,7 @@ export const trainingControls = {
   "training.picker.clearSelection": "清空已选",
   "training.picker.select": "选择{title}",
   "training.picker.deselect": "取消选择{title}",
-  "training.picker.details": "查看{title}的详情与历史记录（在新标签页打开）",
+  "training.picker.details": "查看{title}的详情与历史记录",
   "training.picker.empty": "没有可添加的动作。",
   "training.picker.emptyFiltered": "没有符合筛选条件的动作。",
   "training.picker.loadError": "无法加载动作，请重试。",

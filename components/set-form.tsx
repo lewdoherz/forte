@@ -23,14 +23,14 @@ interface SetFormProps {
 }
 
 const ROW_GRID = "grid grid-cols-[44px_minmax(0,1fr)_44px] min-[420px]:grid-cols-[44px_minmax(60px,0.8fr)_minmax(0,1.6fr)_44px] items-center gap-2";
-const INPUT = "training-input h-11 w-full min-w-0 rounded-lg border border-[#34463a] bg-[#0d1512] px-2 text-center text-base text-[#eef5ef] placeholder:text-[#b0c0b4]/65 disabled:opacity-50";
+const INPUT = "training-input h-11 w-full min-w-0 rounded-lg px-2 text-center text-base disabled:opacity-50";
 const TYPES: readonly SetType[] = ["normal", "warmup", "failure", "dropset"];
 
 export function SetGridHeader({ exerciseType }: { exerciseType: ExerciseType }) {
   const { t } = useI18n();
   const fields = TRAINING_FIELDS[exerciseType];
   return (
-    <div className={`training-grid ${ROW_GRID} px-2 py-2 text-xs text-[#b0c0b4]`} aria-hidden="true">
+    <div className={`training-grid ${ROW_GRID} px-2 py-2 text-xs text-[var(--text-muted)]`} aria-hidden="true">
       <span>{t("training.set")}</span>
       <span className="hidden min-[420px]:block">{t("training.previous")}</span>
       <div className={`grid gap-2 ${fields.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
@@ -79,7 +79,6 @@ export function SetForm({ set, index, exerciseType, suggestion, previous, disabl
   }, [sheetOpen]);
 
   function save(patch: Partial<SetFormValues> & { set_type?: SetType }) {
-    // onUpdate applies the local document synchronously before its persistence promise.
     void onUpdate(patch).catch(() => setError(t("training.saveError")));
   }
 
@@ -180,12 +179,28 @@ export function SetForm({ set, index, exerciseType, suggestion, previous, disabl
   }
 
   return (
-    <div role="group" aria-label={t("training.setLabel", { number: index + 1 })} aria-busy={pending} className={`rounded-lg px-2 py-2 ${set.completed_at ? "bg-[#203c31] ring-1 ring-inset ring-[#42634e]" : "bg-[#17221c]"}`}>
+    <div
+      role="group"
+      aria-label={t("training.setLabel", { number: index + 1 })}
+      aria-busy={pending}
+      className={`rounded-lg px-2 py-2 ${
+        set.completed_at
+          ? "bg-[var(--bg-completed)] ring-1 ring-inset ring-[var(--border-completed)]"
+          : "bg-[var(--bg-surface)]"
+      }`}
+    >
       <div className={`training-grid ${ROW_GRID}`}>
-        <button type="button" disabled={locked} onClick={() => setSheetOpen(true)} aria-label={`${t("training.type")}: ${t(`training.${set.set_type}`)}`} aria-haspopup="dialog" className="h-11 w-11 rounded-lg border border-[#34463a] text-sm font-semibold text-[#eef5ef] disabled:opacity-50">
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => setSheetOpen(true)}
+          aria-label={`${t("training.type")}: ${t(`training.${set.set_type}`)}`}
+          aria-haspopup="dialog"
+          className="h-11 w-11 rounded-lg border border-[var(--border-subtle)] text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] disabled:opacity-50"
+        >
           {set.set_type === "normal" ? index + 1 : set.set_type === "warmup" ? "W" : set.set_type === "failure" ? "F" : "D"}
         </button>
-        <span className="hidden min-w-0 break-words text-center text-xs text-[#b0c0b4] min-[420px]:block">{previous}</span>
+        <span className="hidden min-w-0 break-words text-center text-xs text-[var(--text-muted)] min-[420px]:block">{previous}</span>
         <div className={`grid min-w-0 gap-2 ${fields.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
           {fields.map((field) => {
             const current = trainingValue(set, field);
@@ -206,32 +221,42 @@ export function SetForm({ set, index, exerciseType, suggestion, previous, disabl
             );
           })}
         </div>
-        <button type="button" disabled={locked} onClick={() => void toggle()} aria-pressed={Boolean(set.completed_at)} aria-label={t(set.completed_at ? "training.undo" : "training.complete")}
-          className={`flex h-11 w-11 items-center justify-center rounded-lg border disabled:opacity-50 ${set.completed_at ? "border-[#8ac69c] bg-[#8ac69c] text-[#102318]" : "border-[#34463a] bg-[#26372c] text-[#d6f077]"}`}>
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => void toggle()}
+          aria-pressed={Boolean(set.completed_at)}
+          aria-label={t(set.completed_at ? "training.undo" : "training.complete")}
+          className={`flex h-11 w-11 items-center justify-center rounded-lg border disabled:opacity-50 ${
+            set.completed_at
+              ? "border-[var(--check-done-bg)] bg-[var(--check-done-bg)] text-[var(--check-done-fg)]"
+              : "border-[var(--border-subtle)] bg-[var(--check-idle-bg)] text-[var(--check-idle-fg)]"
+          }`}
+        >
           <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
         </button>
       </div>
-      <p className="mt-1 pl-14 text-xs text-[#b0c0b4] min-[420px]:hidden">{t("training.previous")}: {previous}</p>
-      {targetRange && <p className="mt-1 pl-14 text-xs text-[#b0c0b4]">{targetRange}</p>}
+      <p className="mt-1 pl-14 text-xs text-[var(--text-muted)] min-[420px]:hidden">{t("training.previous")}: {previous}</p>
+      {targetRange && <p className="mt-1 pl-14 text-xs text-[var(--text-muted)]">{targetRange}</p>}
       {exerciseType === "duration" && (
         <div className="mt-2 pl-14">
-          <button type="button" disabled={locked || Boolean(set.completed_at)} onClick={toggleTimer} className="min-h-11 rounded-lg border border-[#34463a] px-3 text-sm text-[#d6f077] disabled:opacity-50">
+          <button type="button" disabled={locked || Boolean(set.completed_at)} onClick={toggleTimer} className="min-h-11 rounded-lg border border-[var(--border-subtle)] px-3 text-sm font-medium text-[var(--accent-text)] hover:bg-[var(--bg-surface-hover)] disabled:opacity-50">
             <span aria-hidden="true">{running ? "Ⅱ" : "▶"} </span>{t(running ? "training.pause" : "training.start")}
           </button>
-          <p className="mt-1 text-xs text-[#b0c0b4]">{t("training.timerHint")}</p>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">{t("training.timerHint")}</p>
         </div>
       )}
-      {error && <p id={errorId} role="alert" className="mt-1 text-sm text-[#ffc0b5]">{error}</p>}
+      {error && <p id={errorId} role="alert" className="mt-1 text-sm text-[var(--danger-text)]">{error}</p>}
       <dialog ref={sheet} onCancel={() => setSheetOpen(false)} onClose={() => setSheetOpen(false)} onClick={(event) => { if (event.target === event.currentTarget) setSheetOpen(false); }}
-        aria-label={t("training.type")} className="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[85dvh] w-full max-w-none overflow-y-auto rounded-t-2xl border border-[#34463a] bg-[#17221c] p-4 pb-[calc(1rem+var(--app-safe-bottom))] text-[#eef5ef] backdrop:bg-black/60 min-[600px]:inset-0 min-[600px]:m-auto min-[600px]:max-w-sm min-[600px]:rounded-2xl">
-        <div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">{t("training.type")}</h3><button type="button" className="min-h-11 px-3 text-[#b0c0b4]" onClick={() => setSheetOpen(false)}>{t("training.close")}</button></div>
-        {TYPES.map((type) => <button type="button" key={type} disabled={locked} aria-pressed={set.set_type === type} className="flex min-h-12 w-full items-center justify-between rounded-lg px-3 text-left aria-pressed:bg-[#293d2d]" onClick={() => { save({ set_type: type }); setSheetOpen(false); }}>{t(`training.${type}`)}{set.set_type === type && <span aria-hidden="true">✓</span>}</button>)}
-        <label className="mt-3 block border-t border-[#34463a] pt-3 text-sm text-[#b0c0b4]">
+        aria-label={t("training.type")} className="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[85dvh] w-full max-w-none overflow-y-auto rounded-t-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 pb-[calc(1rem+var(--app-safe-bottom))] text-[var(--text-primary)] backdrop:bg-black/60 min-[600px]:inset-0 min-[600px]:m-auto min-[600px]:max-w-sm min-[600px]:rounded-2xl">
+        <div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">{t("training.type")}</h3><button type="button" className="min-h-11 px-3 text-[var(--text-muted)]" onClick={() => setSheetOpen(false)}>{t("training.close")}</button></div>
+        {TYPES.map((type) => <button type="button" key={type} disabled={locked} aria-pressed={set.set_type === type} className="flex min-h-12 w-full items-center justify-between rounded-lg px-3 text-left aria-pressed:bg-[var(--accent-soft-bg)]" onClick={() => { save({ set_type: type }); setSheetOpen(false); }}>{t(`training.${type}`)}{set.set_type === type && <span aria-hidden="true">✓</span>}</button>)}
+        <label className="mt-3 block border-t border-[var(--border-subtle)] pt-3 text-sm text-[var(--text-muted)]">
           {t("training.rpe")}
           <input type="text" inputMode="decimal" aria-label={t("training.rpe")} disabled={locked || Boolean(set.completed_at)}
             className={`${INPUT} mt-2`} value={draft.rpe ?? set.rpe ?? ""} placeholder="1–10" onChange={(event) => edit("rpe", event.target.value)} />
         </label>
-        <div className="mt-3 border-t border-[#34463a] pt-3"><button type="button" disabled={locked} className="min-h-12 w-full rounded-lg px-3 text-left text-[#ffc0b5]" onClick={() => { setSheetOpen(false); onRemove(); }}>{t("training.remove")}</button></div>
+        <div className="mt-3 border-t border-[var(--border-subtle)] pt-3"><button type="button" disabled={locked} className="min-h-12 w-full rounded-lg px-3 text-left text-[var(--danger-text)]" onClick={() => { setSheetOpen(false); onRemove(); }}>{t("training.remove")}</button></div>
       </dialog>
     </div>
   );

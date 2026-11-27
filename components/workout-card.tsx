@@ -122,7 +122,7 @@ export function WorkoutCard({
               {/* Fixed box so the row keeps its height whether or not the
                   thumbnail loads: ExerciseThumbnail removes itself on a missing
                   file, which would otherwise collapse the row after hydration. */}
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center">
                 <ExerciseThumbnail slug={exercise.slug} size="sm" />
               </span>
               <span className="min-w-0 flex-1 truncate text-sm">{exercise.title}</span>

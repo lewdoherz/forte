@@ -51,15 +51,27 @@ export function createAuth(instance: Kysely<Database>) {
     throw new Error("BETTER_AUTH_SECRET is required in production — see .env.example.");
   }
 
+  const previewHosts =
+    process.env.VERCEL_ENV === "preview"
+      ? [process.env.VERCEL_BRANCH_URL, process.env.VERCEL_URL]
+          .filter((host): host is string => Boolean(host && host.trim()))
+          .map((host) => (host.startsWith("https://") ? host : `https://${host}`))
+      : [];
+  const baseURL = previewHosts[0] ?? env.BETTER_AUTH_URL;
+  const trustedOrigins = [
+    ...(socialProviderOptions.apple ? ["https://appleid.apple.com"] : []),
+    ...previewHosts,
+  ];
+
   return betterAuth({
     database: kyselyAdapter(instance, { type: "postgres" }),
     secret: env.BETTER_AUTH_SECRET ?? DEV_AUTH_SECRET,
     // Absolute origin used for callbacks and redirects. Left undefined locally
-    // so Better Auth derives it from the incoming request; required in
-    // production by assertProductionEnv().
-    baseURL: env.BETTER_AUTH_URL,
+    // so Better Auth derives it from the incoming request; on Vercel Preview
+    // deployments it uses the preview hostname so sign-in/CSRF checks match.
+    baseURL,
     socialProviders: socialProviderOptions,
-    trustedOrigins: socialProviderOptions.apple ? ["https://appleid.apple.com"] : undefined,
+    trustedOrigins: trustedOrigins.length > 0 ? [...new Set(trustedOrigins)] : undefined,
     plugins: [nativeAuth(instance)],
     // Non-deliverable provider identities cannot be claimed or recovered by mail.
     hooks: {

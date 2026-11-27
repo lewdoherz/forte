@@ -55,6 +55,11 @@ export const routines = {
   "routines.editor.ungroup": "取消组合",
   "routines.editor.supersetShort": "+超级组",
   "routines.editor.nameRequired": "请输入名称。",
+  "routines.editor.addExercise": "添加动作",
+  "routines.editor.restDefault": "默认",
+  "routines.editor.restCustom": "自定义（秒）",
+  "routines.editor.setColumn": "组",
+  "routines.editor.exerciseNotesPlaceholder": "添加动作要点或备注…",
 
   "routines.setType.warmup": "热身",
   "routines.setType.normal": "常规",

@@ -25,7 +25,7 @@ export function DeleteAccountForm({ action }: { action: FormAction }) {
       // the action compares against, so it is the same in every language.
       if (String(formData.get("confirmation") ?? "").trim() === "DELETE") {
         try {
-          await clearOfflineClientData();
+          await clearOfflineClientData({ discardPending: true });
         } catch {
           return { error: t("account.danger.offlineError") };
         }

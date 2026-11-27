@@ -16,6 +16,7 @@ export function AccountSignInMethods({
   missingContactEmail,
   socialError = false,
   native = false,
+  unavailable = false,
 }: {
   linkedProviderIds: string[];
   providers: SocialProviderId[];
@@ -23,6 +24,7 @@ export function AccountSignInMethods({
   missingContactEmail: boolean;
   socialError?: boolean;
   native?: boolean;
+  unavailable?: boolean;
 }) {
   const router = useRouter();
   const { t } = useI18n();
@@ -112,6 +114,11 @@ export function AccountSignInMethods({
         {t("account.methods.title")}
       </h2>
       <p className="mt-2 text-sm text-zinc-600">{t("account.methods.description")}</p>
+      {unavailable ? (
+        <p role="status" className="mt-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-2.5 text-sm text-[var(--text-muted)]">
+          {t("account.methods.unavailable")}
+        </p>
+      ) : null}
       <ul className="mt-3 space-y-2 text-sm">
         {linked.map((provider) => (
           <li key={provider} className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-zinc-200 px-3 py-2">

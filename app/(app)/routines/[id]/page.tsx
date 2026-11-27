@@ -29,7 +29,7 @@ export default async function RoutineDetailPage({
   // getRoutineTree is owner-scoped, so the viewer is the creator. Better Auth
   // maps `name` to app_user.display_name; fall back to the email, as the app
   // layout does, because the column is nullable.
-  const createdBy = session.user.name.trim() || session.user.email;
+  const createdBy = (session.user.name ?? "").trim() || session.user.email;
 
   // The summary is derived from the stored prescription, never persisted. The
   // mapping feeds one shape to both aggregations (role weights and set totals),

@@ -17,8 +17,8 @@ android {
         applicationId 'com.lewdoherz.forte'
         minSdk 30
         targetSdk 36
-        versionCode 2
-        versionName '1.1.0'
+        versionCode 4
+        versionName '1.2.0'
         buildConfigField 'String', 'FORTE_ORIGIN', '"' + origin + '"'
     }
     buildFeatures { buildConfig true }
@@ -36,6 +36,38 @@ android {
         release { signingConfig signingConfigs.release }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    androidResources {
+        // Default AAPT2 ignores underscore-prefixed files/dirs; keep Next.js static chunks intact.
+        ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+    sourceSets {
+        main {
+            assets.srcDirs += layout.buildDirectory.dir('generated/offline-assets')
+        }
+    }
+}
+def prepareOfflineAssets = tasks.register('prepareOfflineAssets', Sync) {
+    def repoRoot = rootProject.projectDir.parentFile.parentFile
+    def offlineDist = new File(repoRoot, 'mobile/offline-dist')
+    def publicDir = new File(repoRoot, 'public')
+    into layout.buildDirectory.dir('generated/offline-assets/www')
+    from(new File(offlineDist, 'android/offline-app.html'))
+    from(new File(offlineDist, '_next/static')) { into 'next-static' }
+    from(new File(publicDir, 'offline-catalog.json'))
+    from(new File(publicDir, 'exercise-media/thumbnails')) { into 'exercise-media/thumbnails' }
+    from(new File(publicDir, 'body-heatmap')) { into 'body-heatmap' }
+    from(new File(publicDir, 'audio')) { into 'audio' }
+    doFirst {
+        if (!new File(offlineDist, 'android/offline-app.html').isFile()) {
+            throw new GradleException('Missing mobile/offline-dist/android/offline-app.html. Run `bun run mobile:bundle` first.')
+        }
+        if (!new File(publicDir, 'offline-catalog.json').isFile()) {
+            throw new GradleException('Missing public/offline-catalog.json. Run `bun run mobile:bundle` first.')
+        }
+    }
+}
+tasks.named('preBuild') {
+    dependsOn(prepareOfflineAssets)
 }
 dependencies {
     implementation 'androidx.activity:activity:1.10.1'

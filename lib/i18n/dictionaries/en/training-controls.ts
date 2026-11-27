@@ -14,7 +14,7 @@ export const trainingControls = {
   "training.picker.clearSelection": "Clear selection",
   "training.picker.select": "Select {title}",
   "training.picker.deselect": "Deselect {title}",
-  "training.picker.details": "Details and history for {title} (opens in a new tab)",
+  "training.picker.details": "Details and history for {title}",
   "training.picker.empty": "No exercises available to add.",
   "training.picker.emptyFiltered": "No exercises match these filters.",
   "training.picker.loadError": "Could not load exercises. Try again.",

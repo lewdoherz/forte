@@ -9,6 +9,7 @@ import {
   SET_TYPES,
   type Routine,
   type RoutineExerciseTree,
+  type RoutineFolder,
   type RoutineSet,
   type RoutineTree,
 } from "@/schema/types";
@@ -73,10 +74,27 @@ export function routineInputSchemaFor(t: Translate) {
       .trim()
       .min(1, t("routines.validation.nameRequired"))
       .max(120, t("routines.validation.nameTooLong")),
+    folder_id: z.string().uuid().nullish(),
+    position: z.number().int().min(0).optional(),
     notes: z.string().trim().max(2000).nullish(),
     exercises: z.array(routineExerciseInputSchema).max(100),
   });
 }
+
+export function routineFolderInputSchemaFor(t: Translate) {
+  return z.object({
+    id: z.string().uuid().optional(),
+    title: z
+      .string()
+      .trim()
+      .min(1, t("routines.validation.nameRequired"))
+      .max(80, t("routines.validation.nameTooLong")),
+    position: z.number().int().min(0).optional(),
+  });
+}
+
+export const routineFolderInputSchema = routineFolderInputSchemaFor(DEFAULT_TRANSLATOR);
+export type RoutineFolderInput = z.infer<typeof routineFolderInputSchema>;
 
 /**
  * The English-message instance, for callers that have no request locale — the
@@ -118,8 +136,7 @@ export async function listRoutines(db: Kysely<Database>, userId: string) {
       )`.as("exercise_names"),
     )
     .where("r.owner_id", "=", userId)
-    // Ordered by the routine's own (user-authored) title, which is never
-    // translated.
+    .orderBy("r.position", "asc")
     .orderBy("r.title", "asc")
     .execute();
 
@@ -197,9 +214,18 @@ export async function getRoutineTree(
     else setsByExercise.set(s.routine_exercise_id, [s]);
   }
 
+  const folder = routine.folder_id
+    ? (await db
+        .selectFrom("routine_folder")
+        .selectAll()
+        .where("id", "=", routine.folder_id)
+        .where("owner_id", "=", userId)
+        .executeTakeFirst()) ?? null
+    : null;
+
   return {
     ...routine,
-    folder: null,
+    folder,
     exercises: exercises.map(
       (e): RoutineExerciseTree => ({
         ...e,
@@ -273,14 +299,185 @@ async function insertExercises(
   }
 }
 
+/** Lists the user's routine folders in display order. */
+export async function listRoutineFolders(
+  db: Kysely<Database>,
+  userId: string,
+): Promise<RoutineFolder[]> {
+  return db
+    .selectFrom("routine_folder")
+    .selectAll()
+    .where("owner_id", "=", userId)
+    .orderBy("position", "asc")
+    .orderBy("title", "asc")
+    .execute();
+}
+
+/** Idempotent upsert for a routine folder (supports client-generated UUIDs). */
+export async function upsertRoutineFolderWithId(
+  db: Kysely<Database>,
+  userId: string,
+  id: string,
+  input: RoutineFolderInput,
+): Promise<RoutineFolder> {
+  return db.transaction().execute(async (trx) => {
+    const existing = await trx
+      .selectFrom("routine_folder")
+      .select(["id", "owner_id", "position"])
+      .where("id", "=", id)
+      .forUpdate()
+      .executeTakeFirst();
+    if (existing && existing.owner_id !== userId) {
+      throw new Error("not_authorized");
+    }
+    if (existing) {
+      return trx
+        .updateTable("routine_folder")
+        .set({
+          title: input.title.trim(),
+          position: input.position ?? existing.position,
+        })
+        .where("id", "=", id)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    }
+    const maxPos = await trx
+      .selectFrom("routine_folder")
+      .select(sql<number>`coalesce(max(position), -1)::int`.as("max_pos"))
+      .where("owner_id", "=", userId)
+      .executeTakeFirst();
+    return trx
+      .insertInto("routine_folder")
+      .values({
+        id,
+        owner_id: userId,
+        title: input.title.trim(),
+        position: input.position ?? (maxPos?.max_pos ?? -1) + 1,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  });
+}
+
+/** Deletes a routine folder after moving its routines to the default unfiled list. */
+export async function deleteRoutineFolder(
+  db: Kysely<Database>,
+  userId: string,
+  id: string,
+): Promise<void> {
+  await db.transaction().execute(async (trx) => {
+    const existing = await trx
+      .selectFrom("routine_folder")
+      .select(["id", "owner_id"])
+      .where("id", "=", id)
+      .executeTakeFirst();
+    if (!existing) throw new Error("not_found");
+    if (existing.owner_id !== userId) throw new Error("not_authorized");
+    await trx
+      .updateTable("routine")
+      .set({ folder_id: null })
+      .where("owner_id", "=", userId)
+      .where("folder_id", "=", id)
+      .execute();
+    await trx.deleteFrom("routine_folder").where("id", "=", id).execute();
+  });
+}
+
+async function assertFolderOwned(
+  trx: Transaction<Database>,
+  userId: string,
+  folderId: string | null | undefined,
+): Promise<string | null> {
+  if (!folderId) return null;
+  const folder = await trx
+    .selectFrom("routine_folder")
+    .select("id")
+    .where("id", "=", folderId)
+    .where("owner_id", "=", userId)
+    .executeTakeFirst();
+  if (!folder) throw new Error("not_found");
+  return folder.id;
+}
+
 export async function createRoutine(db: Kysely<Database>, userId: string, input: RoutineInput) {
   return db.transaction().execute(async (trx) => {
     await assertExercisesVisible(trx, userId, input.exercises.map((e) => e.template_id));
+    const folderId = await assertFolderOwned(trx, userId, input.folder_id);
     const routine = await trx
       .insertInto("routine")
-      .values({ owner_id: userId, folder_id: null, title: input.title, notes: input.notes ?? null, position: 0 })
+      .values({
+        owner_id: userId,
+        folder_id: folderId,
+        title: input.title,
+        notes: input.notes ?? null,
+        position: input.position ?? 0,
+      })
       .returningAll()
       .executeTakeFirstOrThrow();
+    await insertExercises(trx, routine.id, input.exercises);
+    return routine;
+  });
+}
+
+/**
+ * Idempotent upsert for offline-created or offline-edited routines using a
+ * client-generated UUID. Replaying the same create or edit produces one row
+ * and rejects any id belonging to a different owner.
+ */
+export async function upsertRoutineWithId(
+  db: Kysely<Database>,
+  userId: string,
+  id: string,
+  input: RoutineInput,
+) {
+  return db.transaction().execute(async (trx) => {
+    const existing = await trx
+      .selectFrom("routine")
+      .select(["id", "owner_id", "folder_id", "position"])
+      .where("id", "=", id)
+      .forUpdate()
+      .executeTakeFirst();
+
+    if (existing && existing.owner_id !== userId) {
+      throw new Error("not_authorized");
+    }
+
+    await assertExercisesVisible(trx, userId, input.exercises.map((e) => e.template_id));
+    const nextFolderId =
+      input.folder_id !== undefined
+        ? await assertFolderOwned(trx, userId, input.folder_id)
+        : (existing?.folder_id ?? null);
+    const nextPosition = input.position ?? existing?.position ?? 0;
+
+    let routine: Routine;
+    if (existing) {
+      routine = await trx
+        .updateTable("routine")
+        .set({
+          title: input.title,
+          notes: input.notes ?? null,
+          folder_id: nextFolderId,
+          position: nextPosition,
+        })
+        .where("id", "=", id)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      await trx.deleteFrom("routine_exercise").where("routine_id", "=", id).execute();
+    } else {
+      routine = await trx
+        .insertInto("routine")
+        .values({
+          id,
+          owner_id: userId,
+          folder_id: nextFolderId,
+          title: input.title,
+          notes: input.notes ?? null,
+          position: nextPosition,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    }
+
     await insertExercises(trx, routine.id, input.exercises);
     return routine;
   });
@@ -295,17 +492,27 @@ export async function updateRoutine(
   return db.transaction().execute(async (trx) => {
     const existing = await trx
       .selectFrom("routine")
-      .select(["id", "owner_id"])
+      .select(["id", "owner_id", "folder_id", "position"])
       .where("id", "=", id)
       .executeTakeFirst();
     if (!existing) throw new Error("not_found");
     if (existing.owner_id !== userId) throw new Error("not_authorized");
 
     await assertExercisesVisible(trx, userId, input.exercises.map((e) => e.template_id));
+    const nextFolderId =
+      input.folder_id !== undefined
+        ? await assertFolderOwned(trx, userId, input.folder_id)
+        : existing.folder_id;
+    const nextPosition = input.position ?? existing.position;
 
     const routine = await trx
       .updateTable("routine")
-      .set({ title: input.title, notes: input.notes ?? null })
+      .set({
+        title: input.title,
+        notes: input.notes ?? null,
+        folder_id: nextFolderId,
+        position: nextPosition,
+      })
       .where("id", "=", id)
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -316,6 +523,26 @@ export async function updateRoutine(
     await insertExercises(trx, id, input.exercises);
 
     return routine;
+  });
+}
+
+/** Moves a routine into a folder (or null for default) and updates its position. */
+export async function organizeRoutines(
+  db: Kysely<Database>,
+  userId: string,
+  updates: Array<{ id: string; folder_id: string | null; position: number }>,
+): Promise<void> {
+  if (updates.length === 0) return;
+  await db.transaction().execute(async (trx) => {
+    for (const item of updates) {
+      const folderId = await assertFolderOwned(trx, userId, item.folder_id);
+      await trx
+        .updateTable("routine")
+        .set({ folder_id: folderId, position: Math.max(0, Math.floor(item.position)) })
+        .where("id", "=", item.id)
+        .where("owner_id", "=", userId)
+        .execute();
+    }
   });
 }
 

@@ -64,7 +64,7 @@ export async function ExerciseHowTo({
 
   return (
     <div className="space-y-6">
-      <ExerciseVideo slug={slug} mediaUrl={videoUrl} />
+      <ExerciseVideo slug={slug} mediaUrl={videoUrl} title={title} />
 
       {steps ? (
         <ol className="list-decimal space-y-2 rounded-xl border border-zinc-200 bg-white p-4 pl-9 text-sm leading-relaxed shadow-sm">
